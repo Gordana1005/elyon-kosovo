@@ -1,0 +1,1000 @@
+import { useState, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
+import i18n from '@/i18n';
+import { AppLayout } from '@/layouts/AppLayout';
+import { ALL_STATUSES, statusLabel } from '@/types';
+import { useAuth } from '@/contexts/AuthContext';
+import { apiGetCeoDashboardStats, apiGetDashboardStats, apiGetOrderStats, apiGetAgents, apiGetProducts, apiGetRecentActivity } from '@/lib/api';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { DateRangePicker, defaultRange, type DateRange } from '@/components/DateRangePicker';
+import {
+  CheckCircle2, Truck, Package, Users, TrendingUp, TrendingDown,
+  Target, Download, ArrowUpRight, ArrowDownRight,
+  Activity,
+  X, MessageSquare, Phone, ArrowRightLeft, FileText,
+  DollarSign, AlertTriangle, Trophy, Zap, Shield, ChevronRight,
+} from 'lucide-react';
+import { Link } from 'react-router-dom';
+import {
+  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  Area, AreaChart,
+} from 'recharts';
+
+interface DashStats {
+  lead_count: number; deals_won: number; deals_lost: number;
+  total_value: number; tasks_completed: number; total_orders: number;
+  daily: Record<string, { leads: number; deals_won: number; deals_lost: number; orders: number; calls: number }>;
+  statusCounts: Record<string, number>;
+  orders_from_standard?: number;
+  orders_from_leads?: number;
+  personalMetrics?: DashStats | null;
+  isDualRole?: boolean;
+  products_sold?: Record<string, number>;
+  units_sold?: number;
+}
+
+function exportCSV(data: DashStats, period: string, label?: string) {
+  const rows = [
+    ['Metric', 'Value'],
+    ['Period', period],
+    ...(label ? [['Section', label]] : []),
+    ['Leads Created', String(data.lead_count)],
+    ['Deals Won', String(data.deals_won)],
+    ['Deals Lost', String(data.deals_lost)],
+    ['Total Value', String(data.total_value)],
+    ['Calls Completed', String(data.tasks_completed)],
+    ['Total Orders', String(data.total_orders)],
+    ['', ''],
+    ['Status', 'Count'],
+    ...Object.entries(data.statusCounts).map(([s, c]) => [s, String(c)]),
+    ['', ''],
+    ['Date', 'Leads', 'Deals Won', 'Deals Lost', 'Orders', 'Calls'],
+    ...Object.entries(data.daily).sort(([a], [b]) => a.localeCompare(b)).map(([d, v]) =>
+      [d, String(v.leads), String(v.deals_won), String(v.deals_lost), String(v.orders), String(v.calls)]
+    ),
+  ];
+  const csv = rows.map(r => r.join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `dashboard-${label || 'stats'}-${period}-${new Date().toISOString().substring(0, 10)}.csv`;
+  a.click(); URL.revokeObjectURL(url);
+}
+
+// Premium Metric Card — Phase 2 elevated treatment
+function MetricCard({ title, value, icon: Icon, trend, trendLabel, color, subtitle, levValue }: {
+  title: string; value: string | number; icon: any; trend?: number; trendLabel?: string; color: string; subtitle?: string;
+  levValue?: number;
+}) {
+  const isPositive = trend !== undefined && trend >= 0;
+
+  return (
+    <Card className="group relative overflow-hidden border border-border/60 bg-card shadow-sm hover:shadow-md hover:border-border/80 transition-all duration-200 hover:-translate-y-[1px]">
+      <CardContent className="p-5">
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0 flex-1 space-y-1.5">
+            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-[0.5px]">{title}</p>
+
+            <div className="flex items-baseline gap-1.5">
+              <p className="text-3xl font-semibold tabular-nums tracking-tighter text-card-foreground">{value}</p>
+            </div>
+
+            {levValue !== undefined && (
+              <p className="text-[11px] font-medium text-muted-foreground/90 tabular-nums tracking-tight">
+                {formatLev(levValue)}
+              </p>
+            )}
+
+            {trend !== undefined && (
+              <div className={`inline-flex items-center gap-1 text-xs font-medium mt-1 ${isPositive ? 'text-[hsl(var(--success))]' : 'text-destructive'}`}>
+                {isPositive ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
+                {Math.abs(trend)}% <span className="text-muted-foreground/70">vs yesterday</span>
+              </div>
+            )}
+
+            {subtitle && (
+              <p className="text-[10px] text-muted-foreground/80 leading-tight pt-0.5">{subtitle}</p>
+            )}
+          </div>
+
+          <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${color} ring-1 ring-inset ring-white/10 shadow-inner transition-transform group-hover:scale-[1.02]`}>
+            <Icon className="h-5 w-5 text-primary-foreground drop-shadow-sm" />
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function getTimeAgo(timestamp: string): string {
+  const diff = Date.now() - new Date(timestamp).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return i18n.t('dashboard.justNow');
+  if (mins < 60) return i18n.t('dashboard.minsAgo', { count: mins });
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return i18n.t('dashboard.hoursAgo', { count: hrs });
+  const days = Math.floor(hrs / 24);
+  return i18n.t('dashboard.daysAgo', { count: days });
+}
+
+const chartTooltipStyle = {
+  backgroundColor: 'hsl(var(--card))',
+  border: '1px solid hsl(var(--border))',
+  borderRadius: '10px',
+  fontSize: '12px',
+  boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+};
+
+import { formatLev } from '@/lib/currency';
+import { CHART_COLORS, hoverLift } from '@/lib/design-utils';
+import { EmptyState } from '@/components/EmptyState';
+
+const fmtCurrency = (n: number) => Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+export default function Dashboard() {
+  const { t } = useTranslation(); // subscribes status labels to language switches
+  const { user } = useAuth();
+  const isAdmin = user?.isAdmin;
+  const isDualRole = user?.isAdmin && user?.isAgent;
+  const [agentPeriod, setAgentPeriod] = useState<'today' | 'month'>('today');
+  const [agentFilter, setAgentFilter] = useState('all');
+  const [chartView, setChartView] = useState<'revenue' | 'orders' | 'leads'>('revenue');
+  // Dashboard defaults to today; the range picker drives everything.
+  const [range, setRange] = useState<DateRange>(defaultRange);
+
+  const effectiveAgent = agentFilter !== 'all' ? agentFilter : undefined;
+
+  // CEO stats
+  const { data: ceoStats } = useQuery<any>({
+    queryKey: ['ceo-dashboard-stats', effectiveAgent, range.from, range.to],
+    queryFn: () => apiGetCeoDashboardStats({
+      // A bounded range → 'custom' (filters by status-change date); empty → 'all'.
+      period: (range.from && range.to) ? 'custom' : 'all',
+      agent_id: effectiveAgent,
+      from: range.from || undefined,
+      to: range.to || undefined,
+    }),
+    refetchInterval: 60000,
+    enabled: !!isAdmin,
+  });
+
+  const { data: todayStats } = useQuery<DashStats>({
+    queryKey: ['dashboard-stats', 'today', effectiveAgent],
+    queryFn: () => apiGetDashboardStats({ period: 'today', agent_id: effectiveAgent }),
+    refetchInterval: 30000,
+  });
+
+  const { data: monthStats } = useQuery<DashStats>({
+    queryKey: ['dashboard-stats', 'month', effectiveAgent],
+    queryFn: () => apiGetDashboardStats({ period: 'month', agent_id: effectiveAgent }),
+    refetchInterval: 60000,
+  });
+
+  const { data: orderStats } = useQuery({
+    queryKey: ['order-stats'],
+    queryFn: () => apiGetOrderStats(),
+  });
+
+  const { data: agents = [] } = useQuery<{ user_id: string; full_name: string }[]>({
+    queryKey: ['agents'],
+    queryFn: apiGetAgents,
+    enabled: !!isAdmin,
+  });
+
+  const { data: products = [] } = useQuery<any[]>({
+    queryKey: ['products'],
+    queryFn: apiGetProducts,
+    enabled: !!isAdmin,
+  });
+
+  const { data: recentActivity = [] } = useQuery<any[]>({
+    queryKey: ['recent-activity'],
+    queryFn: () => apiGetRecentActivity(25),
+    refetchInterval: 30000,
+  });
+
+  const statusCounts = orderStats?.statusCounts || {};
+
+  const lowStock = products.filter((p: any) => p.stock_quantity <= p.low_stock_threshold).length;
+  const medStock = products.filter((p: any) => p.stock_quantity > p.low_stock_threshold && p.stock_quantity <= p.low_stock_threshold * 3).length;
+  const highStock = products.filter((p: any) => p.stock_quantity > p.low_stock_threshold * 3).length;
+
+  const personalToday = todayStats?.personalMetrics;
+
+  // Revenue trend chart data from CEO stats
+  const revenueTrendData = useMemo(() => {
+    if (!ceoStats?.dailyRevenue) return [];
+    return Object.entries(ceoStats.dailyRevenue)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, v]: [string, any]) => ({
+        date: new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        revenue: v.revenue,
+        orders: v.orders,
+        leads: v.leads,
+      }));
+  }, [ceoStats?.dailyRevenue]);
+
+  const hasActiveFilters = agentFilter !== 'all';
+
+  const funnel = ceoStats?.funnel;
+  const topAgent = ceoStats?.topAgent;
+  const alerts = ceoStats?.alerts || [];
+  const snap = ceoStats?.todaySnapshot;
+  const agentRankings = ceoStats?.agentRankings || [];
+
+  // ── Call Agent view: a purpose-built "My Performance" page (their numbers
+  // only). Admins/managers fall through to the full operational dashboard. ──
+  if (!isAdmin) {
+    const stats = agentPeriod === 'today' ? todayStats : monthStats;
+    const sales = stats?.deals_won || 0;
+    const cancels = stats?.statusCounts?.cancelled || 0;
+    const returns = stats?.statusCounts?.returned || 0;
+    const calls = stats?.tasks_completed || 0;
+    const conversion = calls > 0 ? Math.round((sales / calls) * 100) : 0;
+    const revenue = stats?.total_value || 0;
+    const units = stats?.units_sold || 0;
+    const productRows = Object.entries(stats?.products_sold || {}).sort((a, b) => b[1] - a[1]);
+    const trend = Object.entries(stats?.daily || {})
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, v]) => ({
+        date: new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        sales: v.deals_won, calls: v.calls,
+      }));
+
+    return (
+      <AppLayout title={t('titles.myPerformance')}>
+        {/* Period toggle */}
+        <div className="mb-6 flex items-center justify-between">
+          <p className="text-sm text-muted-foreground">
+            {agentPeriod === 'today' ? t('dashboard.todaysPerformance') : t('dashboard.monthsPerformance')}
+          </p>
+          <Tabs value={agentPeriod} onValueChange={v => setAgentPeriod(v as any)}>
+            <TabsList className="h-8">
+              <TabsTrigger value="today" className="text-xs px-3 h-7">{t('dashboard.today')}</TabsTrigger>
+              <TabsTrigger value="month" className="text-xs px-3 h-7">{t('dashboard.thisMonth')}</TabsTrigger>
+            </TabsList>
+          </Tabs>
+        </div>
+
+        {/* Headline cards */}
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4 mb-4">
+          <MetricCard title={t('dashboard.sales')} value={sales} icon={CheckCircle2} color="bg-[hsl(var(--success))]" subtitle={t('dashboard.salesSub')} />
+          <MetricCard title={t('dashboard.cancels')} value={cancels} icon={X} color="bg-destructive" subtitle={t('dashboard.cancelsSub')} />
+          <MetricCard title={t('dashboard.conversion')} value={`${conversion}%`} icon={Target} color="bg-primary" subtitle={t('dashboard.conversionSub')} />
+          <MetricCard title={t('dashboard.revenue')} value={`€${fmtCurrency(revenue)}`} levValue={revenue} icon={DollarSign} color="bg-[hsl(var(--info))]" subtitle={t('dashboard.revenueSub')} />
+        </div>
+
+        {/* Secondary cards */}
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4 mb-6">
+          <MetricCard title={t('dashboard.callsMade')} value={calls} icon={Phone} color="bg-[hsl(var(--warning))]" />
+          <MetricCard title={t('dashboard.packagesSold')} value={units} icon={Package} color="bg-primary" subtitle={units > 0 ? t('dashboard.perPackage', { price: fmtCurrency(revenue / units) }) : t('dashboard.unitsSub')} />
+          <MetricCard title={t('dashboard.returns')} value={returns} icon={TrendingDown} color="bg-destructive" />
+          <MetricCard title={t('dashboard.tabOrders')} value={stats?.total_orders || 0} icon={FileText} color="bg-muted-foreground" subtitle={t('dashboard.ordersSub')} />
+        </div>
+
+        <div className="grid gap-6 lg:grid-cols-3 mb-6">
+          {/* Sales & Calls trend */}
+          <Card className="lg:col-span-2 border-none shadow-sm">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-semibold text-card-foreground flex items-center gap-2">
+                <TrendingUp className="h-4 w-4 text-primary" /> {t('dashboard.salesCallsOverTime')}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="pt-2">
+              {trend.length === 0 ? (
+                <EmptyState
+                  icon={<Activity className="h-5 w-5" />}
+                  title={t('dashboard.noActivityPeriod')}
+                  size="sm"
+                  className="border-0 bg-transparent py-8"
+                />
+              ) : (
+                <ResponsiveContainer width="100%" height={260}>
+                  <AreaChart data={trend}>
+                    <defs>
+                      <linearGradient id="agSales" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="hsl(142, 76%, 36%)" stopOpacity={0.2} />
+                        <stop offset="95%" stopColor="hsl(142, 76%, 36%)" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                    <XAxis dataKey="date" tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} />
+                    <Tooltip contentStyle={chartTooltipStyle} />
+                    <Area type="monotone" dataKey="sales" stroke="hsl(142, 76%, 36%)" strokeWidth={2} fill="url(#agSales)" name="Sales" />
+                    <Area type="monotone" dataKey="calls" stroke="hsl(27, 95%, 48%)" strokeWidth={2} fillOpacity={0} name="Calls" />
+                  </AreaChart>
+                </ResponsiveContainer>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Products sold */}
+          <Card className="border-none shadow-sm">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-semibold text-card-foreground flex items-center gap-2">
+                <Package className="h-4 w-4 text-primary" /> {t('dashboard.productsSold')}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {productRows.length === 0 ? (
+                <EmptyState
+                  icon={<Package className="h-4 w-4" />}
+                  title={t('dashboard.noProductsSold')}
+                  size="sm"
+                  className="border-0 bg-transparent py-4"
+                />
+              ) : (
+                <ScrollArea className="h-[260px] pr-3">
+                  <table className="w-full text-sm">
+                    <tbody>
+                      {productRows.map(([name, qty]) => (
+                        <tr key={name} className="border-b last:border-0">
+                          <td className="py-2 pr-2 truncate max-w-[180px]">{name}</td>
+                          <td className="py-2 text-right font-bold tabular-nums">{qty}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </ScrollArea>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* My recent activity (already scoped server-side to this agent) */}
+        <Card className="border-none shadow-sm mb-6">
+          <CardHeader className="pb-2 flex flex-row items-center justify-between">
+            <CardTitle className="text-sm font-semibold text-card-foreground flex items-center gap-2">
+              <Activity className="h-4 w-4 text-primary" /> {t('dashboard.myRecentActivity')}
+            </CardTitle>
+            <span className="text-xs text-muted-foreground">{t('dashboard.nEvents', { count: recentActivity.length })}</span>
+          </CardHeader>
+          <CardContent>
+            {recentActivity.length === 0 ? (
+              <EmptyState
+                title={t('dashboard.noRecentActivity')}
+                description={t('dashboard.noRecentActivityDesc')}
+                size="sm"
+              />
+            ) : (
+              <ScrollArea className="h-[300px] pr-3">
+                <div className="space-y-1">
+                  {recentActivity.map((item: any) => {
+                    const isCall = item.type === 'call';
+                    const isNote = item.type === 'note';
+                    const IconComp = isCall ? Phone : isNote ? MessageSquare : ArrowRightLeft;
+                    const iconBg = isCall ? 'bg-[hsl(var(--info))]/15 text-[hsl(var(--info))]'
+                      : isNote ? 'bg-[hsl(var(--warning))]/15 text-[hsl(var(--warning))]'
+                      : 'bg-primary/10 text-primary';
+                    return (
+                      <div key={item.id} className="flex gap-3 py-2.5 relative">
+                        <div className={`flex h-[30px] w-[30px] items-center justify-center rounded-full shrink-0 ${iconBg}`}>
+                          <IconComp className="h-3.5 w-3.5" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs text-muted-foreground truncate">{item.description}</p>
+                        </div>
+                        <span className="text-[10px] text-muted-foreground whitespace-nowrap shrink-0 mt-0.5">{getTimeAgo(item.timestamp)}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </ScrollArea>
+            )}
+          </CardContent>
+        </Card>
+      </AppLayout>
+    );
+  }
+
+  return (
+    <AppLayout title={t('nav.dashboard')}>
+      {/* Filter bar — Phase 2 elevated */}
+      {isAdmin && (
+        <div className="mb-6 flex items-center gap-2 overflow-x-auto scrollbar-thin snap-x pb-1 rounded-2xl border bg-card/80 backdrop-blur-md p-3 shadow-sm md:flex-wrap md:overflow-visible md:pb-0 md:gap-3">
+          <div className="flex items-center gap-2 shrink-0">
+            <Select value={agentFilter} onValueChange={setAgentFilter}>
+              <SelectTrigger className="w-44 h-9 text-sm rounded-xl border-border/70">
+                <Users className="h-3.5 w-3.5 mr-1.5 text-muted-foreground" />
+                <SelectValue placeholder={t('dashboard.allAgents')} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{t('dashboard.allAgents')}</SelectItem>
+                {agents.map(a => <SelectItem key={a.user_id} value={a.user_id}>{a.full_name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <DateRangePicker value={range} onChange={setRange} />
+
+          {hasActiveFilters && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-9 rounded-xl text-xs text-muted-foreground hover:text-foreground shrink-0"
+              onClick={() => { setAgentFilter('all'); setRange(defaultRange()); }}
+            >
+              <X className="h-3.5 w-3.5 mr-1" /> {t('dashboard.clearFilters')}
+            </Button>
+          )}
+
+          <div className="shrink-0 md:ml-auto">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9 rounded-xl text-sm gap-1.5 border-border/70 hover:bg-muted/50"
+              onClick={() => monthStats && exportCSV(monthStats, 'month', 'dashboard')}
+            >
+              <Download className="h-3.5 w-3.5" /> {t('dashboard.exportCsv')}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* === 1. TOP SECTION — Approved Phase 2 Layout Refactor (Option A) === */}
+      {/* Compact 2x2 Operational Status Quadrant + Elevated Funnel (addresses horizontal card stuffing) */}
+      {isAdmin && ceoStats && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+          {/* Left: Compact Operational Status Quadrant (2x2) */}
+          <Card className={`border border-border/60 bg-card ${hoverLift}`}>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-semibold text-card-foreground flex items-center gap-2">
+                <Activity className="h-4 w-4 text-primary" />
+                {t('dashboard.operationalPulse')}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="pt-1">
+              <div className="grid grid-cols-2 gap-3">
+                {/* Confirmed */}
+                <div className="flex items-center gap-3 rounded-xl border border-border/50 bg-muted/30 p-3">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[hsl(var(--warning))]">
+                    <CheckCircle2 className="h-4.5 w-4.5 text-primary-foreground" />
+                  </div>
+                  <div>
+                    <div className="text-2xl font-semibold tabular-nums">{ceoStats.confirmedCount || 0}</div>
+                    <div className="text-[11px] font-medium text-muted-foreground">{t('status.confirmed')}</div>
+                  </div>
+                </div>
+
+                {/* Shipped */}
+                <div className="flex items-center gap-3 rounded-xl border border-border/50 bg-muted/30 p-3">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[hsl(var(--info))]">
+                    <Truck className="h-4.5 w-4.5 text-primary-foreground" />
+                  </div>
+                  <div>
+                    <div className="text-2xl font-semibold tabular-nums">{ceoStats.shippedCount || 0}</div>
+                    <div className="text-[11px] font-medium text-muted-foreground">{t('status.shipped')}</div>
+                  </div>
+                </div>
+
+                {/* Paid */}
+                <div className="flex items-center gap-3 rounded-xl border border-border/50 bg-muted/30 p-3">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[hsl(var(--success))]">
+                    <DollarSign className="h-4.5 w-4.5 text-primary-foreground" />
+                  </div>
+                  <div>
+                    <div className="text-2xl font-semibold tabular-nums">{ceoStats.paidCount || 0}</div>
+                    <div className="text-[11px] font-medium text-muted-foreground">{t('status.paid')}</div>
+                  </div>
+                </div>
+
+                {/* Returned */}
+                <div className="flex items-center gap-3 rounded-xl border border-border/50 bg-muted/30 p-3">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-destructive">
+                    <TrendingDown className="h-4.5 w-4.5 text-primary-foreground" />
+                  </div>
+                  <div>
+                    <div className="text-2xl font-semibold tabular-nums">{ceoStats.returnedCount || 0}</div>
+                    <div className="text-[11px] font-medium text-muted-foreground">{t('status.returned')}</div>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Right: Funnel Performance (now elevated — much higher visual priority) */}
+          {funnel && (
+            <Card className="border border-border/60 shadow-sm">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-semibold text-card-foreground flex items-center gap-2">
+                  <Target className="h-4 w-4 text-primary" />
+                  {t('dashboard.funnelPerformance')}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pt-0">
+                <div className="flex items-center justify-between gap-3 overflow-x-auto pb-2">
+                  {[
+                    { label: t('dashboard.funnelTaken'), count: funnel.allTaken, pct: null, color: 'bg-[hsl(var(--info))]' },
+                    { label: t('status.confirmed'), count: funnel.confirmed, pct: funnel.confirmationRate, color: 'bg-[hsl(var(--warning))]' },
+                    { label: t('status.paid'), count: funnel.paid, pct: funnel.conversionRate, color: 'bg-[hsl(var(--success))]' },
+                    { label: t('status.shipped'), count: funnel.shipped, pct: null, color: 'bg-primary' },
+                    { label: t('status.returned'), count: funnel.returned, pct: funnel.returnRate, color: 'bg-destructive' },
+                  ].map((stage, idx, arr) => (
+                    <div key={stage.label} className="flex items-center gap-3 flex-1 min-w-[92px]">
+                      <div className="flex-1 text-center">
+                        <div className={`mx-auto mb-2 h-11 w-11 rounded-2xl flex items-center justify-center text-primary-foreground font-semibold text-xl shadow-sm ${stage.color}`}>
+                          {stage.count}
+                        </div>
+                        <p className="text-xs font-medium tracking-tight text-card-foreground">{stage.label}</p>
+                        {stage.pct !== null && (
+                          <p className="text-[10px] font-medium text-muted-foreground mt-0.5">{stage.pct}%</p>
+                        )}
+                      </div>
+                      {idx < arr.length - 1 && <ChevronRight className="h-4 w-4 text-muted-foreground/60 shrink-0 mt-3" />}
+                    </div>
+                  ))}
+                </div>
+                <div className="flex flex-wrap gap-x-5 gap-y-1 mt-4 pt-4 border-t text-xs text-muted-foreground">
+                  <span>{t('dashboard.conversionShort')} <span className={`font-semibold tabular-nums ${funnel.conversionRate < 10 ? 'text-destructive' : 'text-[hsl(var(--success))]'}`}>{funnel.conversionRate}%</span></span>
+                  <span>{t('dashboard.confirmationShort')} <span className="font-semibold text-card-foreground tabular-nums">{funnel.confirmationRate}%</span></span>
+                  <span>{t('dashboard.returnShort')} <span className={`font-semibold tabular-nums ${funnel.returnRate > 20 ? 'text-destructive' : 'text-card-foreground'}`}>{funnel.returnRate}%</span></span>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      )}
+
+      {/* Financial Overview — Consolidated (approved plan 5.1.1) */}
+      {isAdmin && ceoStats && (
+        <Card className={`mb-6 border border-border/60 bg-card ${hoverLift}`}>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-semibold text-card-foreground flex items-center gap-2">
+              <DollarSign className="h-4 w-4 text-primary" />
+              {t('dashboard.financialOverview')}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              {/* Gross Revenue - most important */}
+              <div className="rounded-xl border border-border/50 bg-muted/20 p-4">
+                <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1">{t('dashboard.grossRevenue')}</div>
+                <div className="text-3xl font-semibold tabular-nums tracking-tighter text-card-foreground">
+                  €{fmtCurrency(ceoStats.revenue || 0)}
+                </div>
+                <div className="text-xs text-muted-foreground mt-0.5 tabular-nums">
+                  {formatLev(ceoStats.revenue || 0)}
+                </div>
+                <div className="text-[10px] text-muted-foreground mt-2">{t('dashboard.shippedPlusPaid')}</div>
+              </div>
+
+              {/* Outstanding */}
+              <div className="rounded-xl border border-border/50 bg-muted/20 p-4">
+                <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1">{t('dashboard.outstanding')}</div>
+                <div className="text-3xl font-semibold tabular-nums tracking-tighter text-card-foreground">
+                  €{fmtCurrency(ceoStats.outstanding || 0)}
+                </div>
+                <div className="text-xs text-muted-foreground mt-0.5 tabular-nums">
+                  {formatLev(ceoStats.outstanding || 0)}
+                </div>
+                <div className="text-[10px] text-muted-foreground mt-2">{t('dashboard.shippedOnly')}</div>
+              </div>
+
+              {/* Profit (highlighted) */}
+              <div className="rounded-xl border border-border/50 bg-primary/5 p-4">
+                <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1 flex items-center gap-1">
+                  Profit <TrendingUp className="h-3 w-3" />
+                </div>
+                <div className="text-3xl font-semibold tabular-nums tracking-tighter text-[hsl(var(--success))]">
+                  €{fmtCurrency(ceoStats.profit || 0)}
+                </div>
+                <div className="text-xs text-muted-foreground mt-0.5 tabular-nums">
+                  {formatLev(ceoStats.profit || 0)}
+                </div>
+                <div className="text-[10px] text-muted-foreground mt-2">{t('dashboard.clearProfit')}</div>
+              </div>
+            </div>
+
+            {/* Secondary breakdown - compact */}
+            <div className="mt-4 pt-4 border-t flex flex-wrap gap-x-6 gap-y-1 text-sm text-muted-foreground">
+              <span>
+                <span className="font-medium text-card-foreground">{t('dashboard.paidRevenueLabel')}</span> €{fmtCurrency(ceoStats.paidAmount || 0)} ({formatLev(ceoStats.paidAmount || 0)})
+              </span>
+              <span>
+                <span className="font-medium text-destructive">{t('dashboard.returnedAmountLabel')}</span> €{fmtCurrency(ceoStats.returnedAmount || 0)} ({formatLev(ceoStats.returnedAmount || 0)})
+              </span>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* === 6. DAILY SNAPSHOT STRIP — Phase 2 calmer premium treatment */}
+      {isAdmin && snap && (
+        <Card className="mb-6 border border-border/60 shadow-sm bg-gradient-to-r from-primary/5 via-primary/3 to-transparent">
+          <CardContent className="flex flex-wrap items-center gap-6 py-4 px-5">
+            <div className="flex items-center gap-3">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10">
+                <Zap className="h-4 w-4 text-primary" />
+              </div>
+              <div>
+                <div className="text-sm font-semibold text-card-foreground">{t('dashboard.todaysSnapshot')}</div>
+                <div className="text-[10px] text-muted-foreground -mt-0.5">{t('dashboard.livePulse')}</div>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm pl-1">
+              <span><strong className="font-semibold text-card-foreground tabular-nums">{snap.taken}</strong> <span className="text-muted-foreground">{t('dashboard.snapTaken')}</span></span>
+              <span><strong className="font-semibold text-[hsl(var(--success))] tabular-nums">{snap.confirmed}</strong> <span className="text-muted-foreground">{t('dashboard.snapConfirmed')}</span></span>
+              <span><strong className="font-semibold text-primary tabular-nums">{snap.paid}</strong> <span className="text-muted-foreground">{t('dashboard.snapPaid')}</span></span>
+              <span><strong className="font-semibold text-[hsl(var(--success))] tabular-nums">{fmtCurrency(snap.revenue)}</strong> <span className="text-muted-foreground">{t('dashboard.snapRevenue')}</span></span>
+              <span><strong className="font-semibold text-destructive tabular-nums">{snap.returns}</strong> <span className="text-muted-foreground">{t('dashboard.snapReturns')}</span></span>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Dual role personal stats strip */}
+      {isDualRole && agentFilter === 'all' && personalToday && (
+        <Card className="mb-6 border-none shadow-sm bg-gradient-to-r from-[hsl(var(--info))]/5 to-transparent">
+          <CardContent className="flex items-center gap-6 py-3 px-5">
+            <div className="flex items-center gap-2">
+              <Activity className="h-4 w-4 text-[hsl(var(--info))]" />
+              <span className="text-sm font-semibold text-card-foreground">{t('dashboard.myStatsToday')}</span>
+            </div>
+            <div className="flex gap-6 text-sm">
+              <span><strong className="text-card-foreground">{personalToday.total_orders}</strong> <span className="text-muted-foreground">{t('dashboard.statOrders')}</span></span>
+              <span><strong className="text-[hsl(var(--success))]">{personalToday.deals_won}</strong> <span className="text-muted-foreground">{t('dashboard.statWon')}</span></span>
+              <span><strong className="text-destructive">{personalToday.deals_lost}</strong> <span className="text-muted-foreground">lost</span></span>
+              <span><strong className="text-[hsl(var(--info))]">{personalToday.tasks_completed}</strong> <span className="text-muted-foreground">calls</span></span>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* === 2. REVENUE TREND + TOP AGENT + RISK ALERTS (now flows directly after the new top layout) === */}
+      <div className="grid gap-6 lg:grid-cols-3 mb-6">
+        {/* Revenue Trend Chart — Phase 2/3 elevated */}
+        <Card className={`lg:col-span-2 border border-border/60 shadow-sm ${hoverLift}`}>
+          <CardHeader className="pb-2 flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <CardTitle className="text-sm font-semibold text-card-foreground flex items-center gap-2">
+              <TrendingUp className="h-4 w-4 text-primary" />
+              {t('dashboard.salesRevenueOverTime')}
+            </CardTitle>
+            <Tabs value={chartView} onValueChange={v => setChartView(v as any)} className="w-full sm:w-auto">
+              <TabsList className="h-8 w-full sm:w-auto">
+                <TabsTrigger value="revenue" className="text-xs px-3 h-7 flex-1 sm:flex-none">{t('dashboard.tabRevenue')}</TabsTrigger>
+                <TabsTrigger value="orders" className="text-xs px-3 h-7 flex-1 sm:flex-none">{t('dashboard.tabOrders')}</TabsTrigger>
+                <TabsTrigger value="leads" className="text-xs px-3 h-7 flex-1 sm:flex-none">{t('dashboard.tabLeads')}</TabsTrigger>
+              </TabsList>
+            </Tabs>
+          </CardHeader>
+          <CardContent className="pt-2">
+            {revenueTrendData.length === 0 ? (
+              <EmptyState
+                title={t('dashboard.noDataPeriod')}
+                description={t('dashboard.noDataPeriodDesc')}
+                size="sm"
+              />
+            ) : (
+              <ResponsiveContainer width="100%" height={280}>
+                <AreaChart data={revenueTrendData}>
+                  <defs>
+                    <linearGradient id="gradRevenue" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor={CHART_COLORS.primary} stopOpacity={0.28} />
+                      <stop offset="95%" stopColor={CHART_COLORS.primary} stopOpacity={0} />
+                    </linearGradient>
+                    <linearGradient id="gradOrders" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor={CHART_COLORS.secondary} stopOpacity={0.28} />
+                      <stop offset="95%" stopColor={CHART_COLORS.secondary} stopOpacity={0} />
+                    </linearGradient>
+                    <linearGradient id="gradLeads" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor={CHART_COLORS.info} stopOpacity={0.28} />
+                      <stop offset="95%" stopColor={CHART_COLORS.info} stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                  <XAxis dataKey="date" tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} />
+                  <Tooltip contentStyle={{ ...chartTooltipStyle, borderRadius: '8px' }} />
+                  {chartView === 'revenue' && (
+                    <Area type="monotone" dataKey="revenue" stroke={CHART_COLORS.primary} strokeWidth={2} fill="url(#gradRevenue)" name="Revenue (Paid)" />
+                  )}
+                  {chartView === 'orders' && (
+                    <Area type="monotone" dataKey="orders" stroke={CHART_COLORS.secondary} strokeWidth={2} fill="url(#gradOrders)" />
+                  )}
+                  {chartView === 'leads' && (
+                    <Area type="monotone" dataKey="leads" stroke={CHART_COLORS.info} strokeWidth={2} fill="url(#gradLeads)" />
+                  )}
+                </AreaChart>
+              </ResponsiveContainer>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Right column: Top Agent + Alerts — polished */}
+        <div className="space-y-6">
+          {/* Top Agent Widget */}
+          {isAdmin && topAgent && (
+            <Card className={`border border-border/60 bg-card ${hoverLift}`}>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-semibold text-card-foreground flex items-center gap-2">
+                  <Trophy className="h-4 w-4 text-[hsl(var(--warning))]" />
+                  {t('dashboard.topAgentPeriod')}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary text-primary-foreground font-bold text-lg">
+                    {topAgent.name.charAt(0)}
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-card-foreground">{topAgent.name}</p>
+                    <p className="text-xs text-muted-foreground">#{1} by paid revenue</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-2 pt-2">
+                  <div className="rounded-lg bg-muted/50 p-2 text-center">
+                    <p className="text-lg font-bold text-[hsl(var(--success))]">{fmtCurrency(topAgent.paidRevenue)}</p>
+                    <p className="text-[10px] text-muted-foreground">{t('dashboard.paidRevenue')}</p>
+                  </div>
+                  <div className="rounded-lg bg-muted/50 p-2 text-center">
+                    <p className="text-lg font-bold text-primary">{topAgent.paidCount}</p>
+                    <p className="text-[10px] text-muted-foreground">{t('dashboard.paidOrders')}</p>
+                  </div>
+                  <div className="rounded-lg bg-muted/50 p-2 text-center">
+                    <p className="text-lg font-bold text-card-foreground">{topAgent.conversionPct}%</p>
+                    <p className="text-[10px] text-muted-foreground">{t('dashboard.conversion')}</p>
+                  </div>
+                  <div className="rounded-lg bg-muted/50 p-2 text-center">
+                    <p className={`text-lg font-bold ${topAgent.returnPct > 20 ? 'text-destructive' : 'text-card-foreground'}`}>{topAgent.returnPct}%</p>
+                    <p className="text-[10px] text-muted-foreground">{t('dashboard.returnRate')}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Risk & Alert Panel */}
+          {isAdmin && (
+            <Card className={`border border-border/60 bg-card ${hoverLift}`}>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-semibold text-card-foreground flex items-center gap-2">
+                  <Shield className="h-4 w-4 text-destructive" />
+                  {t('dashboard.riskAlerts')}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {alerts.length === 0 ? (
+                  <div className="flex items-center gap-2 text-xs text-[hsl(var(--success))]">
+                    <CheckCircle2 className="h-4 w-4" />
+                    {t('dashboard.allHealthy')}
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {alerts.map((a: any, i: number) => (
+                      <div key={i} className={`flex items-start gap-2 rounded-lg p-2.5 text-xs min-w-0 ${
+                        a.level === 'red' ? 'bg-destructive/10 text-destructive' : 'bg-[hsl(var(--warning))]/10 text-[hsl(var(--warning))]'
+                      }`}>
+                        <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                        <span className="min-w-0 break-words">{a.message}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      </div>
+
+      {/* === 7. TOP AGENTS TEASER + ORDER STATUSES (full detail lives in Insights) === */}
+      <div className="grid gap-6 lg:grid-cols-3 mb-6">
+        {/* Top Agents — compact teaser; the full filterable table is Insights → Agents */}
+        {isAdmin && (
+          <Card className={`lg:col-span-2 border border-border/60 bg-card ${hoverLift}`}>
+            <CardHeader className="pb-2 flex flex-row items-center justify-between">
+              <CardTitle className="text-sm font-semibold text-card-foreground flex items-center gap-2">
+                <Trophy className="h-4 w-4 text-[hsl(var(--warning))]" />
+                {t('dashboard.topAgents')}
+              </CardTitle>
+              <Link to="/insights?tab=agents" className="flex items-center gap-0.5 text-xs font-medium text-primary hover:underline">
+                {t('dashboard.viewAllAgents')} <ChevronRight className="h-3.5 w-3.5" />
+              </Link>
+            </CardHeader>
+            <CardContent>
+              {agentRankings.length === 0 ? (
+                <EmptyState
+                  title={t('dashboard.noAgentData')}
+                  description={t('dashboard.noAgentDataDesc')}
+                  size="sm"
+                />
+              ) : (
+                <div className="space-y-2">
+                  {agentRankings.slice(0, 3).map((a: any, idx: number) => (
+                    <div
+                      key={a.name}
+                      className={`flex items-center justify-between rounded-lg border border-border/50 p-3 ${idx === 0 ? 'bg-primary/5' : 'bg-muted/30'}`}
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary shrink-0">
+                          {a.name.charAt(0)}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-card-foreground truncate flex items-center gap-1.5">
+                            {a.name}
+                            {idx === 0 && <Trophy className="h-3.5 w-3.5 text-[hsl(var(--warning))] shrink-0" />}
+                          </p>
+                          <p className="text-[11px] text-muted-foreground">#{idx + 1} by paid revenue</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-4 text-right shrink-0">
+                        <div>
+                          <p className="text-sm font-bold text-[hsl(var(--success))] tabular-nums">{fmtCurrency(a.paidRevenue)}</p>
+                          <p className="text-[10px] text-muted-foreground">revenue</p>
+                        </div>
+                        <div className="hidden sm:block">
+                          <p className="text-sm font-bold tabular-nums">{a.paidCount}</p>
+                          <p className="text-[10px] text-muted-foreground">paid</p>
+                        </div>
+                        <div className="hidden sm:block">
+                          <p className="text-sm font-bold tabular-nums">{a.conversionPct}%</p>
+                          <p className="text-[10px] text-muted-foreground">conv.</p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Order Statuses — compact counts; full breakdown is Insights → Overview */}
+        <Card className={`border border-border/60 bg-card ${hoverLift}`}>
+          <CardHeader className="pb-2 flex flex-row items-center justify-between">
+            <CardTitle className="text-sm font-semibold text-card-foreground flex items-center gap-2">
+              <FileText className="h-4 w-4 text-primary" />
+              {t('dashboard.orderStatuses')}
+            </CardTitle>
+            <Link to="/insights" className="flex items-center gap-0.5 text-xs font-medium text-primary hover:underline">
+              {t('dashboard.fullBreakdown')} <ChevronRight className="h-3.5 w-3.5" />
+            </Link>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 gap-2">
+              {ALL_STATUSES.map(status => {
+                const count = Number(statusCounts[status] || 0);
+                return (
+                  <div key={status} className="flex items-center justify-between rounded-lg bg-muted/50 px-3 py-2">
+                    <span className="text-xs font-medium text-muted-foreground truncate">{statusLabel(status)}</span>
+                    <span className="text-sm font-bold text-card-foreground tabular-nums">{count}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Stock Levels + Recent Activity — polished */}
+      <div className="grid gap-6 lg:grid-cols-3 mb-6 overflow-hidden">
+        {/* Stock Levels */}
+        {isAdmin && (
+          <Card className={`border border-border/60 bg-card ${hoverLift}`}>
+            <CardHeader className="pb-2 flex flex-row items-center justify-between">
+              <CardTitle className="text-sm font-semibold text-card-foreground flex items-center gap-2">
+                <Package className="h-4 w-4 text-primary" />
+                {t('dashboard.warehouseStock')}
+              </CardTitle>
+              <Link to="/insights?tab=stock" className="flex items-center gap-0.5 text-xs font-medium text-primary hover:underline">
+                {t('dashboard.fullReport')} <ChevronRight className="h-3.5 w-3.5" />
+              </Link>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-3">
+                {[
+                  { label: t('dashboard.lowStock'), count: lowStock, color: 'bg-destructive', textColor: 'text-destructive' },
+                  { label: t('dashboard.mediumStock'), count: medStock, color: 'bg-[hsl(var(--warning))]', textColor: 'text-[hsl(var(--warning))]' },
+                  { label: t('dashboard.highStock'), count: highStock, color: 'bg-[hsl(var(--success))]', textColor: 'text-[hsl(var(--success))]' },
+                ].map(level => (
+                  <div key={level.label} className="flex items-center justify-between rounded-lg bg-muted/50 p-3">
+                    <div className="flex items-center gap-2.5">
+                      <span className={`h-2.5 w-2.5 rounded-full ${level.color}`} />
+                      <span className="text-sm font-medium">{level.label}</span>
+                    </div>
+                    <span className={`text-lg font-bold ${level.textColor}`}>{level.count}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="rounded-lg bg-muted/50 p-3">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs text-muted-foreground">{t('dashboard.totalProducts')}</span>
+                  <span className="text-sm font-bold">{products.length}</span>
+                </div>
+                <div className="h-2 w-full rounded-full bg-muted overflow-hidden flex">
+                  {products.length > 0 && (
+                    <>
+                      <div className="h-full bg-destructive transition-all" style={{ width: `${(lowStock / products.length) * 100}%` }} />
+                      <div className="h-full bg-[hsl(var(--warning))] transition-all" style={{ width: `${(medStock / products.length) * 100}%` }} />
+                      <div className="h-full bg-[hsl(var(--success))] transition-all" style={{ width: `${(highStock / products.length) * 100}%` }} />
+                    </>
+                  )}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Recent Activity */}
+        <Card className={`lg:col-span-2 border border-border/60 bg-card ${hoverLift} overflow-hidden`}>
+          <CardHeader className="pb-2 flex flex-row items-center justify-between">
+            <CardTitle className="text-sm font-semibold text-card-foreground flex items-center gap-2">
+              <Activity className="h-4 w-4 text-primary" />
+              {t('dashboard.recentActivity')}
+            </CardTitle>
+            <span className="text-xs text-muted-foreground">{t('dashboard.nEvents', { count: recentActivity.length })}</span>
+          </CardHeader>
+          <CardContent>
+            {recentActivity.length === 0 ? (
+              <EmptyState
+                title={t('dashboard.noRecentActivity')}
+                description={t('dashboard.noRecentActivityDesc')}
+                size="sm"
+              />
+            ) : (
+              <ScrollArea className="h-[320px] pr-3">
+                <div className="relative max-w-full overflow-hidden">
+                  <div className="absolute left-[15px] top-2 bottom-2 w-px bg-border" />
+                  <div className="space-y-1">
+                    {recentActivity.map((item: any) => {
+                      const isCall = item.type === 'call';
+                      const isNote = item.type === 'note';
+                      const icon = isCall ? Phone : isNote ? MessageSquare : ArrowRightLeft;
+                      const IconComp = icon;
+                      const iconBg = isCall
+                        ? 'bg-[hsl(var(--info))]/15 text-[hsl(var(--info))]'
+                        : isNote
+                        ? 'bg-[hsl(var(--warning))]/15 text-[hsl(var(--warning))]'
+                        : 'bg-primary/10 text-primary';
+                      const timeAgo = getTimeAgo(item.timestamp);
+
+                      return (
+                        <div key={item.id} className="flex gap-3 py-2.5 pl-0 relative group">
+                          <div className={`flex h-[30px] w-[30px] items-center justify-center rounded-full shrink-0 z-10 ${iconBg}`}>
+                            <IconComp className="h-3.5 w-3.5" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-0.5">
+                              <span className="text-xs font-semibold text-card-foreground">{item.actor}</span>
+                              {item.type === 'status_change' && item.metadata?.to && (
+                                <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${
+                                  item.metadata.to === 'confirmed' ? 'bg-[hsl(var(--success))]/15 text-[hsl(var(--success))]' :
+                                  item.metadata.to === 'shipped' ? 'bg-[hsl(var(--info))]/15 text-[hsl(var(--info))]' :
+                                  item.metadata.to === 'cancelled' || item.metadata.to === 'trashed' ? 'bg-destructive/15 text-destructive' :
+                                  'bg-muted text-muted-foreground'
+                                }`}>
+                                  {statusLabel(item.metadata.to)}
+                                </span>
+                              )}
+                              {isCall && item.metadata?.outcome && (
+                                <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${
+                                  item.metadata.outcome === 'confirmed' ? 'bg-[hsl(var(--success))]/15 text-[hsl(var(--success))]' :
+                                  item.metadata.outcome === 'no_answer' ? 'bg-[hsl(var(--warning))]/15 text-[hsl(var(--warning))]' :
+                                  'bg-muted text-muted-foreground'
+                                }`}>
+                                  {item.metadata.outcome}
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-xs text-muted-foreground truncate">{item.description}</p>
+                          </div>
+                          <span className="text-[10px] text-muted-foreground whitespace-nowrap shrink-0 mt-0.5">{timeAgo}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </ScrollArea>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+    </AppLayout>
+  );
+}

@@ -1,0 +1,11 @@
+-- New role: inbound_agent
+--
+-- Inbound agents handle inbound calls/orders and — together with admins — are
+-- the only roles allowed to HEAR call recordings (see role_privacy.can_hear_recordings,
+-- added in the next migration).
+--
+-- This MUST be its own migration: PostgreSQL will not let a newly-added enum
+-- value be USED in the same transaction that adds it. The next migration
+-- (role_privacy + seeds) and the RPC update run in their own transactions and
+-- may safely reference 'inbound_agent'.
+ALTER TYPE public.app_role ADD VALUE IF NOT EXISTS 'inbound_agent';

@@ -1,0 +1,180 @@
+# Elyon Telephony — Stable Version & Restore Runbook
+
+> **Baseline:** `voip-stable-v1` — the first fully-working two-way calling state.
+> Frontend commit **`d4b9349`** (branch `main`). PBX = Sofia VPS as below.
+> **No secrets in this file** (it's committed to git). SIP/A1/admin secrets live in
+> [`docs/VAULT.md`](../VAULT.md) (gitignored) and inside the PBX backup archive.
+> Root-cause history of how we got here: [`VoIP-Troubleshooting-Summary.md`](../../VoIP-Troubleshooting-Summary.md).
+
+---
+
+## 1. What "working" means (smoke test)
+A browser agent at `www.elyoncall.com` (with `VITE_USE_REAL_VOIP=true`) registers, dials a BG mobile, hears ringback, has **two-way audio**, the caller ID shows **+35924234100**, and a recording lands under `/var/spool/asterisk/monitor/`. Up to **10 simultaneous calls** (A1 limit, raised from 4 on 2026-06-29); an 11th gets congestion.
+
+## 2. Inventory (stable-v1)
+
+### VPS
+- Host `pbx.elyoncall.com` / **104.152.48.222**, AlmaLinux 8.10, 60 GB disk, 2 vCPU / 8 GB.
+- **FreePBX 16.0.45**, **Asterisk 20.19.0** (PJSIP, WSS, DTLS-SRTP). PHP 7.4, MariaDB. Apache vhost on 443.
+- SSH: `ssh -i $env:USERPROFILE\.ssh\elyon_vps root@104.152.48.222` (key-only).
+
+### A1 SIP trunk `a1-bulgaria` (IP-auth, no registration)
+- chan_pjsip, **TLS on 5061** to `sbc-nature-thrp.a1.bg` (**195.149.255.243**); identify match `195.149.255.243/32`.
+- `outcid=+35924234100`; **`maxchans=10`** (hard concurrency limit; was 4 until 2026-06-29).
+
+### PJSIP transports — `/etc/asterisk/pjsip.transports_custom.conf`
+- `wss-public` (wss, `0.0.0.0:8089`) — browser WebRTC.
+- `tls-public` (tls, `0.0.0.0:5061`) — A1 trunk.
+- both: `cert_file=/etc/asterisk/certs/fullchain.pem`, `priv_key_file=/etc/asterisk/certs/privkey.pem`, `verify_client/verify_server=no`.
+
+### WSS / TLS cert (the fix that made 8089 bind)
+- `/etc/asterisk/http_custom.conf`: `tlsenable=yes`, `tlsbindaddr=0.0.0.0:8089`, cert/key = `/etc/asterisk/certs/{fullchain,privkey}.pem`.
+- **`asterisk` user must be able to read the LE key.** ACL (survives renewals):
+  `setfacl -m u:asterisk:rx /etc/letsencrypt/live /etc/letsencrypt/archive`
+  `setfacl -m u:asterisk:r /etc/letsencrypt/archive/pbx.elyoncall.com/privkey1.pem`
+  `setfacl -d -m u:asterisk:r /etc/letsencrypt/archive/pbx.elyoncall.com`
+- Renewal deploy hook `/etc/letsencrypt/renewal-hooks/deploy/asterisk-certs.sh` copies certs to `/etc/asterisk/certs/` (asterisk-owned).
+- **Binding the TLS listener requires `fwconsole restart`** (not `core reload`/`pjsip reload`/`systemctl restart asterisk`).
+
+### Extensions (WebRTC) — 1001 Mile, 1002 Miki, 1003 Boris, 1004 Ilija
+- Forced onto `wss-public` via `/etc/asterisk/pjsip_custom_post.conf` (`[100x](+) transport=wss-public`).
+- `webrtc=yes`, `direct_media=no`, **G.711 only** (`disallow=all` / `allow=ulaw,alaw`) via `/etc/asterisk/pjsip.endpoint_custom_post.conf`.
+- Trunk in the same file: `[a1-bulgaria](+)` `disallow=all`/`allow=ulaw,alaw`, **`media_encryption=sdes`** (A1 requires SRTP), `rtp_symmetric=yes`.
+
+### Outbound route `a1-out` (id 1)
+- Patterns `_+359X.`, `_0X.`. **Linked to trunk 1** (`outbound_route_trunks` row `(1,1,0)` — was missing; that was the "all circuits busy" bug).
+
+### Inbound — all 20 DIDs → ring group **600** "Elyon Sales Team"
+- 10 local `024xxxxxxx` + 10 mobile `0882xxxxxx`; RG600 grplist `1001-1002-1003-1004`, `ringall` 45s. (Browser can't answer inbound yet — Phase 9 adds missed-call logging.)
+
+### Recording — `/etc/asterisk/extensions_custom.conf`
+- `[macro-dialout-trunk-predial-hook]` runs `MixMonitor` (both legs) → `/var/spool/asterisk/monitor/YYYY/MM/DD/out-<HHMMSS>-<ext>-<callerid>-to-<dialed>-<uniqueid>.wav`.
+- **2026-06 change:** recording starts at call setup (the `,b` answer-only flag was removed) so the **first ring/beeping is captured**, and the **agent extension** (`${ELYONEXT}`) is now in the filename so the CRM attributes each recording to the agent. `elyon-rec.php` parses both the new and legacy filename formats and returns `ext`.
+
+### Custom files NOT to lose (FreePBX preserves `*_custom*`)
+`pjsip.transports_custom.conf`, `pjsip_custom_post.conf`, `pjsip.endpoint_custom_post.conf`, `http_custom.conf`, `extensions_custom.conf`, the LE deploy hook, and the LE ACLs.
+
+### Frontend / cloud
+- Vercel project `elyoncrm` (team `team_vvGANvn1DSdgZZAIUBkcCSWh`); prod domains `elyoncall.com`/`www.elyoncall.com`.
+- Env: **`VITE_USE_REAL_VOIP=true`** (Production, non-sensitive) + the `VITE_SUPABASE_*` vars. Deploys on push to `main` (GitHub `Gordana1005/elyoncrm`).
+- Supabase project `sxymaloycddnoxudxaqp`; Edge Function `api`. Secrets/keys in [`docs/VAULT.md`](../VAULT.md).
+
+## 3. Backups
+- **PBX:** `/root/elyon-pbx-backup/asterisk-db-stable-v1.sql` (FreePBX MySQL dump) + `asterisk-etc-stable-v1.tar.gz` (`/etc/asterisk`). Refresh before risky changes:
+  `mysqldump asterisk > /root/elyon-pbx-backup/asterisk-db-<tag>.sql`
+  `tar czf /root/elyon-pbx-backup/asterisk-etc-<tag>.tar.gz /etc/asterisk`
+  (Recommended additionally: FreePBX GUI → Admin → Backup & Restore for a full archive.)
+- **Frontend:** git tag **`voip-stable-v1`** = commit `d4b9349`.
+- Per-change config backups already on the VPS: `*.bak-precertfix`, `*.bak-pretls`, `*.bak-precodec`, `*.bak-prerec`.
+
+## 4. Restore from zero
+1. **VPS base:** provision AlmaLinux 8.10; install FreePBX 16.0.45 + Asterisk 20.19.0 (PJSIP/WSS/DTLS-SRTP) — or restore the FreePBX Backup&Restore archive.
+2. **DB + config:** `mysql asterisk < asterisk-db-stable-v1.sql`; restore `/etc/asterisk` from the tarball (or re-apply the custom files in §2). `chown -R asterisk:asterisk /etc/asterisk`.
+3. **Certs:** ensure LE cert for `pbx.elyoncall.com`; deploy hook present; **re-apply the `setfacl` ACLs** (§2) so `asterisk` can read the key.
+4. **A1 trunk:** confirm IP-auth identify `195.149.255.243/32`, `tls-public` transport on 5061, `maxchans=10`, `outcid=+35924234100`. (A1 must allow-list our IP `104.152.48.222`.)
+5. **Routing:** outbound route `a1-out` linked to the trunk (`outbound_route_trunks`); inbound routes for the 20 DIDs → RG600.
+6. **Recording hook:** `extensions_custom.conf` predial MixMonitor present.
+7. **Restart properly:** `fwconsole restart` (rebinds WSS 8089). Verify: `ss -tln | grep 8089`; `pjsip show endpoint a1-bulgaria` = Reachable; `curl` WSS `/ws` returns `101`.
+8. **Frontend:** `git checkout voip-stable-v1`; ensure Vercel `VITE_USE_REAL_VOIP=true`; redeploy (push or Vercel redeploy). Edge Function `api` deployed.
+9. **Smoke test** per §1.
+
+## 5. First things to try if calls break
+1. `fwconsole restart` (rebinds WSS; most issues).
+2. `systemctl restart httpd php-fpm`.
+3. `ss -tln | grep -E ':8089|:5061'` — both must listen. If 8089 missing → cert ACL/`http_custom.conf` (§2).
+4. `pjsip show endpoint a1-bulgaria` — must be Reachable (else A1/TLS/firewall).
+5. One-way / no audio → check codec (G.711 only) + `media_encryption=sdes` on trunk + browser plays remote stream (`RealVoipEngine.attachRemoteMedia`).
+
+---
+
+## 6. Productionization (2026-06) — added after voip-stable-v1
+
+Refreshed backups: `/root/elyon-pbx-backup/asterisk-db-prod.sql`, `asterisk-etc-prod.tar.gz`,
+`elyon-scripts-prod.tar.gz` (the scripts/crons/key/php below), + `astdb-elyon-cid.txt` / `astdb-elyon-did.txt`.
+
+**Per-agent SIP identity (no more shared secret).** Supabase table `telephony_extensions`
+(extension↔user, server-only `sip_secret`, `primary_caller_id`). Pool extensions **1005–1020**
+created on the PBX (clones of 1001). Browser fetches its own creds at login via
+`GET /api/voip/credentials` (auto-claims a free pool ext). The old bundled secret is gone; ext **1001's
+secret was rotated** (PBX `sip` table + `telephony_extensions` in sync).
+
+**Per-agent caller-ID (default .100; superadmin override).** Predial hook
+`[macro-dialout-trunk-predial-hook]` (in `extensions_custom.conf`) sets `CALLERID(num)` from astdb
+`elyon-cid/<ext>`, whitelisted against `elyon-did/<DID>=1`, falling back to `+35924234100`. It runs
+*after* FreePBX's CID forcing so it wins — trunk config untouched. Sync: `/usr/local/bin/elyon-cid-sync.sh`
++ cron `/etc/cron.d/elyon-cid-sync` (every 2 min) pulls `telephony_extensions.primary_caller_id`
+(set in CRM Settings→Telephony) into astdb. Whitelist seeded by `/tmp/setup_cid.sh` (the 20 DIDs in +359 form).
+
+**Recordings.** Same MixMonitor predial hook records outbound calls **from the first ring** (see Recording
+section). Served by `/var/www/html/elyon-rec.php` (token-only, path-jailed, Range-aware; key
+`/etc/asterisk/elyon-rec.key`, mirrored as Supabase function secret `REC_SHARED_SECRET`). CRM surfaces them
+inside **Call History** (`GET /api/call-history` attaches `recording_file` per call + unions recent orphan
+recordings enriched by agent-extension + order-by-phone); `/api/recordings/audio` returns the short-lived
+signed stream URL. (`GET /api/recordings` still exists for the legacy standalone list.) Retention cron
+`/etc/cron.d/elyon-rec-retention` purges `*.wav` older than **30 days** (was 90; tightened 2026-06 because
+record-from-ring raises volume — ~4–5 GB steady-state on 16 GB free).
+**Storage headroom (no action yet):** if the 30-day footprint nears the disk limit, options are (1) transcode
+to a compressed codec (install `ffmpeg`/`lame`; MixMonitor can post-process), (2) bump the AlphaVPS disk, or
+(3) nightly-offload files older than a few days to object storage (Supabase Storage / S3) while keeping recent
+ones local for fast streaming.
+
+**Incoming = missed calls + voicemail (no live ring).** All 20 inbound routes' destination set to
+`elyon-missed-call,s,1` (`incoming.destination`). Context `[elyon-missed-call]` (in `extensions_custom.conf`) runs:
+`NoOp → System(elyon-missed-call.sh — logs the call) → Answer → Wait(1) → Playback(custom/elyon-missed) → Record(vm) → Hangup`,
+plus an `h` (hangup) extension `System(elyon-missed-vm.sh …)` that links any recorded message. CRM Missed Calls page
+assigns an agent / calls back and **plays the voicemail**. **NOTE:** A1 must keep inbound DID delivery active; DIDs
+are matched on the PBX in **`359…`** form (e.g. `35924234100`), not `0…` — see `incoming.extension`.
+
+> 📣 **Caller greeting + voicemail** (greeting 2026-06-05; voicemail same day). We used to hang up *instantly*, so
+> callers thought the call failed and redialed 5–9× (each redial = a real, separate inbound call → many rows for
+> one person). Now we answer, play a greeting, and **record a message** so they stop redialing and we capture what
+> they want. Logging still runs **first** (before Answer) so a hang-up never loses the missed call.
+> - **Greeting:** `/var/lib/asterisk/sounds/custom/elyon-missed.wav` (8 kHz mono 16-bit; `chown asterisk`).
+>   Currently an ElevenLabs "Irina" clip (Натура Терапи greeting + "оставете вашето име и съобщение след сигнала").
+>   To swap: drop a new 8 kHz mono WAV at that path (no `dialplan reload` needed). From text instead (no key):
+>   `curl -sS -G 'https://translate.google.com/translate_tts?ie=UTF-8&tl=bg&client=tw-ob' --data-urlencode 'q@/tmp/g.txt' -A Mozilla/5.0 -o /tmp/g.mp3 && sox /tmp/g.mp3 -r 8000 -c 1 -b 16 <path> norm -3` (add `tempo 1.25` to de-robotise TTS).
+> - **Voicemail capture:** `Record(${VMABS},4,90,k)` writes `/var/spool/asterisk/monitor/YYYY/MM/DD/vm-<uniqueid>.wav`.
+>   On hangup, `h,1` runs `/usr/local/bin/elyon-missed-vm.sh "<uid>" "<rel>" "<abs>"` which, **only if the file ≥16 kB
+>   (~1 s)**, HMAC-POSTs `{uniqueid,file,seconds}` to `POST /api/webhook/missed-call-vm` → stamps `voicemail_file` /
+>   `voicemail_seconds` on the `missed_calls` row (migration `20260624000000`). The CRM streams it via the existing
+>   `elyon-rec.php` signed URL (`GET /api/missed-calls/:id/voicemail-url`, allowed for the assigned agent or a
+>   supervisor). **`elyon-missed-vm.sh` MUST also be `chmod 750`, group `asterisk`** (same trap as the logger below).
+
+> ⚠️ **`elyon-missed-call.sh` MUST be executable by the `asterisk` user** (Asterisk runs `System()` as
+> `asterisk`, not root). Required perms: `chgrp asterisk /usr/local/bin/elyon-missed-call.sh && chmod 750 …`
+> (owner root rwx, group asterisk r-x, others none — keeps the embedded `WEBHOOK_SECRET` unreadable to others).
+> If it's left `700 root:root`, every inbound call hits "Permission denied", the script never runs, and missed
+> calls are **silently lost** — the script does `>/dev/null 2>&1; exit 0`, so nothing surfaces. (Hit 2026-06-04;
+> ~60 real inbound calls from Jun 2–4 were lost and had to be backfilled from `/var/log/asterisk/full` using the
+> epoch in each Asterisk `uniqueid` for `occurred_at`.) Verify with:
+> `sudo -u asterisk /usr/local/bin/elyon-missed-call.sh test 35924234100 t$(date +%s)` → exit 0 + a row in `missed_calls`.
+
+**Supabase:** migrations `20260612…agent_telephony`, `20260613…call_logs_standalone`, `20260614…missed_calls`.
+Function `api` has new endpoints (voip/credentials, voip/agents, recordings, missed-calls, webhook/missed-call).
+Secrets: `REC_SHARED_SECRET` (recordings), `WEBHOOK_SECRET` (webhooks). Frontend env `VITE_USE_REAL_VOIP=true`.
+
+**Restore notes (in addition to §4):** after restoring DB + `/etc/asterisk`: untar `elyon-scripts-prod.tar.gz`
+to replace the scripts/crons/key; `fwconsole reload`; re-run `setup_cid.sh` to seed `elyon-did`; the cron
+rebuilds `elyon-cid` from Supabase. Redeploy the `api` Edge Function; ensure `REC_SHARED_SECRET` +
+`WEBHOOK_SECRET` are set. Pool extensions + `telephony_extensions` come back with the DB dump.
+
+---
+
+## 7. Health & observability (2026-06-18)
+
+Superadmin **VOIP Health** page in the CRM (`/voip-health`) + an app-wide alert banner. It shows
+server health (disk/memory/load), **lines in use vs the 10-line A1 cap**, A1 trunk reachability,
+recording coverage (answered calls with **no** recording + why), call-quality (one-way audio),
+fail2ban bans, recent errors, and outbound minutes. Fed by three PBX-side pieces — a signed live
+collector (`elyon-health.php`), a 3-min cron push (`elyon-pbx-health.sh` → `/api/webhook/pbx-health`,
+stored in `pbx_health_snapshots` for trends), and an Asterisk hangup hook
+(`elyon-call-quality.sh` → `/api/webhook/call-quality`, stored in `call_quality`).
+
+**Deploy + sudoers + A1-minutes checklist:** [`docs/telephony/MONITORING.md`](MONITORING.md) and the
+artifacts under [`docs/telephony/health/`](health/). Migration `20260618120000_pbx_health.sql`;
+edge-function routes `voip/health`, `voip/health/history`, `voip/recording-coverage`, `voip/minutes`
+(+ the two webhooks). Reuses `REC_SHARED_SECRET` (live pull) and `WEBHOOK_SECRET` (pushes).
+
+---
+
+*Last updated 2026-06-18. Baseline tag `voip-stable-v1` (commit d4b9349); productionized through commit 21ae426; health/observability layer added 2026-06-18.*

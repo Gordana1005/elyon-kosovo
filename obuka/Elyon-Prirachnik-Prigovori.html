@@ -1,0 +1,473 @@
+<!doctype html>
+<html lang="mk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Elyon · Справување со приговори — прирачник за агенти</title>
+<style>
+  :root{
+    --bg-0:#0a1310; --bg-1:#0c1814; --bg-2:#10211b;
+    --surface:rgba(255,255,255,.04); --surface-2:rgba(255,255,255,.07);
+    --line:rgba(212,175,55,.22); --line-soft:rgba(255,255,255,.10);
+    --emerald:#10b981; --emerald-l:#43e0a3; --gold:#d4af37; --gold-l:#f0c75e;
+    --ink:#eef5f1; --ink-dim:#a9c0b6; --ink-mut:#7e9890; --white:#f6fbf8;
+    --font:"Segoe UI",system-ui,-apple-system,"Helvetica Neue",Arial,"Noto Sans",sans-serif;
+    /* category accents */
+    --c-price:#f0c75e; --c-hesitation:#f3b562; --c-skeptic:#43e0a3; --c-health:#5fd0c7;
+    --c-trust:#b69cff; --c-logistics:#10b981; --c-difficult:#f08a6e;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:
+      radial-gradient(120% 70% at 90% -10%, rgba(16,185,129,.10), transparent 55%),
+      radial-gradient(80% 60% at -5% 100%, rgba(212,175,55,.06), transparent 55%),
+      linear-gradient(170deg,var(--bg-1),var(--bg-0) 60%);
+    background-attachment:fixed;color:var(--ink);font-family:var(--font);
+    -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;min-height:100vh}
+
+  /* ============ TOP BAR ============ */
+  header.topbar{position:sticky;top:0;z-index:40;backdrop-filter:blur(12px);
+    background:linear-gradient(180deg,rgba(8,16,13,.92),rgba(8,16,13,.78));
+    border-bottom:1px solid var(--line);padding:14px clamp(18px,4vw,56px);
+    display:flex;align-items:center;gap:22px;flex-wrap:wrap}
+  .brand{font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:var(--gold-l);font-size:16px;white-space:nowrap}
+  .brand small{display:block;font-size:11px;letter-spacing:.12em;color:var(--ink-mut);font-weight:600;margin-top:2px}
+  .searchwrap{flex:1;min-width:240px;display:flex;align-items:center;gap:12px}
+  .search{flex:1;position:relative;max-width:560px}
+  .search input{width:100%;background:var(--surface-2);border:1px solid var(--line-soft);border-radius:999px;
+    color:var(--white);font-size:16px;padding:12px 44px 12px 44px;outline:none;font-family:inherit;transition:.15s}
+  .search input:focus{border-color:var(--emerald);box-shadow:0 0 0 4px rgba(16,185,129,.13)}
+  .search .ic{position:absolute;left:16px;top:50%;transform:translateY(-50%);color:var(--ink-mut);font-size:16px}
+  .search .kbd{position:absolute;right:12px;top:50%;transform:translateY(-50%);font-size:11px;color:var(--ink-mut);
+    border:1px solid var(--line-soft);border-radius:6px;padding:2px 7px}
+  .count{font-size:13px;color:var(--ink-mut);white-space:nowrap;font-variant-numeric:tabular-nums}
+  .count b{color:var(--emerald-l)}
+
+  /* ============ FILTER CHIPS ============ */
+  .filters{position:sticky;top:63px;z-index:30;backdrop-filter:blur(12px);
+    background:linear-gradient(180deg,rgba(8,16,13,.85),rgba(8,16,13,.6));
+    border-bottom:1px solid var(--line-soft);padding:11px clamp(18px,4vw,56px);
+    display:flex;gap:9px;flex-wrap:wrap;align-items:center}
+  .chip{cursor:pointer;user-select:none;border:1px solid var(--line-soft);background:var(--surface);
+    color:var(--ink-dim);border-radius:999px;padding:7px 15px;font-size:13.5px;font-weight:600;transition:.15s;white-space:nowrap}
+  .chip:hover{color:var(--white);border-color:var(--line)}
+  .chip[aria-pressed="true"]{background:linear-gradient(135deg,rgba(16,185,129,.22),rgba(212,175,55,.14));
+    color:var(--white);border-color:var(--emerald)}
+  .chip .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:7px;vertical-align:middle}
+
+  main{padding:clamp(20px,3vw,38px) clamp(18px,4vw,56px) 80px;max-width:1400px;margin:0 auto}
+
+  /* ============ METHOD / INTRO ============ */
+  .method{display:grid;grid-template-columns:1.5fr 1fr;gap:18px;margin-bottom:30px}
+  @media (max-width:880px){.method{grid-template-columns:1fr}}
+  .panel{background:var(--surface);border:1px solid var(--line-soft);border-radius:18px;padding:22px 24px}
+  .panel h2{margin:0 0 4px;font-size:13px;letter-spacing:.16em;text-transform:uppercase;color:var(--gold-l);font-weight:700}
+  .panel .sub{margin:0 0 16px;color:var(--ink-mut);font-size:14px}
+  .steps{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+  @media (max-width:560px){.steps{grid-template-columns:1fr}}
+  .step{display:flex;gap:13px;align-items:flex-start}
+  .step .n{flex:none;width:32px;height:32px;border-radius:10px;display:grid;place-items:center;font-weight:800;font-size:15px;
+    color:#06231a;background:linear-gradient(135deg,var(--emerald-l),var(--emerald))}
+  .step .t{font-size:15.5px;line-height:1.35}
+  .step .t b{color:var(--white);display:block;margin-bottom:1px}
+  .step .t span{color:var(--ink-dim)}
+  .toneline{display:flex;flex-wrap:wrap;gap:8px;margin-top:4px}
+  .tone{background:var(--surface-2);border:1px solid var(--line-soft);border-radius:999px;padding:6px 13px;font-size:13.5px;color:var(--ink)}
+  .tone b{color:var(--emerald-l)}
+
+  /* ============ CARDS GRID ============ */
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(380px,1fr));gap:18px}
+  .card{position:relative;background:linear-gradient(165deg,rgba(255,255,255,.05),rgba(255,255,255,.02));
+    border:1px solid var(--line-soft);border-left:4px solid var(--cat,#10b981);border-radius:16px;
+    padding:20px 22px;display:flex;flex-direction:column;gap:13px;transition:.18s}
+  .card:hover{transform:translateY(-3px);border-color:var(--line);box-shadow:0 18px 40px -22px rgba(0,0,0,.7)}
+  .cat-tag{font-size:11.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--cat,#10b981);
+    display:flex;align-items:center;gap:7px}
+  .cat-tag .dot{width:8px;height:8px;border-radius:50%;background:var(--cat,#10b981)}
+  .obj{margin:0;font-size:22px;line-height:1.18;color:var(--white);font-weight:800;letter-spacing:-.3px}
+  .note{font-size:14px;line-height:1.4;color:var(--ink-dim)}
+  .note b{color:var(--gold-l);font-weight:700}
+  .note.principle b{color:var(--emerald-l)}
+  .says{display:flex;flex-direction:column;gap:9px;margin-top:2px}
+  .says .lbl{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-mut);font-weight:700}
+  .say{position:relative;background:rgba(16,185,129,.07);border:1px solid rgba(16,185,129,.18);border-radius:11px;
+    padding:11px 44px 11px 15px;font-size:15.5px;line-height:1.42;color:var(--ink)}
+  .say .copy{position:absolute;top:8px;right:8px;width:28px;height:28px;border:none;background:var(--surface-2);
+    color:var(--ink-mut);border-radius:8px;cursor:pointer;display:grid;place-items:center;font-size:13px;transition:.15s}
+  .say .copy:hover{background:var(--emerald);color:#06231a}
+  .say .copy.done{background:var(--gold);color:#1a1405}
+  .dont{font-size:13.5px;line-height:1.4;color:#f0b0a0;background:rgba(240,138,110,.08);
+    border:1px solid rgba(240,138,110,.2);border-radius:10px;padding:9px 14px}
+  .dont b{color:#f3a08c}
+
+  .empty{grid-column:1/-1;text-align:center;color:var(--ink-mut);padding:60px 20px;font-size:17px}
+
+  /* ============ FOOTER SECTIONS ============ */
+  .closer-wrap{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:30px}
+  @media (max-width:880px){.closer-wrap{grid-template-columns:1fr}}
+  .closers{background:linear-gradient(135deg,rgba(212,175,55,.10),var(--surface));border:1px solid var(--line);border-radius:18px;padding:22px 24px}
+  .redlines{background:linear-gradient(135deg,rgba(240,138,110,.08),var(--surface));border:1px solid rgba(240,138,110,.25);border-radius:18px;padding:22px 24px}
+  .closers h2,.redlines h2{margin:0 0 14px;font-size:13px;letter-spacing:.14em;text-transform:uppercase;font-weight:700}
+  .closers h2{color:var(--gold-l)} .redlines h2{color:#f3a08c}
+  ul.list{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:10px}
+  ul.list li{position:relative;padding-left:26px;font-size:15.5px;line-height:1.4}
+  ul.list li::before{content:"";position:absolute;left:4px;top:8px;width:8px;height:8px;border-radius:3px;background:var(--gold)}
+  .redlines ul.list li::before{background:#f08a6e}
+  ul.list .ph{font-style:italic;color:var(--gold-l)}
+
+  .pagefoot{text-align:center;color:var(--ink-mut);font-size:13px;margin-top:40px;letter-spacing:.04em}
+  .pagefoot b{color:var(--gold-l);letter-spacing:.16em}
+
+  /* toast */
+  .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);opacity:0;
+    background:var(--gold);color:#1a1405;font-weight:700;padding:11px 22px;border-radius:999px;z-index:80;
+    transition:.25s;font-size:14px;pointer-events:none;box-shadow:0 10px 30px -8px rgba(0,0,0,.6)}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+  @media print{
+    body{background:#fff;color:#111}
+    header.topbar,.filters,.toast,.kbd,.copy{display:none !important}
+    .card,.panel,.closers,.redlines{break-inside:avoid;border-color:#ccc}
+    .grid{grid-template-columns:1fr 1fr}
+  }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">ELYON<small>Справување со приговори</small></div>
+  <div class="searchwrap">
+    <div class="search">
+      <span class="ic">🔍</span>
+      <input id="q" type="search" placeholder="Барај приговор или збор…  (пр. скъпо, лекарства, доставка)" autocomplete="off" aria-label="Барај">
+      <span class="kbd">/</span>
+    </div>
+    <span class="count" id="count"></span>
+  </div>
+</header>
+
+<div class="filters" id="filters"></div>
+
+<main>
+  <!-- METHOD -->
+  <section class="method">
+    <div class="panel">
+      <h2>Метод во 4 чекори — за секој приговор</h2>
+      <p class="sub">Приговорот не е „не“ — тоа е прашање или страв. Третирај го така.</p>
+      <div class="steps">
+        <div class="step"><div class="n">1</div><div class="t"><b>Изслушај</b><span>Не прекинувај. Остави го да заврши — често сам си одговара.</span></div></div>
+        <div class="step"><div class="n">2</div><div class="t"><b>Признај</b><span>„<span class="ph" style="font-style:italic;color:var(--emerald-l)">Разбирам ви напълно…</span>“ Емпатија, не одбрана.</span></div></div>
+        <div class="step"><div class="n">3</div><div class="t"><b>Преформулирај</b><span>Цена → вредност. Страв → сигурност (плаќа на курир).</span></div></div>
+        <div class="step"><div class="n">4</div><div class="t"><b>Затвори</b><span>Врати се на избор од две „да“: „<span class="ph" style="font-style:italic;color:var(--emerald-l)">Кое от двете…?</span>“</span></div></div>
+      </div>
+    </div>
+    <div class="panel">
+      <h2>Тон — секогаш</h2>
+      <p class="sub">Како го кажуваш е поважно од што го кажуваш.</p>
+      <div class="toneline">
+        <span class="tone">🕊️ смирено темпо</span>
+        <span class="tone">⏸️ паузирај</span>
+        <span class="tone">👂 не прекинувај</span>
+        <span class="tone">🚫 не спори</span>
+        <span class="tone">✅ не лажи</span>
+        <span class="tone">😊 насмевни се (се слуша)</span>
+        <span class="tone"><b>ти</b> водиш</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- CARDS -->
+  <section class="grid" id="grid"></section>
+
+  <!-- CLOSERS + RED LINES -->
+  <div class="closer-wrap">
+    <div class="closers">
+      <h2>★ Златни реченици за затворање</h2>
+      <ul class="list">
+        <li><span class="ph">„Кое от двете ви устройва повече?“</span> — избор меѓу две „да“.</li>
+        <li><span class="ph">„На кой адрес и кога да изпратим пратката?“</span> — претпостави го „да“.</li>
+        <li><span class="ph">„Плащате чак при доставка — рискът за вас е нула.“</span></li>
+        <li><span class="ph">„Промоцията с подаръчните кутии е само за днес.“</span> — лесна итност.</li>
+        <li><span class="ph">„Нека ви я запазя сега, а вие спокойно ще прецените.“</span></li>
+      </ul>
+    </div>
+    <div class="redlines">
+      <h2>⛔ Црвени линии — никогаш</h2>
+      <ul class="list">
+        <li>Не ветувај <b>излекување</b> и не давај медицинска дијагноза.</li>
+        <li>Никогаш <b>„спрете лекарствата“</b> — ние сме додаток, не замена.</li>
+        <li>Не лажи за цена, состав или ефект.</li>
+        <li>Не притискај агресивно — почит дури и при „не“.</li>
+        <li>Не потврдувај <b>несигурна</b> адреса/нарачка (= враќање).</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="pagefoot"><b>ELYON</b> · Натура Терапи · Прирачник за справување со приговори · 19.06.2026</div>
+</main>
+
+<div class="toast" id="toast">Копирано ✓</div>
+
+<script>
+const CATS = {
+  price:      {label:'Цена и пари',         color:'var(--c-price)'},
+  hesitation: {label:'Двоумење',            color:'var(--c-hesitation)'},
+  skeptic:    {label:'Скептицизам',         color:'var(--c-skeptic)'},
+  health:     {label:'Здравје и лекови',    color:'var(--c-health)'},
+  trust:      {label:'Доверба и приватност',color:'var(--c-trust)'},
+  logistics:  {label:'Достава и плаќање',   color:'var(--c-logistics)'},
+  difficult:  {label:'Тежок клиент',        color:'var(--c-difficult)'},
+};
+
+const DATA = [
+  // ---- PRICE ----
+  {cat:'price', q:'„Скъпо е / много пари са.“',
+    why:'Споредува со една кутија и не ја гледа вредноста на целиот курс.',
+    principle:'Преформулирај цена → вредност. Истакни 4+4 и бесплатна достава.',
+    says:[
+      'Разбирам ви. Но това не е една кутия, а пълен 4-месечен курс — плащате 4, а получавате 8. Тоест половината са подарък, а доставката е напълно безплатна.',
+      'Ако го сметнете на ден, излиза по-малко от едно кафе — а става дума за вашето здраве.',
+      'Точно затова ви предлагам курса на промоция сега — взети поотделно, кутиите излизат доста по-скъпо.'
+    ],
+    dont:'Не паѓај веднаш на половин курс штом ќе чуеш „скъпо“ — прво брани вредност.'},
+
+  {cat:'price', q:'„Нямам толкова пари в момента.“',
+    why:'Прашање на ликвидност и тајминг, не на интерес.',
+    principle:'COD + можност за одложување + половин курс како мост.',
+    says:[
+      'Няма проблем — плащате чак когато пратката пристигне при вас. Нищо предварително.',
+      'Ако желаете, мога да я пусна след няколко дни, когато ви е удобно да платите.',
+      'Мога да ви направя и по-малък старт — 2 месеца — за да започнете, а после продължаваме.'
+    ],
+    dont:'Не одустигнувај — понуди тајминг или половин курс наместо да затвориш разговор.'},
+
+  {cat:'price', q:'„Само една кутия да пробвам.“',
+    why:'Не сака да ризикува; не разбира зошто треба курс.',
+    principle:'Една кутија = нема ефект = разочаран клиент. Објасни го искрено.',
+    says:[
+      'Разбирам, но честно да ви кажа — една кутия няма да свърши работа. Натуралните продукти действат постепенно и се натрупват в организма, затова резултатът идва с редовен курс.',
+      'Една кутия само ще ви разочарова. Затова ви давам 8 за цената на 4 — за да усетите реален ефект.'
+    ],
+    dont:'Не продавај една кутија само за да затвориш — таа нарачка најчесто не се повторува.'},
+
+  // ---- HESITATION ----
+  {cat:'hesitation', q:'„Ще си помисля.“',
+    why:'Меко „не“. Обично крие конкретна, неискажана причина.',
+    principle:'Изолирај ја вистинската пречка — не остава да виси.',
+    says:[
+      'Разбира се. Само да попитам — има ли нещо конкретно, което ви спира? Цената, или не сте сигурни дали ще помогне? За да ви помогна да решите.',
+      'Промоцията с подаръчните кутии е само днес — нека ви я запазя сега, а вие спокойно ще прецените. Плащате чак при доставка.'
+    ],
+    dont:'Не велувај само „добре, помислете“ и не затворувај — секогаш прашај што го сопира.'},
+
+  {cat:'hesitation', q:'„Обадете се пак друг път.“',
+    why:'Можеби е зафатен, или одлага. Закажи конкретно.',
+    principle:'Договори точен термин → оди во Call Again, не во празнина.',
+    says:[
+      'Разбирам, кога ви е удобно да се чуем — утре или вдругиден? Ще ви запиша точен час, за да не ви безпокоя излишно.'
+    ],
+    dont:'Не остава „некогаш“ — без точен термин, повикот е изгубен.'},
+
+  {cat:'hesitation', q:'„Трябва да питам жена ми / мъжа ми.“',
+    why:'Реална причина или учтиво одлагање. Покажи почит и закажи.',
+    principle:'Почит + запази ја понудата + договорен следен повик.',
+    says:[
+      'Напълно ви разбирам, важно е да го решите заедно. Нека ви запазя промоцията и да се чуем утре по същото време — обсъдете го спокойно, без ангажимент. Плащане има само при доставка.'
+    ],
+    dont:'Не притискај да решат веднаш „преку“ партнерот — закажи и врати се.'},
+
+  {cat:'hesitation', q:'„Нямам време сега.“',
+    why:'Можеби навистина, можеби бегство. Понуди кратко или термин.',
+    principle:'Скрати или закажи — не инсистирај на лош момент.',
+    says:[
+      'Само минута ще ви отнема — става дума за вашата поръчка.',
+      'Или, ако предпочитате, кога да ви звънна, за да ви е удобно?'
+    ],
+    dont:'Не туркај цела презентација на човек што брза — ќе изгубиш сѐ.'},
+
+  // ---- SKEPTIC ----
+  {cat:'skeptic', q:'„Тези неща не работят / измама са.“',
+    why:'Имал лошо искуство или гледал реклами без покритие.',
+    principle:'Не се расправај. Емпатија + механизам + социјален доказ + COD.',
+    says:[
+      'Разбирам скепсиса ви — има много некачествени продукти. Затова ние сме различни: 100% натурален, с патентовани съставки.',
+      'Аз говоря всеки ден с клиенти, които споделят реални резултати. И най-важното — плащате чак при доставка, така че вие не рискувате нищо.'
+    ],
+    dont:'Не се обидувај да „победиш“ во расправија — докажи преку нула-ризик.'},
+
+  {cat:'skeptic', q:'„Пробвах други продукти, не помогнаха.“',
+    why:'Често користел премалку, или земал нешто послабо.',
+    principle:'Прашај колку долго користел; позиционирај курс + патентирани состојки.',
+    says:[
+      'Да ви питам — колко време ги ползвахте? Много хора спират твърде рано.',
+      'Нашият е цял курс, направен да действа постепенно и трайно, с патентовани съставки — затова толкова клиенти продължават с него.'
+    ],
+    dont:'Не омаловажувај го претходниот производ агресивно — фокусирај се на разликата.'},
+
+  // ---- HEALTH ----
+  {cat:'health', q:'„Взимам лекарства от доктора.“',
+    why:'Се грижи за интеракција — оправдано.',
+    principle:'НЕ давај медицински совет. Позиционирај како додаток + консултација.',
+    says:[
+      'Много добре, продължавайте терапията на вашия лекар — нашият продукт е хранителна добавка, която подпомага организма, а не замества лекарства.',
+      'Ако имате конкретно състояние, спокойно се консултирайте с лекаря си.'
+    ],
+    dont:'Никогаш „спрете лекарствата“ или „това ще ви излекува“. Тоа е црвена линија.'},
+
+  {cat:'health', q:'„Има ли странични ефекти?“',
+    why:'Стандардна, разумна грижа. Лесна за смирување.',
+    principle:'Истакни 100% природно + погодно за долг курс.',
+    says:[
+      'Продуктът е 100% натурален и няма странични ефекти дори при продължителна употреба. Точно затова е подходящ за дълъг курс.'
+    ],
+    dont:'Не измислувај медицински тврдења — држи се до „природно, без несакани ефекти“.'},
+
+  {cat:'health', q:'„Подходящо ли е за моята възраст / състояние?“',
+    why:'Сака потврда дека е безбедно за него лично.',
+    principle:'Кратко позитивно + насочи кон неговиот конкретен проблем.',
+    says:[
+      'Да, подходящо е — продуктът е натурален и се ползва от хора на различна възраст. Кажете ми какво точно ви притеснява, за да ви насоча най-добре.'
+    ],
+    dont:'Не давај дијагноза. Ако прашува за сериозна болест → насочи кон лекар.'},
+
+  // ---- TRUST ----
+  {cat:'trust', q:'„Откъде имате номера ми?“',
+    why:'Сомнеж за приватност. Смири со јасност и брендот.',
+    principle:'Објасни легитимно потекло + контрола на квалитет.',
+    says:[
+      'Вие сте оставяли запитване или сте поръчвали при нас, затова се обаждам от Натура Терапи, във връзка с вашето здраве. Разговорът се записва с цел контрол на качеството.'
+    ],
+    dont:'Не биди одбранбен или нејасен — јасното потекло гради доверба.'},
+
+  {cat:'trust', q:'„Не съм поръчвал нищо.“',
+    why:'Можеби заборавил, друг член на семејството, или грешка.',
+    principle:'Мирно провери; ако не е тој → учтиво заврши (trash/wrong number).',
+    says:[
+      'Извинявам се, може да е станало запитване от ваш близък или онлайн. Във всеки случай, обаждам се от Натура Терапи — да ви представя ли накратко с какво можем да сме полезни?'
+    ],
+    dont:'Не инсистирај ако јасно не е заинтересиран — означи коректно во системот.'},
+
+  {cat:'trust', q:'„От чужбина ли се обаждате?“',
+    why:'Сака сигурност дека е легитимно и локално.',
+    principle:'Префрли фокус на брендот, доставата и плаќањето во БГ.',
+    says:[
+      'Обаждам се от Натура Терапи; разговорът се записва за качество. Доставката е до всеки адрес в България — с Еконт или Спиди — и плащате на куриера при получаване.'
+    ],
+    dont:'Не влегувај во дебата за локацијата — врати на корист и сигурност.'},
+
+  // ---- LOGISTICS ----
+  {cat:'logistics', q:'„Не плащам предварително.“',
+    why:'Се плаши од измама / онлајн плаќање.',
+    principle:'COD е твојот најсилен адут — нула ризик.',
+    says:[
+      'И не трябва! Плащате на куриера, когато пратката пристигне при вас — наложен платеж. Нищо предварително, никакъв риск за вас.'
+    ],
+    dont:'Не барај претплата никогаш — COD е стандардот.'},
+
+  {cat:'logistics', q:'„Колко е доставката?“',
+    why:'Скриен трошок е чест разлог за откажување.',
+    principle:'Бесплатна достава — кажи го гордо и веднаш.',
+    says:[
+      'Доставката е напълно безплатна — до вашия адрес или до офис на Еконт или Спиди, както ви е удобно.'
+    ],
+    dont:'Не премолчувај за достава — бесплатната достава е силен аргумент.'},
+
+  {cat:'logistics', q:'„Кога ще пристигне?“',
+    why:'Купувачки сигнал! Веќе размислува дека ќе земе.',
+    principle:'Дај јасен рок + предложи термин = чекор кон затворање.',
+    says:[
+      'Обикновено за 1–3 работни дни. Мога да я пусна днес, или да я насроча за ден, който ви е удобен — кога да очаквате куриера?'
+    ],
+    dont:'Не биди неодреден — јасен рок носи сигурност и затвора.'},
+
+  // ---- DIFFICULT ----
+  {cat:'difficult', q:'Лут или груб клиент.',
+    why:'Лош момент, претходно искуство, или едноставно расположение.',
+    principle:'Смиреност и достоинство. Не се расправај — заштити го брендот.',
+    says:[
+      'Извинявам се за безпокойството. Разбирам ви напълно — желая ви хубав ден!',
+      '(ако се смири) Само за момент — да ви кажа едно нещо, което може наистина да ви помогне?'
+    ],
+    dont:'Не подигнувај тон и не се расправај. Затвори учтиво, означи коректно.'},
+];
+
+// ---------- render ----------
+const grid = document.getElementById('grid');
+const filters = document.getElementById('filters');
+const countEl = document.getElementById('count');
+const qinput = document.getElementById('q');
+let activeCat = 'all';
+let query = '';
+
+function esc(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+
+function build(){
+  grid.innerHTML = '';
+  let shown = 0;
+  for (const o of DATA){
+    const c = CATS[o.cat];
+    const hay = (o.q + ' ' + o.why + ' ' + o.principle + ' ' + o.says.join(' ') + ' ' + o.dont + ' ' + c.label).toLowerCase();
+    const matchCat = activeCat === 'all' || o.cat === activeCat;
+    const matchQ = !query || hay.includes(query);
+    if (!matchCat || !matchQ) continue;
+    shown++;
+    const art = document.createElement('article');
+    art.className = 'card';
+    art.style.setProperty('--cat', c.color);
+    art.innerHTML =
+      '<div class="cat-tag"><span class="dot"></span>'+esc(c.label)+'</div>'+
+      '<h3 class="obj">'+esc(o.q)+'</h3>'+
+      '<p class="note"><b>Зошто:</b> '+esc(o.why)+'</p>'+
+      '<p class="note principle"><b>Принцип:</b> '+esc(o.principle)+'</p>'+
+      '<div class="says"><div class="lbl">Што да кажеш</div>'+
+        o.says.map(s=>'<div class="say">'+esc(s)+'<button class="copy" title="Копирај" aria-label="Копирај">⧉</button></div>').join('')+
+      '</div>'+
+      '<p class="dont"><b>Не:</b> '+esc(o.dont)+'</p>';
+    grid.appendChild(art);
+  }
+  if (shown === 0){
+    grid.innerHTML = '<div class="empty">Нема резултат за „'+esc(query)+'“. Пробај друг збор или избери „Сите“.</div>';
+  }
+  countEl.innerHTML = 'Показани: <b>'+shown+'</b> / '+DATA.length;
+}
+
+// filters
+function buildFilters(){
+  const mk = (key,label,color)=>{
+    const b=document.createElement('button');
+    b.className='chip'; b.setAttribute('aria-pressed', key===activeCat);
+    b.innerHTML = (color?'<span class="dot" style="background:'+color+'"></span>':'')+label;
+    b.onclick = ()=>{ activeCat=key; [...filters.children].forEach(c=>c.setAttribute('aria-pressed','false')); b.setAttribute('aria-pressed','true'); build(); };
+    return b;
+  };
+  filters.appendChild(mk('all','Сите',null));
+  for (const k in CATS) filters.appendChild(mk(k, CATS[k].label, CATS[k].color));
+}
+
+// copy to clipboard (event delegation)
+const toast = document.getElementById('toast');
+let toastT;
+grid.addEventListener('click', (e)=>{
+  const btn = e.target.closest('.copy'); if(!btn) return;
+  const text = btn.parentElement.textContent.replace(/⧉\s*$/,'').trim();
+  const done = ()=>{ btn.classList.add('done'); btn.textContent='✓';
+    clearTimeout(toastT); toast.classList.add('show');
+    toastT = setTimeout(()=>{ toast.classList.remove('show'); btn.classList.remove('done'); btn.textContent='⧉'; }, 1400); };
+  if (navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(text).then(done).catch(done); }
+  else { const ta=document.createElement('textarea'); ta.value=text; document.body.appendChild(ta); ta.select();
+    try{document.execCommand('copy');}catch(_){} ta.remove(); done(); }
+});
+
+// search (debounced)
+let _t;
+qinput.addEventListener('input', ()=>{ clearTimeout(_t); _t=setTimeout(()=>{ query=qinput.value.trim().toLowerCase(); build(); },120); });
+document.addEventListener('keydown',(e)=>{
+  if (e.key==='/' && document.activeElement!==qinput){ e.preventDefault(); qinput.focus(); qinput.select(); }
+  else if (e.key==='Escape' && document.activeElement===qinput){ qinput.value=''; query=''; build(); qinput.blur(); }
+});
+
+buildFilters();
+build();
+</script>
+</body>
+</html>

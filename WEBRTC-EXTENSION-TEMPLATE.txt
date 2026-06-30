@@ -1,0 +1,29 @@
+====================================================================
+WebRTC EXTENSION — one per agent (Mile + 2 others = 3 total)
+   Applications → Extensions → Add → "Add New SIP [chan_pjsip] Extension"
+====================================================================
+
+Required fields (per agent):
+  User Extension:    1001 / 1002 / 1003
+  Display Name:      Mile / Agent2 / Agent3
+  Outbound CID:      <YOUR_A1_DID>
+  Secret:            <STRONG_RANDOM>      (use FreePBX's auto-generate)
+
+Advanced tab → toggle:
+  Transport:         wss-transport        (custom transport we added)
+  Media Encryption:  DTLS-SRTP            (REQUIRED for WebRTC)
+  DTLS:              Yes
+  RTP Symmetric:     Yes
+  Force rport:       Yes
+  Rewrite Contact:   Yes
+  ICE Support:       Yes                  (REQUIRED for WebRTC NAT traversal)
+  AVPF:              Yes                  (REQUIRED for WebRTC)
+  Use AVPF:          Yes
+  Codecs:            opus,ulaw,alaw       (opus is best for browser)
+
+Once saved, Apply Config.
+
+The browser SIP.js client connects to:
+  wss://pbx.elyoncall.com:8089/ws
+with credentials  user=1001  password=<extension-secret>
+====================================================================

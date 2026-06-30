@@ -1,0 +1,201 @@
+/* Google Fonts import must be at the very top to avoid Vite warnings */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* =========================================
+       Elyon CRM — Refined Design Tokens (Phase 0)
+       Goal: Move from "2020 enterprise" to "Calm Operational Excellence"
+       ========================================= */
+
+    /* Backgrounds & Surfaces — Very obvious change for testing */
+    --background: 210 25% 92%;           /* Clearly different light blue-gray */
+    --foreground: 220 20% 10%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 220 20% 10%;
+    --card-hover: 210 22% 94%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 20% 10%;
+
+    /* Primary — Stable lighter green (locked) */
+    --primary: 142 72% 48%;              /* Pleasant lighter emerald green */
+    --primary-foreground: 0 0% 100%;
+    --primary-hover: 142 72% 43%;
+
+    /* Secondary / Muted — Better contrast and warmth */
+    --secondary: 220 14% 95%;
+    --secondary-foreground: 220 20% 10%;
+
+    --muted: 220 14% 95%;
+    --muted-foreground: 220 12% 46%;     /* Improved contrast */
+
+    /* Accent — aligned with primary */
+    --accent: 24 90% 53%;
+    --accent-foreground: 0 0% 100%;
+
+    /* Destructive / Semantic */
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 142 72% 35%;
+    --success-foreground: 0 0% 100%;
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 100%;
+    --info: 217 91% 60%;
+    --info-foreground: 0 0% 100%;
+
+    /* Borders & Inputs — Slightly softer */
+    --border: 220 13% 89%;
+    --input: 220 13% 89%;
+    --ring: 24 90% 53%;
+
+    --radius: 0.5rem;
+
+    /* Sidebar — Matching the stable lighter green primary */
+    --sidebar-background: 225 28% 9%;    /* Darker and cooler */
+    --sidebar-foreground: 220 18% 78%;
+    --sidebar-primary: 142 72% 48%;      /* Pleasant lighter emerald green */
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 225 25% 14%;
+    --sidebar-accent-foreground: 0 0% 95%;
+    --sidebar-border: 225 22% 17%;
+    --sidebar-ring: 142 72% 48%;
+    --sidebar-muted: 225 22% 20%;
+  }
+
+  .dark {
+    --background: 225 25% 8%;
+    --foreground: 0 0% 95%;
+    --card: 225 25% 12%;
+    --card-foreground: 0 0% 95%;
+    --popover: 225 25% 12%;
+    --popover-foreground: 0 0% 95%;
+    --primary: 27 95% 48%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 225 20% 18%;
+    --secondary-foreground: 0 0% 95%;
+    --muted: 225 20% 18%;
+    --muted-foreground: 220 10% 55%;
+    --accent: 27 95% 48%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 62% 30%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 225 20% 20%;
+    --input: 225 20% 20%;
+    --ring: 27 95% 48%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-family: 'Inter', sans-serif;
+  }
+}
+
+/* Status pill palette moved to the single source of truth in
+   src/types/index.ts (STATUS_COLORS / PREDICTION_LEAD_COLORS) so every pill —
+   table badge, filter chip, dossier — uses one consistent set of colours. */
+
+/* Notification toast fun effects — happy $ rain for paid orders, subtle drift for refunds */
+@keyframes money-rain {
+  0% {
+    transform: translateY(-8px) rotate(-8deg);
+    opacity: 0;
+  }
+  8% {
+    opacity: 0.95;
+  }
+  92% {
+    opacity: 0.9;
+  }
+  100% {
+    transform: translateY(72px) rotate(18deg);
+    opacity: 0;
+  }
+}
+
+@keyframes sad-drift {
+  0% {
+    transform: translateY(0) scale(1) rotate(0deg);
+    opacity: 0.7;
+  }
+  100% {
+    transform: translateY(38px) scale(0.6) rotate(12deg);
+    opacity: 0;
+  }
+}
+
+/* Dark mode scrollbars — no more white/light scrollbars on dark pages.
+   Gradient matches the sidebar icon vertical color progression (green top → blue/purple → red bottom).
+   Subtle track, gradient thumb for visual interest. Works on sidebar + main dark content areas. */
+html.dark ::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+html.dark ::-webkit-scrollbar-track {
+  background: hsl(var(--sidebar-border));
+  border-radius: 3px;
+}
+
+html.dark ::-webkit-scrollbar-thumb {
+  background: linear-gradient(
+    to bottom,
+    hsl(135, 70%, 52%),   /* green (top) */
+    hsl(180, 68%, 52%),   /* teal */
+    hsl(220, 72%, 52%),   /* blue */
+    hsl(260, 75%, 55%),   /* indigo/purple */
+    hsl(300, 78%, 55%),   /* magenta */
+    hsl(355, 82%, 55%)    /* red (bottom) */
+  );
+  border-radius: 3px;
+}
+
+html.dark ::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(
+    to bottom,
+    hsl(135, 80%, 62%),
+    hsl(180, 78%, 62%),
+    hsl(220, 82%, 62%),
+    hsl(260, 85%, 65%),
+    hsl(300, 88%, 65%),
+    hsl(355, 90%, 65%)
+  );
+}
+
+/* Firefox support (gradient not possible, use a mid-purple tone that fits the theme) */
+html.dark {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(260, 75%, 55%) hsl(var(--sidebar-border));
+}
+
+/* Also apply sensible (non-white) scrollbars on light mode for consistency, using muted grays */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: hsl(var(--muted));
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--muted-foreground) / 0.4);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground) / 0.6);
+}

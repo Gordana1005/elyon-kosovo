@@ -1,0 +1,1 @@
+ALTER TABLE public.orders ADD COLUMN ship_after_date date DEFAULT NULL;

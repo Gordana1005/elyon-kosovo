@@ -1,0 +1,1890 @@
+<!doctype html>
+<html lang="mk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Elyon · Обука за нови агенти за продажба</title>
+<style>
+  :root{
+    --bg-0:#0a1310; --bg-1:#0c1814; --bg-2:#10211b;
+    --surface:rgba(255,255,255,.035);
+    --surface-2:rgba(255,255,255,.06);
+    --line:rgba(212,175,55,.22);
+    --line-soft:rgba(255,255,255,.10);
+    --emerald:#10b981; --emerald-l:#43e0a3; --emerald-d:#0f5132;
+    --gold:#d4af37; --gold-l:#f0c75e; --gold-d:#b8902a;
+    --ink:#eef5f1; --ink-dim:#a9c0b6; --ink-mut:#7e9890;
+    --white:#f6fbf8;
+    --radius:18px;
+    --font:"Segoe UI",system-ui,-apple-system,"Helvetica Neue",Arial,"Noto Sans",sans-serif;
+    --serif:Georgia,"Times New Roman",serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg-0);color:var(--ink);font-family:var(--font);
+    -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+  body{overflow:hidden}
+
+  /* ============ SLIDE FRAME ============ */
+  .slide{
+    position:relative;width:100vw;height:100vh;display:none;flex-direction:column;
+    padding:54px 76px 62px;overflow:hidden;
+    background:
+      radial-gradient(120% 90% at 88% -10%, rgba(16,185,129,.10), transparent 55%),
+      radial-gradient(90% 80% at 0% 110%, rgba(212,175,55,.07), transparent 55%),
+      linear-gradient(160deg,var(--bg-1),var(--bg-0) 70%);
+  }
+  .slide.active{display:flex}
+  .slide::before{content:"";position:absolute;inset:0;pointer-events:none;
+    background-image:linear-gradient(rgba(255,255,255,.018) 1px,transparent 1px),
+                     linear-gradient(90deg,rgba(255,255,255,.018) 1px,transparent 1px);
+    background-size:46px 46px;mask-image:radial-gradient(120% 120% at 50% 30%,#000,transparent 80%);opacity:.5}
+
+  .wrap{position:relative;z-index:2;display:flex;flex-direction:column;height:100%;min-height:0}
+  .kicker{font-size:14px;font-weight:700;letter-spacing:.22em;text-transform:uppercase;
+    color:var(--gold-l);display:flex;align-items:center;gap:12px;margin-bottom:14px}
+  .kicker::before{content:"";width:30px;height:2px;background:linear-gradient(90deg,var(--gold),transparent);border-radius:2px}
+  h2.title{font-size:44px;line-height:1.04;margin:0 0 12px;font-weight:800;color:var(--white);letter-spacing:-.5px}
+  h2.title .accent{color:var(--emerald-l)}
+  .lead{font-size:20.5px;line-height:1.4;color:var(--ink-dim);max-width:1060px;margin:0 0 11px}
+  .body{flex:1;min-height:0;display:flex;flex-direction:column;gap:12px}
+  ul.points{margin:3px 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px}
+  ul.points li{position:relative;padding-left:31px;font-size:18px;line-height:1.34;color:var(--ink)}
+  ul.points li::before{content:"";position:absolute;left:6px;top:11px;width:9px;height:9px;border-radius:3px;
+    background:linear-gradient(135deg,var(--emerald-l),var(--emerald));box-shadow:0 0 0 4px rgba(16,185,129,.13)}
+  ul.points li b{color:var(--white)}
+  ul.points.gold li::before{background:linear-gradient(135deg,var(--gold-l),var(--gold-d));box-shadow:0 0 0 4px rgba(212,175,55,.13)}
+  .muted{color:var(--ink-mut)}
+  .em{color:var(--emerald-l);font-weight:700}
+  .go{color:var(--gold-l);font-weight:700}
+
+  .foot{position:absolute;left:76px;right:76px;bottom:22px;z-index:2;display:flex;justify-content:space-between;
+    align-items:center;font-size:12.5px;color:var(--ink-mut);letter-spacing:.04em}
+  .foot .wm{font-weight:800;letter-spacing:.18em;color:var(--gold-l);text-transform:uppercase}
+  .foot .wm small{color:var(--ink-mut);font-weight:600;letter-spacing:.14em;margin-left:8px}
+
+  /* ============ CARDS / GRIDS ============ */
+  .cards{display:grid;gap:16px}
+  .g2{grid-template-columns:repeat(2,1fr)} .g3{grid-template-columns:repeat(3,1fr)}
+  .g4{grid-template-columns:repeat(4,1fr)}
+  .card{background:var(--surface);border:1px solid var(--line-soft);border-radius:var(--radius);padding:20px 22px;
+    display:flex;flex-direction:column;gap:8px}
+  .card.lift{background:linear-gradient(160deg,rgba(16,185,129,.10),var(--surface));border-color:var(--line)}
+  .card h4{margin:0;font-size:18px;color:var(--white);font-weight:700;display:flex;align-items:center;gap:9px}
+  .card p{margin:0;font-size:14.5px;line-height:1.38;color:var(--ink-dim)}
+  .card .ic{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;font-size:18px;
+    background:linear-gradient(135deg,rgba(16,185,129,.22),rgba(212,175,55,.16));border:1px solid var(--line)}
+  .card .tag{font-size:13px;color:var(--gold-l);font-weight:700;letter-spacing:.04em}
+
+  .callout{border-left:4px solid var(--gold);background:linear-gradient(90deg,rgba(212,175,55,.12),rgba(212,175,55,.02));
+    padding:12px 20px;border-radius:0 14px 14px 0;font-size:16.5px;line-height:1.36;color:var(--ink)}
+  .callout b{color:var(--gold-l)}
+  .callout.em{border-left-color:var(--emerald);background:linear-gradient(90deg,rgba(16,185,129,.12),rgba(16,185,129,.02))}
+  .callout.em b{color:var(--emerald-l)}
+
+  /* flow diagram */
+  .flow{display:flex;align-items:stretch;gap:0;flex-wrap:wrap}
+  .flow .step{flex:1;min-width:140px;background:var(--surface);border:1px solid var(--line-soft);border-radius:14px;
+    padding:16px 14px;text-align:center;display:flex;flex-direction:column;gap:6px;justify-content:center}
+  .flow .step .n{font-size:13px;color:var(--gold-l);font-weight:800;letter-spacing:.1em}
+  .flow .step .t{font-size:16.5px;color:var(--white);font-weight:700;line-height:1.25}
+  .flow .step .d{font-size:13.5px;color:var(--ink-mut)}
+  .flow .arrow{display:flex;align-items:center;color:var(--emerald-l);font-size:24px;padding:0 8px}
+
+  /* numbered vertical steps */
+  .steps{display:flex;flex-direction:column;gap:11px}
+  .steps .row{display:flex;gap:16px;align-items:flex-start;background:var(--surface);border:1px solid var(--line-soft);
+    border-radius:13px;padding:13px 18px}
+  .steps .row .num{flex:none;width:34px;height:34px;border-radius:10px;display:grid;place-items:center;font-weight:800;
+    color:#06231a;background:linear-gradient(135deg,var(--emerald-l),var(--emerald));font-size:17px}
+  .steps .row .tx{font-size:17.5px;line-height:1.35}
+  .steps .row .tx b{color:var(--white)}
+  .steps .row .tx span{color:var(--ink-mut)}
+
+  /* tables */
+  table.tbl{width:100%;border-collapse:collapse;font-size:16.5px}
+  table.tbl th{text-align:left;font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--gold-l);
+    font-weight:700;padding:10px 14px;border-bottom:1px solid var(--line)}
+  table.tbl td{padding:10px 14px;border-bottom:1px solid var(--line-soft);color:var(--ink);vertical-align:top}
+  table.tbl tr:last-child td{border-bottom:none}
+  table.tbl td b{color:var(--white)}
+  table.tbl .price{font-family:var(--serif);color:var(--emerald-l);white-space:nowrap;font-weight:600}
+  table.tbl .lv{color:var(--ink-mut);font-size:13.5px}
+  table.compact td,table.compact th{padding:7px 12px;font-size:15px}
+
+  /* term chips */
+  .terms{display:flex;flex-wrap:wrap;gap:9px}
+  .chip{background:var(--surface-2);border:1px solid var(--line-soft);border-radius:999px;padding:7px 15px;font-size:15.5px;color:var(--ink)}
+  .chip.go{border-color:var(--line);color:var(--gold-l)}
+
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:22px;flex:1;min-height:0}
+  .panel{background:var(--surface);border:1px solid var(--line-soft);border-radius:var(--radius);padding:18px 22px;display:flex;flex-direction:column;gap:10px;min-height:0}
+  .panel h4{margin:0 0 2px;font-size:17px;color:var(--gold-l);letter-spacing:.04em;text-transform:uppercase;font-weight:700}
+  .panel.em h4{color:var(--emerald-l)}
+
+  .big{font-family:var(--serif);font-size:64px;font-weight:700;color:var(--emerald-l);line-height:1}
+  .stat{display:flex;flex-direction:column;gap:4px}
+  .stat .lbl{font-size:15px;color:var(--ink-mut)}
+
+  /* ============ COVER ============ */
+  .cover{align-items:flex-start;justify-content:center}
+  .cover .brand{font-size:20px;font-weight:800;letter-spacing:.3em;text-transform:uppercase;color:var(--gold-l)}
+  .cover .brand small{display:block;font-size:11.5px;letter-spacing:.34em;color:var(--ink-mut);margin-top:6px}
+  .cover h1{font-size:74px;line-height:1.02;margin:26px 0 0;font-weight:900;color:var(--white);letter-spacing:-1px;max-width:1180px}
+  .cover h1 .accent{background:linear-gradient(120deg,var(--emerald-l),var(--gold-l));-webkit-background-clip:text;background-clip:text;color:transparent}
+  .cover .sub{font-size:24px;color:var(--ink-dim);margin-top:24px;max-width:980px;line-height:1.45}
+  .cover .meta{margin-top:40px;display:flex;gap:14px;align-items:center;font-size:15px;color:var(--ink-mut);letter-spacing:.04em}
+  .cover .meta .dot{width:5px;height:5px;border-radius:50%;background:var(--gold)}
+  .cover .rule{width:96px;height:4px;border-radius:4px;margin-top:30px;background:linear-gradient(90deg,var(--gold),var(--emerald))}
+
+  /* ============ DIVIDER ============ */
+  .divider{justify-content:center}
+  .divider .pnum{font-family:var(--serif);font-size:150px;font-weight:700;line-height:.8;color:transparent;
+    -webkit-text-stroke:2px var(--gold);opacity:.65}
+  .divider h2{font-size:62px;font-weight:900;color:var(--white);margin:14px 0 0;letter-spacing:-.5px}
+  .divider .dk{font-size:15px;letter-spacing:.26em;text-transform:uppercase;color:var(--emerald-l);font-weight:700}
+  .divider .dl{font-size:20px;color:var(--ink-dim);margin-top:16px;max-width:820px;line-height:1.45}
+
+  /* script (appendix) */
+  .script{display:grid;grid-template-columns:1fr;gap:9px;flex:1;min-height:0;font-size:15px;line-height:1.42}
+  .beat{background:var(--surface);border:1px solid var(--line-soft);border-radius:11px;padding:10px 16px}
+  .beat .bl{font-size:11.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--gold-l);font-weight:800;margin-bottom:3px}
+  .beat .cue{color:var(--emerald-l);font-style:italic}
+  .scols{column-count:2;column-gap:26px}
+  .scols .beat{break-inside:avoid;margin-bottom:9px}
+
+  .ph{font-family:var(--serif);font-style:italic;color:var(--ink-dim)}
+
+  /* ============ NAV / CHROME ============ */
+  .progress{position:fixed;top:0;left:0;height:3px;background:linear-gradient(90deg,var(--emerald),var(--gold));
+    z-index:50;transition:width .25s ease;box-shadow:0 0 12px rgba(16,185,129,.5)}
+  .hud{position:fixed;bottom:16px;right:22px;z-index:50;display:flex;align-items:center;gap:10px;
+    background:rgba(8,16,13,.7);border:1px solid var(--line-soft);backdrop-filter:blur(8px);
+    padding:7px 10px;border-radius:999px;font-size:13px;color:var(--ink-dim)}
+  .hud button{all:unset;cursor:pointer;width:26px;height:26px;border-radius:50%;display:grid;place-items:center;
+    color:var(--ink);font-size:15px;transition:.15s}
+  .hud button:hover{background:var(--surface-2);color:var(--gold-l)}
+  .hud .ctr{font-variant-numeric:tabular-nums;min-width:54px;text-align:center;letter-spacing:.05em}
+  .hint{position:fixed;bottom:18px;left:22px;z-index:50;font-size:12px;color:var(--ink-mut);letter-spacing:.03em;
+    background:rgba(8,16,13,.55);padding:6px 12px;border-radius:999px;border:1px solid var(--line-soft)}
+
+  /* ============ PRINT → PDF (one slide per landscape page) ============ */
+  @media print{
+    @page{size:1280px 720px;margin:0}
+    html,body{width:1280px;height:auto;overflow:visible;background:var(--bg-0)}
+    .slide{display:flex !important;width:1280px;height:720px;page-break-after:always;break-after:page}
+    .progress,.hud,.hint{display:none !important}
+    .slide::before{opacity:.45}
+  }
+</style>
+</head>
+<body>
+<div class="progress" id="progress"></div>
+
+<!-- ===================== 1 · COVER ===================== -->
+<section class="slide cover active">
+  <div class="wrap" style="justify-content:center">
+    <div class="brand">Elyon Premium Group<small>Во партнерство со Натура Терапи · naturatherapy.bg</small></div>
+    <h1>Обука за нови <span class="accent">агенти за продажба</span></h1>
+    <div class="sub">Сѐ што ти треба за првиот ден — компанијата, продуктите, скриптите, системот и испораката. Чекор по чекор. Целта на оваа обука е да станеш сигурен на телефон и да знаеш точно што да кажеш во секоја ситуација.</div>
+    <div class="rule"></div>
+    <div class="meta"><span>Струмица</span><span class="dot"></span><span>18.06.2026</span><span class="dot"></span><span>Интерен материјал</span></div>
+  </div>
+  <div class="hint">← →  навигација  ·  F  цел екран  ·  P  печати / PDF</div>
+</section>
+
+<!-- ===================== 2 · AGENDA ===================== -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Содржина</div>
+    <h2 class="title">Што ќе поминеме денес</h2>
+    <div class="body">
+      <div class="cards g4">
+        <div class="card lift"><span class="tag">01</span><h4>Вовед</h4><p>Кои сме, што продаваме, како продаваме, што е агент.</p></div>
+        <div class="card lift"><span class="tag">02</span><h4>Сектори</h4><p>Pending · Predikcija · Inbound / мониторинг.</p></div>
+        <div class="card lift"><span class="tag">03</span><h4>Продукти</h4><p>Каталог, најпродавани, природно vs хемиско.</p></div>
+        <div class="card lift"><span class="tag">04</span><h4>Болести</h4><p>Проблематики и симптоми кај нашите клиенти.</p></div>
+        <div class="card lift"><span class="tag">05</span><h4>Скрипти</h4><p>Болест → продукт, со бугарски термини.</p></div>
+        <div class="card lift"><span class="tag">06</span><h4>Систем</h4><p>Calls, Call Again, Missed, Personal List, Dashboard.</p></div>
+        <div class="card lift"><span class="tag">07</span><h4>Статуси + CONFIRM</h4><p>Статуси, внес на нарачка, адреси и офиси.</p></div>
+        <div class="card lift"><span class="tag">08</span><h4>Карго</h4><p>Speedy / Econt, кога се праќа, кога пристига.</p></div>
+      </div>
+      <div class="callout">Бонус: <b>валута (1.95583)</b>, <b>провизии</b> (твојата заработка), пребарување по телефон и чек-листа за совршен повик. На крајот — <b>целосните скрипти</b> како прилог.</div>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">Elyon<small>Обука за агенти</small></span><span>Содржина</span></div>
+</section>
+
+<!-- ===================== PART 1 DIVIDER ===================== -->
+<section class="slide divider">
+  <div class="wrap" style="justify-content:center">
+    <div class="dk">Дел прв</div>
+    <div class="pnum">1</div>
+    <h2>Вовед</h2>
+    <div class="dl">Кои сме, што продаваме, на кој начин ја вршиме продажбата и што значи да си агент за продажба кај нас.</div>
+  </div>
+  <div class="foot"><span class="wm">Elyon<small>Обука за агенти</small></span><span>Дел 1 · Вовед</span></div>
+</section>
+
+<!-- 1.1 што сме -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Дел 1 · Вовед</div>
+    <h2 class="title">Каква фирма сме</h2>
+    <div class="body">
+      <p class="lead">Elyon Premium Group е <b style="color:var(--white)">call-центар за продажба</b> со седиште во Струмица. Работиме во <span class="em">партнерство со Натура Терапи</span> — брендот чии природни производи ги продаваме. Нашите клиенти се во Бугарија, а целата комуникација е преку телефон. Не работиме на шалтер и не чекаме клиентот да дојде — ние одиме кон него.</p>
+      <div class="cards g3">
+        <div class="card lift"><div class="ic">📍</div><h4>Каде сме</h4><p>Тимот е во Струмица. Магацинот и куририте се во Бугарија.</p></div>
+        <div class="card lift"><div class="ic">🗣️</div><h4>На кој јазик</h4><p>Разговорите се на <b>бугарски</b>. Ние зборуваме македонски — јазиците се разбираат меѓусебно, лесно се навикнуваш.</p></div>
+        <div class="card lift"><div class="ic">🌿</div><h4>Партнери со Натура Терапи</h4><p>Кон клиентот настапуваме во име на <b>„Натура Терапи“</b> (naturatherapy.bg) — брендот што го знаат и му веруваат. Партнерството ни дава вистински бренд и квалитетни производи зад секој повик.</p></div>
+      </div>
+      <div class="callout em">Запомни: клиентот те доживува како <b>грижа за клиенти на Натура Терапи</b> — не како непознат продавач. Затоа тонот е топол и стручен. Зад тебе стои вистинска фирма со вистински производи, што ти дава сигурност во разговорот.</div>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">Elyon<small>Обука за агенти</small></span><span>Дел 1 · Вовед</span></div>
+</section>
+
+<!-- 1.2 што продаваме -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Дел 1 · Вовед</div>
+    <h2 class="title">Што продаваме</h2>
+    <div class="body">
+      <p class="lead" style="margin:0 0 2px">Нашата понуда се <b style="color:var(--white)">природни хранливи додатоци на Натура Терапи</b> — за конкретни, реални здравствени проблеми. Секој производ има јасна намена и целна група, па знаеш точно кому што да понудиш.</p>
+      <div class="two">
+        <div class="panel em">
+          <h4>Природни хранливи додатоци</h4>
+          <ul class="points">
+            <li>Суплементи за <b>конкретен здравствен проблем</b> — мозок, дишење, зглобови, дијабет, простата, кожа, тежина…</li>
+            <li><b>55 активни</b> продукти во каталогот.</li>
+            <li>Фокусот е на <span class="go">11 најпродавани</span> — нив ги учиш напамет.</li>
+          </ul>
+        </div>
+        <div class="panel">
+          <h4>Што всушност продаваме</h4>
+          <ul class="points gold">
+            <li>Не продаваме „кутија апчиња“.</li>
+            <li>Продаваме <b>решение за проблем</b> и <b>грижа</b>.</li>
+            <li>И продаваме <b>курс</b> (подолга употреба), не една кутија — заради начинот на кој делуваат природните продукти.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">Elyon<small>Обука за агенти</small></span><span>Дел 1 · Вовед</span></div>
+</section>
+
+<!-- 1.3 како функционира продажбата -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Дел 1 · Вовед</div>
+    <h2 class="title">На кој начин ја вршиме продажбата</h2>
+    <div class="body">
+      <div class="flow">
+        <div class="step"><span class="n">1</span><span class="t">Lead</span><span class="d">потенцијален клиент влегува во системот</span></div>
+        <div class="arrow">→</div>
+        <div class="step"><span class="n">2</span><span class="t">Повик + потврда</span><span class="d">агентот се јавува и потврдува нарачка</span></div>
+        <div class="arrow">→</div>
+        <div class="step"><span class="n">3</span><span class="t">Магацин</span><span class="d">пакува во Бугарија</span></div>
+        <div class="arrow">→</div>
+        <div class="step"><span class="n">4</span><span class="t">Курир</span><span class="d">Speedy / Econt испорачуваат</span></div>
+        <div class="arrow">→</div>
+        <div class="step"><span class="n">5</span><span class="t">Плаќање</span><span class="d">клиентот плаќа на курир (COD)</span></div>
+      </div>
+      <div class="callout"><b>COD = наложен платеж.</b> Клиентот плаќа <b>кога ќе ја прими</b> пратката, на курирот — не плаќа однапред. Тоа значи нула ризик за клиентот, што многу го олеснува „да“-то. Но затоа потврдата на адреса и телефон мора да е точна — инаку пратката се враќа, а трошокот за достава паѓа на нас.</div>
+      <p class="lead" style="margin:0">Тоа е целиот круг: <span class="em">lead → потврдена нарачка → испорака → наплата → готово.</span> Твоето место е во чекор 2 — но влијаеш на сѐ. Добра потврда значи помалку враќања и повеќе платени нарачки.</p>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">Elyon<small>Обука за агенти</small></span><span>Дел 1 · Вовед</span></div>
+</section>
+
+<!-- 1.4 каде сме во ланецот -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Дел 1 · Вовед</div>
+    <h2 class="title">Каде сме <span class="accent">ние</span> во ланецот</h2>
+    <div class="body">
+      <div class="cards g3">
+        <div class="card"><span class="tag">ГОРЕ</span><h4>Набавка на клиенти</h4><p>Реклами, кампањи, листи. Тука се „раѓаат“ leads.</p></div>
+        <div class="card lift" style="border-color:var(--emerald)"><span class="tag" style="color:var(--emerald-l)">НИЕ</span><h4>Конверзија — call-центар</h4><p>Ние ги претвораме заинтересираните во <b>потврдени купувачи</b>. Тука е сета вредност.</p></div>
+        <div class="card"><span class="tag">ДОЛУ</span><h4>Магацин + курир</h4><p>Пакување и испорака низ цела Бугарија, наплата COD.</p></div>
+      </div>
+      <div class="callout em">Нашата единствена задача: <b>од „можеби“ да направиме „да“.</b> Колку подобро потврдуваме и продаваме курс, толку повеќе вреди целиот ланец. Рекламите и производите се веќе обезбедени — вредноста што ја создаваме зависи целосно од квалитетот на нашиот разговор. Затоа секој повик е важен и секој клиент заслужува внимание.</div>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">Elyon<small>Обука за агенти</small></span><span>Дел 1 · Вовед</span></div>
+</section>
+
+<!-- 1.5 што е агент + обврски -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Дел 1 · Вовед</div>
+    <h2 class="title">Позицијата „агент за продажба“</h2>
+    <div class="body">
+      <p class="lead" style="margin:0 0 6px">Главна задача: <span class="em">да се јавуваш, да слушаш, да поврзеш проблем со продукт и да потврдиш нарачка.</span> Не се очекува да бидеш лекар — се очекува да бидеш добар соговорник кој знае што нуди. Сѐ друго (листите, кого да викаш и кога) системот ти го подготвува.</p>
+      <div class="two">
+        <div class="panel"><h4>Основни обврски</h4>
+          <ul class="points">
+            <li>Присуство и точност на <b>смените</b>.</li>
+            <li>Работа со <b>листата што ти е доделена</b> (не бираш сам кого да викаш).</li>
+            <li><b>Точен внес</b> на нарачка: име, телефон, град, адреса, продукт, количина.</li>
+            <li>Јасни и вистинити <b>белешки</b> по секој разговор.</li>
+          </ul>
+        </div>
+        <div class="panel em"><h4>Како го мериме успехот</h4>
+          <ul class="points gold">
+            <li>Колку <b>потврдени</b> и колку <b>платени</b> нарачки правиш.</li>
+            <li>Колку често продаваш <b>цел курс</b>, не една кутија.</li>
+            <li>Квалитет на разговор (снимките се проверуваат).</li>
+            <li>Од тоа зависи и твојата <b>провизија</b> (види крај).</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">Elyon<small>Обука за агенти</small></span><span>Дел 1 · Вовед</span></div>
+</section>
+
+<!-- 1.6 однесување -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Дел 1 · Вовед</div>
+    <h2 class="title">Како да се однесуваш на телефон</h2>
+    <div class="body">
+      <div class="cards g2">
+        <div class="card lift"><h4>✅ Прави</h4><p>Тон: смирен, сигурен, пријателски — <b>експерт што се грижи</b>, не наметлив. Слушај повеќе отколку што зборуваш. Велиш „<span class="ph">Разбирам ви напълно</span>“.</p></div>
+        <div class="card"><h4>🚫 Не прави</h4><p>Без притисок, без лаги, без измислени ветувања и без „медицинска дијагноза“. Не ветувај излекување — велиме <b>подобрување и поддршка</b>.</p></div>
+      </div>
+      <div class="callout"><b>Секогаш на почеток:</b> „<span class="ph">…разговорът се записва с цел контрол на качеството…</span>“ Тоа гради доверба и нѐ штити. Зборувај смирено и со темпо — не брзај да продадеш. Клиентот купува од некој на кого му верува, не од некој што го притиска.</div>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">Elyon<small>Обука за агенти</small></span><span>Дел 1 · Вовед</span></div>
+</section>
+
+<!-- 1.7 анатомија на скриптата -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Дел 1 · Вовед</div>
+    <h2 class="title">Анатомија на скриптата</h2>
+    <div class="body">
+      <p class="lead" style="margin:0 0 2px">Секоја скрипта ја следи <b style="color:var(--white)">истата шема</b> — научи ја шемата, не текстот напамет. Така звучиш природно, а не како да читаш од лист.</p>
+      <div class="steps">
+        <div class="row"><div class="num">1</div><div class="tx"><b>Поздрав + претставување</b> — „Натура Терапи“, благодарност, „разговорът се записва“.</div></div>
+        <div class="row"><div class="num">2</div><div class="tx"><b>Емпатија + отворени прашања</b> — <span>„Како се чувствувахте докато го ползвахте?“</span></div></div>
+        <div class="row"><div class="num">3</div><div class="tx"><b>Длабочина</b> — <span>од кога е проблемот, што се пробало досега.</span></div></div>
+        <div class="row"><div class="num">4</div><div class="tx"><b>Објаснување на проблемот</b> — стручно, со <span style="color:var(--gold-l)">бугарски термини</span>.</div></div>
+        <div class="row"><div class="num">5</div><div class="tx"><b>Продукт + состојки</b> — зошто токму тој делува на причината.</div></div>
+        <div class="row"><div class="num">6</div><div class="tx"><b>Понуда + приговор</b> — полн курс; ако е многу → половин курс.</div></div>
+        <div class="row"><div class="num">7</div><div class="tx"><b>Меко затворање</b> — <span>„На кой адрес и кога да изпратим?“</span></div></div>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">Elyon<small>Обука за агенти</small></span><span>Дел 1 · Вовед</span></div>
+</section>
+
+<!-- 1.8 прашања + доверба -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Дел 1 · Вовед</div>
+    <h2 class="title">Што да прашуваш и како да добиеш доверба</h2>
+    <div class="body">
+      <p class="lead" style="margin:0 0 2px">Колку повеќе зборува клиентот, толку подобро — твоја работа е да прашуваш и да слушаш. Прашањата истовремено ти откриваат и проблем и мотив за купување.</p>
+      <div class="two">
+        <div class="panel"><h4>Прашања што секогаш ги поставуваш</h4>
+          <ul class="points">
+            <li><span class="ph">„Как се чувствахте, докато го ползвахте?“</span></li>
+            <li><span class="ph">„От колко време имате тези проблеми?“</span></li>
+            <li><span class="ph">„Пробвали ли сте други продукти досега?“</span></li>
+            <li><span class="ph">„Колко искахте да свалите / как са нивата…?“</span> (по продукт)</li>
+          </ul>
+        </div>
+        <div class="panel em"><h4>Како се гради доверба</h4>
+          <ul class="points gold">
+            <li><b>Активно слушање</b> — паузирај, не прекинувај.</li>
+            <li><b>Social proof</b>: <span class="ph">„много клиенти споделят, че…“</span></li>
+            <li><b>Стручност</b>: објасни ја причината, не само производот.</li>
+            <li><b>Искреност</b>: реални очекувања → клиентот се враќа.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">Elyon<small>Обука за агенти</small></span><span>Дел 1 · Вовед</span></div>
+</section>
+
+<!-- ===================== PART 2 DIVIDER ===================== -->
+<section class="slide divider">
+  <div class="wrap" style="justify-content:center">
+    <div class="dk">Дел втор</div>
+    <div class="pnum">2</div>
+    <h2>Подели на сектори</h2>
+    <div class="dl">Каде работиш зависи од секторот. Трите главни се: Pending, Predikcija и Inbound / мониторинг.</div>
+  </div>
+  <div class="foot"><span class="wm">Elyon<small>Обука за агенти</small></span><span>Дел 2 · Сектори</span></div>
+</section>
+
+<!-- 2.1 overview -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Дел 2 · Сектори</div>
+    <h2 class="title">Трите сектори</h2>
+    <div class="body">
+      <div class="cards g3" style="flex:1">
+        <div class="card lift"><div class="ic">📞</div><h4>Pending</h4><p>Работа со <b>потенцијални</b> клиенти — тука <b>за прв пат</b> ѕвониме.</p></div>
+        <div class="card lift"><div class="ic">🔁</div><h4>Predikcija</h4><p>Работа со <b>веќе постоечки</b> клиенти што претходно разговарале — повторен контакт.</p></div>
+        <div class="card lift"><div class="ic">📥</div><h4>Inbound / Monitoring</h4><p>Клиентот <b>нѐ бара</b> назад + преглед во живо на работата.</p></div>
+      </div>
+      <div class="callout em">Секторот ти кажува <b>кого</b> викаш и <b>со каков пристап</b>. Скриптата е слична, но почетокот е различен — кај нов клиент се претставуваш, кај постоечки потсетуваш „пак сум јас, во врска со вашата порачка“. На почетокот најверојатно ќе работиш во еден сектор додека не се навикнеш, па постепено ќе ги совладаш сите.</div>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">Elyon<small>Обука за агенти</small></span><span>Дел 2 · Сектори</span></div>
+</section>
+
+<!-- 2.2 pending -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Дел 2 · Сектори</div>
+    <h2 class="title">Pending — прв контакт</h2>
+    <div class="body">
+      <p class="lead" style="margin:0 0 6px">Нови потенцијални клиенти на кои <span class="em">за прв пат</span> се јавуваме. Тие веќе покажале интерес — оставиле број на реклама или порачале на сајтот — па не се „ладни“ повици. Твоја задача е да го потврдиш интересот и да затвориш нарачка.</p>
+      <div class="two">
+        <div class="panel"><h4>Од каде доаѓаат</h4>
+          <ul class="points">
+            <li><b>Landing страници</b> (формулар на реклама).</li>
+            <li><b>naturatherapy.bg</b> (онлајн нарачки и напуштени кошнички).</li>
+            <li><b>Увоз од листи</b> и <b>рачен внес</b>.</li>
+          </ul>
+        </div>
+        <div class="panel em"><h4>Како изгледа во системот</h4>
+          <ul class="points gold">
+            <li>Статус <b>pending</b>, недоделени.</li>
+            <li>Менаџер ги <b>доделува</b> на агент.</li>
+            <li>Влегуваат во твојата <b>Calls</b> листа.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">Elyon<small>Обука за агенти</small></span><span>Дел 2 · Сектори</span></div>
+</section>
+
+<!-- 2.3 predikcija -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Дел 2 · Сектори</div>
+    <h2 class="title">Predikcija — повторен контакт (re-marketing)</h2>
+    <div class="body">
+      <p class="lead" style="margin:0 0 4px">Постоечки клиенти што веќе разговарале или купиле. <span class="go">Сите се контактираат повторно — без разлика на исходот од претходниот разговор.</span> Овие клиенти веќе нѐ знаат, па затворањето е често полесно отколку кај нов. Затоа предикцијата е најсилниот мотор за продажба што го имаме.</p>
+      <div class="two">
+        <div class="panel"><h4>Системот сам ги сортира по 3 прашања</h4>
+          <ul class="points">
+            <li><b>Кога</b> последно платиле? (21 ден, 57 дена, 4–6 мес…)</li>
+            <li><b>Колкава</b> беше последната нарачка? (≤26€ / 26+€)</li>
+            <li><b>Колку</b> нарачки имаат вкупно? (1–3 / 3+ / 5+ / 7+)</li>
+          </ul>
+        </div>
+        <div class="panel em"><h4>3 златни правила</h4>
+          <ul class="points gold">
+            <li>Еден клиент = <b>една листа</b> (двајца агенти не викаат ист).</li>
+            <li>Името на листата е <b>секогаш точно</b>.</li>
+            <li>Системот се <b>пресортира секоја ноќ</b> (03:00) — сам.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">Elyon<small>Обука за агенти</small></span><span>Дел 2 · Сектори</span></div>
+</section>
+
+<!-- 2.4 inbound -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Дел 2 · Сектори</div>
+    <h2 class="title">Inbound / Monitoring</h2>
+    <div class="body">
+      <div class="cards g3" style="flex:1">
+        <div class="card lift"><div class="ic">📲</div><h4>Клиентот нѐ бара</h4><p>Пропуштени дојдовни повици + говорна пошта — се појавуваат во <b>Missed Calls</b>.</p></div>
+        <div class="card lift"><div class="ic">📊</div><h4>Мониторинг</h4><p><b>Dashboard</b> и <b>Operations Center</b> — преглед во живо кој е онлајн и што се случува.</p></div>
+        <div class="card lift"><div class="ic">🎯</div><h4>Целта</h4><p>Ниту еден заинтересиран клиент да <b>не остане без повик назад</b>.</p></div>
+      </div>
+      <div class="callout">Кога клиент што те барал е поврзан со тебе, повикот назад оди кај <b>тебе</b> — ти веќе го познаваш случајот и разговорот е потопол. Брзиот повик назад остава одличен впечаток и често води до нарачка. Никогаш не оставај пропуштен повик да „одлежи“.</div>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">Elyon<small>Обука за агенти</small></span><span>Дел 2 · Сектори</span></div>
+</section>
+
+<!-- ===================== PART 3 DIVIDER ===================== -->
+<section class="slide divider">
+  <div class="wrap" style="justify-content:center">
+    <div class="dk">Дел трет</div>
+    <div class="pnum">3</div>
+    <h2>Продукти</h2>
+    <div class="dl">Кои продукти ги имаме, кои се најпродавани, и зошто природните се различни од хемиските.</div>
+  </div>
+  <div class="foot"><span class="wm">Elyon<small>Обука за агенти</small></span><span>Дел 3 · Продукти</span></div>
+</section>
+
+<!-- 3.1 каталог + table -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Дел 3 · Продукти</div>
+    <h2 class="title">Каталог — најпродавани и цени</h2>
+    <div class="body">
+      <div class="two" style="grid-template-columns:1fr 1fr">
+        <table class="tbl compact">
+          <tr><th>Продукт</th><th>За што</th><th>Цена</th></tr>
+          <tr><td><b>Brain Active</b></td><td>Памет, мозок</td><td class="price">39.90€<div class="lv">78.04 лв</div></td></tr>
+          <tr><td><b>Broncho Complex</b></td><td>Дишење, кашлица</td><td class="price">39.90€<div class="lv">78.04 лв</div></td></tr>
+          <tr><td><b>Collagen Peptides</b></td><td>Кожа · зглобови</td><td class="price">39.90€<div class="lv">78.04 лв</div></td></tr>
+          <tr><td><b>Curcumactiv</b></td><td>Болки, воспаленија</td><td class="price">29.90€<div class="lv">58.48 лв</div></td></tr>
+          <tr><td><b>Diabetol Форте</b></td><td>Дијабет</td><td class="price">39.90€<div class="lv">78.04 лв</div></td></tr>
+          <tr><td><b>Diet Combo</b></td><td>Слабеење</td><td class="price">39.90€<div class="lv">78.04 лв</div></td></tr>
+        </table>
+        <table class="tbl compact">
+          <tr><th>Продукт</th><th>За што</th><th>Цена</th></tr>
+          <tr><td><b>Enduro Max</b></td><td>Машко здравје</td><td class="price">39.90€<div class="lv">78.04 лв</div></td></tr>
+          <tr><td><b>Hepatol Forte</b></td><td>Црн дроб, детокс</td><td class="price">24.90€<div class="lv">48.70 лв</div></td></tr>
+          <tr><td><b>Prostatol Complex</b></td><td>Простата</td><td class="price">39.90€<div class="lv">78.04 лв</div></td></tr>
+          <tr><td><b>Snail Complex</b></td><td>Зглобови</td><td class="price">29.90€<div class="lv">58.48 лв</div></td></tr>
+          <tr><td><b>Невро Актив</b></td><td>Нерви, мозок</td><td class="price">29.90€<div class="lv">58.48 лв</div></td></tr>
+          <tr><td colspan="3" class="muted" style="font-size:13.5px">…+ уште ~45 продукти во каталогот (витамини, козметика, протеини).</td></tr>
+        </table>
+      </div>
+      <div class="callout"><b>Каталошка цена ≠ цена во курс.</b> Во понудата цената по кутија е поволна (пр. <span class="em">24€ / 46.94 лв</span> по кутија) — затоа што продаваме курс. Така клиентот добива многу повеќе вредност, а ние поголема нарачка. Повеќе на слајдот за понуда.</div>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">Elyon<small>Обука за агенти</small></span><span>Дел 3 · Продукти</span></div>
+</section>
+
+<!-- 3.2 11 best sellers grid -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Дел 3 · Продукти</div>
+    <h2 class="title">11-те најпродавани — научи ги напамет</h2>
+    <div class="body">
+      <p class="lead" style="margin:0 0 2px">Овие 11 носат најголем дел од продажбата. За секој знај: за каков проблем е, главната состојка и цената.</p>
+      <div class="cards g4" style="gap:12px">
+        <div class="card"><h4>🧠 Brain Active</h4><p>Памет, концентрација, деменција.</p></div>
+        <div class="card"><h4>🫁 Broncho Complex</h4><p>Дишење, кашлица, бронхит, астма.</p></div>
+        <div class="card"><h4>✨ Collagen — Beauty</h4><p>Кожа, коса, нокти, против стареење.</p></div>
+        <div class="card"><h4>🦴 Collagen — Зглобови</h4><p>Артрит, дискус хернија, подвижност.</p></div>
+        <div class="card"><h4>🌶️ Curcumactiv</h4><p>Болки во грб/зглобови, воспаленија.</p></div>
+        <div class="card"><h4>🩸 Diabetol Форте</h4><p>Дијабет тип 2, шеќер во крв.</p></div>
+        <div class="card"><h4>⚖️ Diet Combo</h4><p>Слабеење — shake + капсули + влакна.</p></div>
+        <div class="card"><h4>🔥 Enduro Max</h4><p>Ерекција, потенција, издржливост.</p></div>
+        <div class="card"><h4>🫀 Hepatol Forte</h4><p>Црн дроб, детокс, замастен дроб.</p></div>
+        <div class="card"><h4>🚹 Prostatol Complex</h4><p>Простата, мокрење, ноќно станување.</p></div>
+        <div class="card"><h4>🐌 Snail Complex</h4><p>‘Рскавица, зглобови, подвижност.</p></div>
+        <div class="card lift" style="justify-content:center;text-align:center"><h4 style="justify-content:center">📋 Скрипта за секој</h4><p>За секој од нив постои готова скрипта — види Дел 5.</p></div>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">Elyon<small>Обука за агенти</small></span><span>Дел 3 · Продукти</span></div>
+</section>
+
+<!-- 3.3 природно vs хемиско -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Дел 3 · Продукти</div>
+    <h2 class="title">Природен <span class="muted">vs</span> хемиски продукт <span style="font-size:20px;color:var(--gold-l)">— клучна порака</span></h2>
+    <div class="body">
+      <div class="two">
+        <div class="panel em"><h4>🌿 Природен (нашиот)</h4>
+          <ul class="points">
+            <li>Делува <b>постепено</b>, се „<b>натрупува</b>“ во телото.</li>
+            <li>Бара <b>редовна и подолга</b> употреба (3–4 месеци).</li>
+            <li>Ефектот е <b>кумулативен и траен</b>.</li>
+            <li><b>Без несакани ефекти.</b></li>
+            <li>Ја адресира <b>причината</b>, не само симптомот.</li>
+          </ul>
+        </div>
+        <div class="panel"><h4>💊 Хемиски</h4>
+          <ul class="points gold">
+            <li>Делува <b>брзо</b>, но <b>симптоматски</b>.</li>
+            <li>Често <b>несакани ефекти</b>.</li>
+            <li>Кога ќе престанеш — проблемот се враќа.</li>
+            <li>Не ја менува причината.</li>
+          </ul>
+        </div>
+      </div>
+      <div class="callout em">Затоа продаваме <b>КУРС, а не една кутија.</b> Ова е срцето на секоја скрипта: <span class="ph">„еднократен или кратък курс не е достатъчен…“</span> Кажи му на клиентот искрено — за вистински резултат треба време и редовност, како со секоја природна терапија.</div>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">Elyon<small>Обука за агенти</small></span><span>Дел 3 · Продукти</span></div>
+</section>
+
+<!-- 3.4 предности -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Дел 3 · Продукти</div>
+    <h2 class="title">Зошто нашите се подобри од конкуренцијата</h2>
+    <div class="body">
+      <p class="lead" style="margin:0 0 2px">Кога клиентот ќе праша „зошто токму вашиот?“, имаш конкретни одговори. Овие предности повторувај ги природно во разговорот — тие ја оправдуваат цената.</p>
+      <div class="cards g3">
+        <div class="card lift"><div class="ic">🌿</div><h4>100% природни</h4><p>Без несакани ефекти, дури и при долга употреба.</p></div>
+        <div class="card lift"><div class="ic">🏅</div><h4>Патентирани состојки</h4><p>Bacopin®, Centilin®, Bioperine®, Curcumin C3 Complex®, Nutrelix®.</p></div>
+        <div class="card lift"><div class="ic">⚗️</div><h4>Висока биодостапност</h4><p>Хидролизирани пептиди — телото ги усвојува одлично.</p></div>
+        <div class="card lift"><div class="ic">🛡️</div><h4>Бренд + квалитет</h4><p>Натура Терапи; разговорите се снимаат заради контрола.</p></div>
+        <div class="card lift"><div class="ic">🚚</div><h4>Бесплатна достава</h4><p>До врата или до офис на Speedy / Econt.</p></div>
+        <div class="card lift"><div class="ic">🎁</div><h4>Вредна понуда</h4><p>Плаќаш 4 — добиваш 8. Конкуренцијата ретко го прави тоа.</p></div>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">Elyon<small>Обука за агенти</small></span><span>Дел 3 · Продукти</span></div>
+</section>
+
+<!-- 3.5 понуда -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Дел 3 · Продукти</div>
+    <h2 class="title">Стандардна понуда (механика)</h2>
+    <div class="body">
+      <div class="two">
+        <div class="panel em"><h4>Полн курс — 4 месеци</h4>
+          <div class="stat" style="margin:4px 0 8px"><span class="big">8</span><span class="lbl">кутии вкупно</span></div>
+          <ul class="points">
+            <li>Плаќаш <b>4 кутии × 24€</b> = <span class="em">96€ (187.76 лв)</span>.</li>
+            <li>Добиваш <b>уште 4 кутии подарок</b>.</li>
+            <li>Доставата е <b>бесплатна</b>.</li>
+          </ul>
+        </div>
+        <div class="panel"><h4>Половин курс — 2 месеци <span style="font-size:12px;color:var(--ink-mut)">(ако е многу)</span></h4>
+          <div class="stat" style="margin:4px 0 8px"><span class="big" style="color:var(--gold-l)">4</span><span class="lbl">кутии вкупно</span></div>
+          <ul class="points gold">
+            <li>Плаќаш <b>2 × 24€</b> = <span class="go">48€ (93.88 лв)</span>.</li>
+            <li>Добиваш <b>уште 2 подарок</b>.</li>
+          </ul>
+        </div>
+      </div>
+      <div class="callout">Затвораш со избор, не со „да/не“: <span class="ph">„Кое от двете ви устройва повече?“</span> Така клиентот бира меѓу две „да“, не меѓу „да“ и „не“. Секогаш понуди прво полн курс — половин курс е резерва ако се двоуми.</div>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">Elyon<small>Обука за агенти</small></span><span>Дел 3 · Продукти</span></div>
+</section>
+
+<!-- ===================== PART 4 DIVIDER ===================== -->
+<section class="slide divider">
+  <div class="wrap" style="justify-content:center">
+    <div class="dk">Дел четврти</div>
+    <div class="pnum">4</div>
+    <h2>Болести и проблематики</h2>
+    <div class="dl">Кои се најчестите проблеми кај нашите клиенти и по кои симптоми ги препознаваш.</div>
+  </div>
+  <div class="foot"><span class="wm">Elyon<small>Обука за агенти</small></span><span>Дел 4 · Болести</span></div>
+</section>
+
+<!-- 4.1 профил -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Дел 4 · Болести</div>
+    <h2 class="title">Профил на нашиот клиент</h2>
+    <div class="body">
+      <div class="cards g3">
+        <div class="card lift"><div class="ic">👵</div><h4>Претежно повозрасни</h4><p>Луѓе со <b>хронични</b> состојби што траат со години.</p></div>
+        <div class="card lift"><div class="ic">💊</div><h4>Веќе пробале</h4><p>Често пробале аптечни/хемиски решенија <b>без траен</b> резултат.</p></div>
+        <div class="card lift"><div class="ic">🌿</div><h4>Сакаат природно</h4><p>Бараат решение <b>без несакани ефекти</b> — токму нашата приказна.</p></div>
+      </div>
+      <div class="callout em">Тоа е добро за нас: клиентот веќе го <b>чувствува</b> проблемот. Твоја работа е да го <b>именуваш</b> стручно и да понудиш решение. Кога ќе слушне дека некој точно ги опишува неговите симптоми, веднаш расте довербата — и продажбата доаѓа природно.</div>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">Elyon<small>Обука за агенти</small></span><span>Дел 4 · Болести</span></div>
+</section>
+
+<!-- 4.2 проблематики map -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Дел 4 · Болести</div>
+    <h2 class="title">Најчести проблематики</h2>
+    <div class="body">
+      <p class="lead" style="margin:0 0 2px">Ова се темите што најчесто ќе ги слушаш. За секоја имаме решение — затоа препознавај ги веднаш штом клиентот ќе спомене симптом.</p>
+      <div class="cards g4" style="gap:12px">
+        <div class="card"><h4>🧠 Мозок</h4><p>Слаба памет, расеаност, деменција.</p></div>
+        <div class="card"><h4>🫁 Дишење</h4><p>Кашлица, бронхит, астма.</p></div>
+        <div class="card"><h4>✨ Кожа / коса</h4><p>Брчки, опаѓање коса, кревки нокти.</p></div>
+        <div class="card"><h4>🦴 Зглобови</h4><p>Артрит, дискус хернија, болки.</p></div>
+        <div class="card"><h4>🌶️ Болки / воспаленија</h4><p>Грб, врат, мускули.</p></div>
+        <div class="card"><h4>🩸 Дијабет</h4><p>Висок и нестабилен шеќер.</p></div>
+        <div class="card"><h4>⚖️ Тежина</h4><p>Глад, бавен метаболизам, килограми.</p></div>
+        <div class="card"><h4>🔥 Машко здравје</h4><p>Слаба ерекција, либидо.</p></div>
+        <div class="card"><h4>🫀 Црн дроб</h4><p>Замастен дроб, детокс.</p></div>
+        <div class="card"><h4>🚹 Простата</h4><p>Ноќно станување, слаба млазница.</p></div>
+        <div class="card"><h4>😴 Сон / стрес</h4><p>Несоница, напнатост.</p></div>
+        <div class="card"><h4>🛡️ Имунитет</h4><p>Чести инфекции, замор.</p></div>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">Elyon<small>Обука за агенти</small></span><span>Дел 4 · Болести</span></div>
+</section>
+
+<!-- 4.3 симптоми по групи -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Дел 4 · Болести</div>
+    <h2 class="title">Симптоми по кои ги препознаваш (BG)</h2>
+    <div class="body">
+      <p class="lead" style="margin:0 0 2px">Овие зборови ќе ги слушнеш директно од клиентот — на бугарски. Штом ќе ги препознаеш, веднаш знаеш кон кој производ да водиш.</p>
+      <table class="tbl compact">
+        <tr><th>Област</th><th>Типични симптоми (на бугарски, како што ќе ги слушнеш)</th></tr>
+        <tr><td><b>Мозок</b></td><td>забравяне, разсеяност, мозъчна умора, слаба концентрация</td></tr>
+        <tr><td><b>Дишење</b></td><td>кашлица, хрипове, задух, нощно задушаване, чести инфекции</td></tr>
+        <tr><td><b>Кожа / коса</b></td><td>бръчки, отпусната кожа, сухота, косопад, чупливи нокти</td></tr>
+        <tr><td><b>Зглобови</b></td><td>болки в колене/тазобедрени/гръб, схващане, намалена подвижност</td></tr>
+        <tr><td><b>Дијабет</b></td><td>високи/нестабилни нива на захар, умора, чести покачвания</td></tr>
+        <tr><td><b>Машко здравје</b></td><td>слаба/мека ерекция, ниско либидо, бърза умора</td></tr>
+        <tr><td><b>Простата</b></td><td>често нощно ставане, слаба струя, парене, непълно изпразване</td></tr>
+        <tr><td><b>Црн дроб</b></td><td>тежест, лошо храносмилане, умора, висок холестерол</td></tr>
+      </table>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">Elyon<small>Обука за агенти</small></span><span>Дел 4 · Болести</span></div>
+</section>
+
+<!-- ===================== PART 5 DIVIDER ===================== -->
+<section class="slide divider">
+  <div class="wrap" style="justify-content:center">
+    <div class="dk">Дел петти</div>
+    <div class="pnum">5</div>
+    <h2>Болест → продукт</h2>
+    <div class="dl">Како да го поврзеш проблемот со точниот продукт — и да зборуваш со бугарски термини што звучат уверливо.</div>
+  </div>
+  <div class="foot"><span class="wm">Elyon<small>Обука за агенти</small></span><span>Дел 5 · Скрипти</span></div>
+</section>
+
+<!-- 5.0 mapping table -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Дел 5 · Скрипти</div>
+    <h2 class="title">Брза табела: проблем → продукт</h2>
+    <div class="body">
+      <p class="lead" style="margin:0 0 2px">Ова е твојата „мапа“ — штом ќе чуеш проблем, веднаш знаеш кој производ да понудиш. Запомни ги овие парови; сѐ останато е разговор.</p>
+      <div class="two" style="grid-template-columns:1fr 1fr">
+        <table class="tbl compact">
+          <tr><th>Проблем</th><th>Продукт</th></tr>
+          <tr><td>Памет, концентрација, деменција</td><td><b>Brain Active</b></td></tr>
+          <tr><td>Кашлица, бронхит, астма</td><td><b>Broncho Complex</b></td></tr>
+          <tr><td>Кожа, коса, нокти, стареење</td><td><b>Collagen — Beauty</b></td></tr>
+          <tr><td>Артрит, дискус хернија</td><td><b>Collagen — Зглобови</b></td></tr>
+          <tr><td>Болки во грб/зглоб, воспаление</td><td><b>Curcumactiv</b></td></tr>
+        </table>
+        <table class="tbl compact">
+          <tr><th>Проблем</th><th>Продукт</th></tr>
+          <tr><td>Дијабет тип 2</td><td><b>Diabetol Форте</b></td></tr>
+          <tr><td>Слабеење</td><td><b>Diet Combo</b></td></tr>
+          <tr><td>Ерекција, потенција</td><td><b>Enduro Max</b></td></tr>
+          <tr><td>Црн дроб, детокс</td><td><b>Hepatol Forte</b></td></tr>
+          <tr><td>Простата, мокрење</td><td><b>Prostatol Complex</b></td></tr>
+          <tr><td>‘Рскавица, подвижност</td><td><b>Snail Complex</b></td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">Elyon<small>Обука за агенти</small></span><span>Дел 5 · Скрипти</span></div>
+</section>
+
+<!-- PRODUCT TALKING-POINT SLIDES (11) -->
+<!-- Brain Active -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Дел 5 · Скрипти</div>
+    <h2 class="title">🧠 Brain Active</h2>
+    <div class="body">
+      <div class="two">
+        <div class="panel"><h4>Целна група + бугарски термини</h4>
+          <p style="margin:0 0 8px;color:var(--ink-dim)">За памет, концентрација, деменција, мозъчна умора. <b style="color:var(--gold-l)">Совет:</b> често ја купуваат постари луѓе или нивните деца — нагласи дека ефектот се гради со месеци.</p>
+          <div class="terms"><span class="chip go">памет</span><span class="chip go">концентрация</span><span class="chip go">мозъчна умора</span><span class="chip go">разсеяност</span><span class="chip go">оксидативен стрес</span></div>
+        </div>
+        <div class="panel em"><h4>Кука + состојки + понуда</h4>
+          <ul class="points">
+            <li><b>Кука:</b> оксидативен стрес, възпаления, влошено кръвоснабдяване на мозъка.</li>
+            <li><b>Состав:</b> 9 активни + патентирани <b>Bacopin®, Centilin®, Bioperine®</b>.</li>
+            <li><b>Понуда:</b> 8 кутии (4+4), 96€ / 187.76 лв.</li>
+            <li><b>Приговор:</b> половин курс 2+2 = 48€.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">Elyon<small>Обука за агенти</small></span><span>Дел 5 · Скрипти</span></div>
+</section>
+
+<!-- Broncho -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Дел 5 · Скрипти</div>
+    <h2 class="title">🫁 Broncho Complex</h2>
+    <div class="body">
+      <div class="two">
+        <div class="panel"><h4>Целна група + бугарски термини</h4>
+          <p style="margin:0 0 8px;color:var(--ink-dim)">Дихателни пътища, кашлица, бронхит, астма. Течна форма (капки). <b style="color:var(--gold-l)">Совет:</b> силно е за пушачи и хронична кашлица — спомни облекчување за 2–3 седмици.</p>
+          <div class="terms"><span class="chip go">кашлица</span><span class="chip go">хрипове</span><span class="chip go">слуз</span><span class="chip go">бронхоспазъм</span><span class="chip go">астма</span><span class="chip go">бронхит</span></div>
+        </div>
+        <div class="panel em"><h4>Кука + состојки + понуда</h4>
+          <ul class="points">
+            <li><b>Кука:</b> хронично възпаление на бронхите, натрупване на слуз, отслабен имунитет.</li>
+            <li><b>Состав:</b> живовлек, черен кимион, розмарин, куркума, рейши, вит. C+D.</li>
+            <li><b>Понуда:</b> 8 бр. (4+4), 96€ / 187.76 лв.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">Elyon<small>Обука за агенти</small></span><span>Дел 5 · Скрипти</span></div>
+</section>
+
+<!-- Collagen Beauty -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Дел 5 · Скрипти</div>
+    <h2 class="title">✨ Collagen Peptides — Beauty</h2>
+    <div class="body">
+      <div class="two">
+        <div class="panel"><h4>Целна група + бугарски термини</h4>
+          <p style="margin:0 0 8px;color:var(--ink-dim)">Кожа, коса, нокти, против стареене. Ванилов вкус, се пие како шейк. <b style="color:var(--gold-l)">Совет:</b> најмногу пали кај жени 35+ — поврзи кожа, коса и нокти заедно, „убавина однатре“.</p>
+          <div class="terms"><span class="chip go">бръчки</span><span class="chip go">еластичност</span><span class="chip go">хидратация</span><span class="chip go">косопад</span><span class="chip go">чупливи нокти</span><span class="chip go">колаген</span></div>
+        </div>
+        <div class="panel em"><h4>Кука + состојки + понуда</h4>
+          <ul class="points">
+            <li><b>Кука:</b> после 25–30 г. производството на колаген намалява → бръчки, отпускане.</li>
+            <li><b>Состав:</b> хидролизирани пептиди + витамин C.</li>
+            <li><b>Понуда:</b> 8 кутии (4+4), 96€ / 187.76 лв.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">Elyon<small>Обука за агенти</small></span><span>Дел 5 · Скрипти</span></div>
+</section>
+
+<!-- Collagen Bones -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Дел 5 · Скрипти</div>
+    <h2 class="title">🦴 Collagen Peptides — Зглобови</h2>
+    <div class="body">
+      <div class="two">
+        <div class="panel"><h4>Целна група + бугарски термини</h4>
+          <p style="margin:0 0 8px;color:var(--ink-dim)">Стави, кости, артрит, дискова херния, намалена подвижност. <b style="color:var(--gold-l)">Совет:</b> идеален за повозрасни со болки — нагласи помалку болка и подобра подвижност.</p>
+          <div class="terms"><span class="chip go">стави</span><span class="chip go">хрущял</span><span class="chip go">артрит</span><span class="chip go">дискова херния</span><span class="chip go">подвижност</span></div>
+        </div>
+        <div class="panel em"><h4>Кука + состојки + понуда</h4>
+          <ul class="points">
+            <li><b>Кука:</b> дегенеративни процеси в хрущяла, намален колаген, възпаление.</li>
+            <li><b>Состав:</b> хидролизирани пептиди + витамин C (висока бионаличност).</li>
+            <li><b>Понуда:</b> 8 кутии (4+4), 96€ / 187.76 лв.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">Elyon<small>Обука за агенти</small></span><span>Дел 5 · Скрипти</span></div>
+</section>
+
+<!-- Curcumactiv -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Дел 5 · Скрипти</div>
+    <h2 class="title">🌶️ Curcumactiv</h2>
+    <div class="body">
+      <div class="two">
+        <div class="panel"><h4>Целна група + бугарски термини</h4>
+          <p style="margin:0 0 8px;color:var(--ink-dim)">Болки в гърба/врата/ставите/мускулите, възпаления. Сироп. <b style="color:var(--gold-l)">Совет:</b> куркуминот е природен противвоспалителен — без несакани ефекти, за разлика од таблетите за болка.</p>
+          <div class="terms"><span class="chip go">възпаление</span><span class="chip go">спондилоза</span><span class="chip go">дископатия</span><span class="chip go">артроза</span><span class="chip go">оксидативен стрес</span></div>
+        </div>
+        <div class="panel em"><h4>Кука + состојки + понуда</h4>
+          <ul class="points">
+            <li><b>Кука:</b> хронични възпалителни процеси + дегенеративни изменения.</li>
+            <li><b>Состав:</b> <b>Curcumin C3 Complex® + Bioperine®</b> (×20 усвояване), босвелия, коприва, розмарин.</li>
+            <li><b>Понуда:</b> 8 бр. (4+4), 96€ / 187.76 лв.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">Elyon<small>Обука за агенти</small></span><span>Дел 5 · Скрипти</span></div>
+</section>
+
+<!-- Diabetol -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Дел 5 · Скрипти</div>
+    <h2 class="title">🩸 Diabetol Форте</h2>
+    <div class="body">
+      <div class="two">
+        <div class="panel"><h4>Целна група + бугарски термини</h4>
+          <p style="margin:0 0 8px;color:var(--ink-dim)">Дијабет, особено тип 2. Прашај: <span class="ph">„на диабет тип 2 ли сте?“</span> <b style="color:var(--gold-l)">Совет:</b> никогаш не вели „ќе го излекува“ — вели „поддршка за постабилен шеќер“.</p>
+          <div class="terms"><span class="chip go">кръвна захар</span><span class="chip go">инсулинова резистентност</span><span class="chip go">бета-клетки</span><span class="chip go">панкреас</span><span class="chip go">невропатия</span></div>
+        </div>
+        <div class="panel em"><h4>Кука + состојки + понуда</h4>
+          <ul class="points">
+            <li><b>Кука:</b> намалена чувствителност към инсулин, слаби бета-клетки, възпаление.</li>
+            <li><b>Состав:</b> алфа-липоева киселина, канела, горчив пъпеш, цинк, хром.</li>
+            <li><b>Понуда:</b> 8 бр. (4+4), 96€ / 187.76 лв.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">Elyon<small>Обука за агенти</small></span><span>Дел 5 · Скрипти</span></div>
+</section>
+
+<!-- Diet Combo -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Дел 5 · Скрипти</div>
+    <h2 class="title">⚖️ Diet Combo</h2>
+    <div class="body">
+      <div class="two">
+        <div class="panel"><h4>Целна група + бугарски термини</h4>
+          <p style="margin:0 0 8px;color:var(--ink-dim)">Слабеење: Diet Shake + Slim Complex + Slim Fiber. Прашај колку сака да симне. <b style="color:var(--gold-l)">Совет:</b> емотивна тема — биди охрабрувачки; спомни 5–12 кг без глад и без јо-јо.</p>
+          <div class="terms"><span class="chip go">апетит</span><span class="chip go">метаболизъм</span><span class="chip go">инсулинова резистентност</span><span class="chip go">йо-йо ефект</span><span class="chip go">мастни депа</span></div>
+        </div>
+        <div class="panel em"><h4>Кука + состојки + понуда</h4>
+          <ul class="points">
+            <li><b>Кука:</b> постоянен глад, бавен метаболизъм, резки покачвания на захарта.</li>
+            <li><b>Резултат:</b> контрол над апетита 24/7; клиенти свалят <b>5–12 кг за 1–2 мес</b>.</li>
+            <li><b>Понуда:</b> 8 бр. (4+4), 96€ / 187.76 лв.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">Elyon<small>Обука за агенти</small></span><span>Дел 5 · Скрипти</span></div>
+</section>
+
+<!-- Enduro -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Дел 5 · Скрипти</div>
+    <h2 class="title">🔥 Enduro Max</h2>
+    <div class="body">
+      <div class="two">
+        <div class="panel"><h4>Целна група + бугарски термини</h4>
+          <p style="margin:0 0 8px;color:var(--ink-dim)">Само мъже. Ерекция, либидо, издръжливост, потентност. Дискретно и со почит. <b style="color:var(--gold-l)">Совет:</b> биди опуштен и професионален — нагласи енергија, сигурност и издржливост.</p>
+          <div class="terms"><span class="chip go">ерекция</span><span class="chip go">либидо</span><span class="chip go">издръжливост</span><span class="chip go">тестостерон</span><span class="chip go">кръвоток</span></div>
+        </div>
+        <div class="panel em"><h4>Кука + состојки + понуда</h4>
+          <ul class="points">
+            <li><b>Кука:</b> намален тестостерон, слабо кръвоснабдяване, стрес.</li>
+            <li><b>Состав:</b> 7 растителни екстракта; може +1 капсула 30–40 мин преди.</li>
+            <li><b>Понуда:</b> 8 бр. (4+4), 96€ / 187.76 лв.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">Elyon<small>Обука за агенти</small></span><span>Дел 5 · Скрипти</span></div>
+</section>
+
+<!-- Hepatol -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Дел 5 · Скрипти</div>
+    <h2 class="title">🫀 Hepatol Forte</h2>
+    <div class="body">
+      <div class="two">
+        <div class="panel"><h4>Целна група + бугарски термини</h4>
+          <p style="margin:0 0 8px;color:var(--ink-dim)">Черен дроб, детоксикация, омазнен черен дроб, висок холестерол. <b style="color:var(--gold-l)">Совет:</b> добро оди за луѓе што пијат лекарства или по празници — зборувај за „детокс и полесно тело“.</p>
+          <div class="terms"><span class="chip go">черен дроб</span><span class="chip go">детоксикация</span><span class="chip go">омазнен черен дроб</span><span class="chip go">жлъчка</span><span class="chip go">холестерол</span></div>
+        </div>
+        <div class="panel em"><h4>Кука + состојки + понуда</h4>
+          <ul class="points">
+            <li><b>Кука:</b> претоварен черен дроб (алкохол, лекарства, мазнини) → мазнини и токсини.</li>
+            <li><b>Состав:</b> бял трън (силимарин), артишок, глюкуронова киселина, лецитин.</li>
+            <li><b>Понуда:</b> 8 бр. (4+4), 96€ / 187.76 лв.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">Elyon<small>Обука за агенти</small></span><span>Дел 5 · Скрипти</span></div>
+</section>
+
+<!-- Prostatol -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Дел 5 · Скрипти</div>
+    <h2 class="title">🚹 Prostatol Complex</h2>
+    <div class="body">
+      <div class="two">
+        <div class="panel"><h4>Целна група + бугарски термини</h4>
+          <p style="margin:0 0 8px;color:var(--ink-dim)">Само мъже. Простата, често нощно ставане, слаба струя, дискомфорт. <b style="color:var(--gold-l)">Совет:</b> чувствителна тема — биди дискретен; нагласи помалку ноќно станување и подобар сон.</p>
+          <div class="terms"><span class="chip go">простата</span><span class="chip go">уриниране</span><span class="chip go">нощно ставане</span><span class="chip go">струя</span><span class="chip go">БПХ</span></div>
+        </div>
+        <div class="panel em"><h4>Кука + состојки + понуда</h4>
+          <ul class="points">
+            <li><b>Кука:</b> доброкачествено увеличение (БПХ), повишен DHT, възпаление.</li>
+            <li><b>Состав:</b> 7 активни компонента; ефект 2–3 седмици.</li>
+            <li><b>Понуда:</b> 8 бр. (4+4), 96€ / 187.76 лв.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">Elyon<small>Обука за агенти</small></span><span>Дел 5 · Скрипти</span></div>
+</section>
+
+<!-- Snail -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Дел 5 · Скрипти</div>
+    <h2 class="title">🐌 Snail Complex</h2>
+    <div class="body">
+      <div class="two">
+        <div class="panel"><h4>Целна група + бугарски термини</h4>
+          <p style="margin:0 0 8px;color:var(--ink-dim)">Стави, хрущял, подвижност. Само 1 капсула дневно. <b style="color:var(--gold-l)">Совет:</b> „само 1 капсула дневно“ е силен аргумент за удобство; спомни го патентираниот Nutrelix®.</p>
+          <div class="terms"><span class="chip go">стави</span><span class="chip go">хрущял</span><span class="chip go">синовиална течност</span><span class="chip go">остеоартрит</span><span class="chip go">ревматоиден артрит</span></div>
+        </div>
+        <div class="panel em"><h4>Кука + состојки + понуда</h4>
+          <ul class="points">
+            <li><b>Кука:</b> дегенерация и възпаление на хрущяла, намалена „смазка“.</li>
+            <li><b>Состав:</b> <b>Nutrelix®</b> (охлюв Helix Pomatia) + <b>Curcumin C3®</b> + босвелия + вит. C.</li>
+            <li><b>Понуда:</b> 8 бр. (4+4), 96€ / 187.76 лв.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">Elyon<small>Обука за агенти</small></span><span>Дел 5 · Скрипти</span></div>
+</section>
+
+<!-- 5 glossary -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Дел 5 · Скрипти</div>
+    <h2 class="title">Глосар на бугарски термини</h2>
+    <div class="body">
+      <p class="lead" style="margin:0 0 2px">Овие термини те прават да звучиш како стручњак. Не мора да ги употребиш сите — доволни се 2–3 вистински во вистински момент.</p>
+      <table class="tbl compact">
+        <tr><th>Област</th><th>Термини што ги користиш за да звучиш уверливо</th></tr>
+        <tr><td><b>Мозок</b></td><td>памет · концентрация · мозъчна умора · невронна пластичност · оксидативен стрес</td></tr>
+        <tr><td><b>Дишење</b></td><td>дихателни пътища · бронхоспазъм · слуз · хрипове · имунен отговор</td></tr>
+        <tr><td><b>Кожа</b></td><td>бръчки · еластичност · хидратация · колаген · бионаличност</td></tr>
+        <tr><td><b>Зглобови</b></td><td>стави · хрущял · артрит · дискова херния · синовиална течност · подвижност</td></tr>
+        <tr><td><b>Воспаление</b></td><td>възпаление · противовъзпалителен · дегенеративни процеси</td></tr>
+        <tr><td><b>Дијабет</b></td><td>кръвна захар · инсулинова резистентност · бета-клетки · панкреас · невропатия</td></tr>
+        <tr><td><b>Машко</b></td><td>либидо · ерекция · издръжливост · тестостерон · кръвоток · фертилитет</td></tr>
+        <tr><td><b>Простата</b></td><td>простата · уриниране · струя · нощно ставане · БПХ · DHT</td></tr>
+        <tr><td><b>Црн дроб</b></td><td>черен дроб · детоксикация · жлъчка · силимарин · холестерол</td></tr>
+      </table>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">Elyon<small>Обука за агенти</small></span><span>Дел 5 · Скрипти</span></div>
+</section>
+
+<!-- ===================== PART 6 DIVIDER ===================== -->
+<section class="slide divider">
+  <div class="wrap" style="justify-content:center">
+    <div class="dk">Дел шести</div>
+    <div class="pnum">6</div>
+    <h2>Систем — работни површини</h2>
+    <div class="dl">Calls · Call Again · Missed Calls · Personal List · Dashboard — каде работиш секој ден.</div>
+  </div>
+  <div class="foot"><span class="wm">Elyon<small>Обука за агенти</small></span><span>Дел 6 · Систем</span></div>
+</section>
+
+<!-- 6.0 sidebar -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Дел 6 · Систем</div>
+    <h2 class="title">Што гледаш во менито (лево)</h2>
+    <div class="body">
+      <p class="lead" style="margin:0 0 2px">Системот е едноставен — повеќето време ќе бидеш на „Calls“. Останатите страници се тука за да не пропуштиш ниту еден клиент.</p>
+      <div class="cards g3">
+        <div class="card lift"><h4>📞 Calls</h4><p>Главната работна површина — тука се одвива повикувањето.</p></div>
+        <div class="card lift"><h4>⏰ Call Again</h4><p>Клиенти за повторен повик во точно време.</p></div>
+        <div class="card lift"><h4>📥 Missed Calls</h4><p>Пропуштени дојдовни повици + говорна пошта.</p></div>
+        <div class="card lift"><h4>🔒 Personal List</h4><p>Клиенти што ти лично ги „чуваш“ за follow-up.</p></div>
+        <div class="card lift"><h4>📊 Dashboard</h4><p>Дневен преглед на твоите резултати.</p></div>
+        <div class="card"><h4>🔎 + друго</h4><p>Orders, Search, Call History — според дозволите.</p></div>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">Elyon<small>Обука за агенти</small></span><span>Дел 6 · Систем</span></div>
+</section>
+
+<!-- 6.1 calls -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Дел 6 · Систем</div>
+    <h2 class="title">📞 Calls — главната површина</h2>
+    <div class="body">
+      <p class="lead" style="margin:0 0 2px">Тука поминуваш најголем дел од смената. Сѐ што ти треба за еден повик е на еден екран — клиент, историја, бирач и исход.</p>
+      <div class="two">
+        <div class="panel em"><h4>Како работи</h4>
+          <ul class="points">
+            <li><b>Тивок auto-pick</b> — системот сам ти го носи следниот клиент од твојата листа.</li>
+            <li><b>ClientProfileCard</b>: име, метрики, белешка „За клиентот“, историја.</li>
+            <li><b>Dial → разговор → Choose Answer</b> (исход) → белешка.</li>
+          </ul>
+        </div>
+        <div class="panel"><h4>Зошто нема бројач</h4>
+          <ul class="points gold">
+            <li>Намерно <b>не гледаш</b> „колку останале“.</li>
+            <li>За да нема <b>брзање</b> и трка со бројки.</li>
+            <li>Фокусот е на <b>квалитет</b> на разговорот, не на брзина.</li>
+            <li>Екранот <b>останува</b> на клиентот по повикот (за нарачка/белешка) — потоа „Next“.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">Elyon<small>Обука за агенти</small></span><span>Дел 6 · Систем</span></div>
+</section>
+
+<!-- 6.2 call again -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Дел 6 · Систем</div>
+    <h2 class="title">⏰ Call Again — повторен повик</h2>
+    <div class="body">
+      <div class="cards g2">
+        <div class="card lift"><h4>„Не одговори“</h4><p>Ако клиентот не се јавил → автоматски се враќа за <b>~2 часа</b>.</p></div>
+        <div class="card lift"><h4>Исход „Call again“</h4><p>Ако се договоривте да се јавиш повторно → за <b>~2 дена</b>.</p></div>
+      </div>
+      <div class="callout em">Не губиш ниту еден клиент: системот сам ги враќа во точно време. Ти само работиш што ти е пред тебе. Кога ќе се договориш за термин, држи се до него — точноста гради доверба и затвора продажби.</div>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">Elyon<small>Обука за агенти</small></span><span>Дел 6 · Систем</span></div>
+</section>
+
+<!-- 6.3 missed -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Дел 6 · Систем</div>
+    <h2 class="title">📥 Missed Calls — пропуштени повици</h2>
+    <div class="body">
+      <p class="lead" style="margin:0 0 2px">Пропуштен повик значи клиент што САМ нѐ побарал — тоа е најтоплиот можен lead. Јави се назад што е можно побрзо.</p>
+      <div class="two">
+        <div class="panel"><h4>Што гледаш</h4>
+          <ul class="points">
+            <li>Кој се јавил, <b>кога</b>, и кој <b>последен</b> разговарал со него.</li>
+            <li><b>Говорна пошта</b> — ако оставил порака, ја слушаш веднаш.</li>
+            <li>Статус: <b>ново · доделено · јавено назад · игнорирано</b>.</li>
+          </ul>
+        </div>
+        <div class="panel em"><h4>Што правиш</h4>
+          <ul class="points gold">
+            <li>Копче <b>„Call back“</b> — се јавуваш назад со еден клик.</li>
+            <li>Ако клиентот е <b>твој</b>, повикот доаѓа кај тебе.</li>
+            <li>Го означуваш како <b>јавено</b> кога ќе завршиш.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">Elyon<small>Обука за агенти</small></span><span>Дел 6 · Систем</span></div>
+</section>
+
+<!-- 6.4 personal list -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Дел 6 · Систем</div>
+    <h2 class="title">🔒 Personal List — твои клиенти</h2>
+    <div class="body">
+      <p class="lead">Кога сакаш лично да следиш некој клиент, го „<span class="em">заклучуваш</span>“ во својата Personal List. Така никој друг нема да го јавува, а ти не го забораваш. Користи го за клиенти што „речиси“ купиле или бараат малку време.</p>
+      <div class="cards g3">
+        <div class="card lift"><div class="ic">📝</div><h4>Со причина</h4><p>Запишуваш зошто го чуваш (пр. „чека плата“, „размислува“).</p></div>
+        <div class="card lift"><div class="ic">📅</div><h4>Со датум</h4><p>Поставуваш „follow-up до…“ за да не заборавиш.</p></div>
+        <div class="card lift"><div class="ic">🙋</div><h4>Само твој</h4><p>Друг агент нема да го јавува додека е кај тебе.</p></div>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">Elyon<small>Обука за агенти</small></span><span>Дел 6 · Систем</span></div>
+</section>
+
+<!-- 6.5 dashboard -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Дел 6 · Систем</div>
+    <h2 class="title">📊 Dashboard — дневен преглед</h2>
+    <div class="body">
+      <div class="cards g3">
+        <div class="card lift"><div class="ic">📦</div><h4>Нарачки по статус</h4><p>Колку pending, потврдени, испратени, платени — денес.</p></div>
+        <div class="card lift"><div class="ic">💶</div><h4>Вкупно €/лв</h4><p>Вредност на твојата работа, секогаш во две валути.</p></div>
+        <div class="card lift"><div class="ic">🏆</div><h4>Резултати</h4><p>За менаџери — ранг-листа на тимот.</p></div>
+      </div>
+      <div class="callout">Погледни го Dashboard <b>на почеток и крај на смената</b> — да знаеш каде си. Следењето на сопствените бројки мотивира и покажува што да подобриш. Малите дневни цели прават голема разлика на крајот на месецот.</div>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">Elyon<small>Обука за агенти</small></span><span>Дел 6 · Систем</span></div>
+</section>
+
+<!-- ===================== PART 7 DIVIDER ===================== -->
+<section class="slide divider">
+  <div class="wrap" style="justify-content:center">
+    <div class="dk">Дел седми</div>
+    <div class="pnum">7</div>
+    <h2>Статуси, CONFIRM и адреси</h2>
+    <div class="dl">Што значи секој статус, како се внесува потврдена нарачка и како се пополнуваат адреси и офиси.</div>
+  </div>
+  <div class="foot"><span class="wm">Elyon<small>Обука за агенти</small></span><span>Дел 7 · Статуси</span></div>
+</section>
+
+<!-- 7.1 statuses -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Дел 7 · Статуси</div>
+    <h2 class="title">10-те статуси — што значат</h2>
+    <div class="body">
+      <div class="two" style="grid-template-columns:1fr 1fr">
+        <table class="tbl compact">
+          <tr><th>Статус</th><th>Значење</th></tr>
+          <tr><td><b>pending</b></td><td>Нов lead, уште недопрен.</td></tr>
+          <tr><td><b>take</b></td><td>Агент токму сега разговара (заклучен).</td></tr>
+          <tr><td><b>call_again</b></td><td>Да се јавиме повторно.</td></tr>
+          <tr><td><b>confirmed</b></td><td>Клиентот потврди — нарачката е реална.</td></tr>
+          <tr><td><b>shipped</b></td><td>Испратено преку курир.</td></tr>
+        </table>
+        <table class="tbl compact">
+          <tr><th>Статус</th><th>Значење</th></tr>
+          <tr><td><b>delivered</b></td><td>Доставено до клиент.</td></tr>
+          <tr><td><b>paid</b></td><td>Платено (наплатено COD) ✅</td></tr>
+          <tr><td><b>returned</b></td><td>Вратено (одбиено/недостапно).</td></tr>
+          <tr><td><b>cancelled</b></td><td>Откажано (со причина).</td></tr>
+          <tr><td><b>trashed</b></td><td>Ѓубре / погрешен број.</td></tr>
+        </table>
+      </div>
+      <div class="callout em"><b>paid</b> е целта — само тогаш се смета за приход и само тогаш ти носи провизија. Затоа добриот агент не само што потврдува, туку потврдува нарачки што навистина ќе се наплатат. Сигурен клиент + точна адреса = платена нарачка.</div>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">Elyon<small>Обука за агенти</small></span><span>Дел 7 · Статуси</span></div>
+</section>
+
+<!-- 7.2 state machine -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Дел 7 · Статуси</div>
+    <h2 class="title">Патот на нарачката</h2>
+    <div class="body">
+      <div class="flow">
+        <div class="step"><span class="t">pending</span><span class="d">нов</span></div>
+        <div class="arrow">→</div>
+        <div class="step"><span class="t">take</span><span class="d">на повик</span></div>
+        <div class="arrow">→</div>
+        <div class="step" style="border-color:var(--emerald)"><span class="t">confirmed</span><span class="d">потврдено</span></div>
+        <div class="arrow">→</div>
+        <div class="step"><span class="t">shipped</span><span class="d">испратено</span></div>
+        <div class="arrow">→</div>
+        <div class="step" style="border-color:var(--gold)"><span class="t">paid</span><span class="d">платено ✅</span></div>
+      </div>
+      <div class="cards g3">
+        <div class="card"><h4>↩︎ returned</h4><p>Од shipped, ако клиентот одбие/не е достапен.</p></div>
+        <div class="card"><h4>✖ cancelled</h4><p>Клиентот откажува — <b>секогаш со причина</b>.</p></div>
+        <div class="card"><h4>🗑 trashed</h4><p>Погрешен број / ѓубре — не е реален клиент.</p></div>
+      </div>
+      <div class="callout">Во разговорот, исходот што го бираш (Answered → Confirmed / Cancelled / Trash; Not answered → Didn't answer) автоматски го <b>менува статусот</b> — не мораш рачно ништо да местиш. Важно е само да го избереш <b>точниот</b> исход, бидејќи од него зависи каде ќе заврши клиентот понатаму.</div>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">Elyon<small>Обука за агенти</small></span><span>Дел 7 · Статуси</span></div>
+</section>
+
+<!-- 7.3 confirm -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Дел 7 · Статуси</div>
+    <h2 class="title">CONFIRM — внес на нарачка</h2>
+    <div class="body">
+      <div class="two">
+        <div class="panel em"><h4>Како</h4>
+          <ul class="points">
+            <li>Кога клиентот ќе се согласи → копче <b>„Confirm Order“</b>.</li>
+            <li>Се отвора <b>Create Order</b> формуларот (повикот останува жив за да прочиташ назад).</li>
+            <li>Избираш продукт, количина, цена — гледаш €/лв.</li>
+          </ul>
+        </div>
+        <div class="panel"><h4>Задолжителни полиња</h4>
+          <ul class="points gold">
+            <li><b>Име и презиме</b></li>
+            <li><b>Телефон</b></li>
+            <li><b>Град</b></li>
+            <li><b>Адреса</b> (дома или офис)</li>
+          </ul>
+        </div>
+      </div>
+      <div class="callout"><b>Прочитај назад</b> сѐ што внесе (име, адреса, телефон, продукт, цена) пред да зачуваш. Грешка = вратена пратка и изгубено време. Ова се 30 секунди што спасуваат цела нарачка — никогаш не ги прескокнувај.</div>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">Elyon<small>Обука за агенти</small></span><span>Дел 7 · Статуси</span></div>
+</section>
+
+<!-- 7.4 addresses + offices -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Дел 7 · Статуси</div>
+    <h2 class="title">Адреси и офиси</h2>
+    <div class="body">
+      <div class="two">
+        <div class="panel"><h4>🏠 Достава до дома</h4>
+          <ul class="points">
+            <li>Внеси: <b>квартал</b>, <b>улица</b>, <b>бл./ет./ап.</b></li>
+            <li>Градот се избира од листа (пишувај латиница или кирилица — двете наоѓаат).</li>
+          </ul>
+        </div>
+        <div class="panel em"><h4>🏤 Достава до офис</h4>
+          <ul class="points gold">
+            <li>Избери курир (<b>Speedy / Econt</b>) → <b>град</b> → <b>офис</b>.</li>
+            <li>Поштенскиот код е <b>на самиот офис</b> — не го менувај рачно.</li>
+          </ul>
+        </div>
+      </div>
+      <div class="callout">Прашај го клиентот <span class="ph">„на адрес или на офис на Еконт/Спиди?“</span> — и кој офис му е најблиску. Многумина претпочитаат офис бидејќи им е поевтино и посигурно. Ако не е сигурен, предложи достава до врата.</div>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">Elyon<small>Обука за агенти</small></span><span>Дел 7 · Статуси</span></div>
+</section>
+
+<!-- 7.5 ship_after_date -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Дел 7 · Статуси</div>
+    <h2 class="title">Одложување на испорака</h2>
+    <div class="body">
+      <p class="lead">При потврда можеш да избереш <span class="em">иден датум</span> за испорака (на пр. клиентот сака после плата).</p>
+      <div class="cards g2">
+        <div class="card lift"><h4>✅ 1–2 дена</h4><p>Се испраќа <b>сега</b> со редовната пратка — кратко одложување е во ред.</p></div>
+        <div class="card"><h4>⏳ 3+ дена</h4><p><b>Чека</b> до својот ден и сам се појавува тогаш во магацинската листа.</p></div>
+      </div>
+      <div class="callout em">Секогаш запиши го <b>точниот датум</b> и причината во белешка — за да знае и магацинот и следниот агент. Одложувањето е добра алатка кога клиентот чека плата: не ја губиш нарачката, само ја закажуваш за подоцна.</div>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">Elyon<small>Обука за агенти</small></span><span>Дел 7 · Статуси</span></div>
+</section>
+
+<!-- ===================== PART 8 DIVIDER ===================== -->
+<section class="slide divider">
+  <div class="wrap" style="justify-content:center">
+    <div class="dk">Дел осми</div>
+    <div class="pnum">8</div>
+    <h2>Работа со карго</h2>
+    <div class="dl">Курири, кога се праќаат и кога пристигаат пратките, и разликата меѓу Speedy и Econt.</div>
+  </div>
+  <div class="foot"><span class="wm">Elyon<small>Обука за агенти</small></span><span>Дел 8 · Карго</span></div>
+</section>
+
+<!-- 8.1 couriers -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Дел 8 · Карго</div>
+    <h2 class="title">Курири: Speedy и Econt</h2>
+    <div class="body">
+      <div class="two">
+        <div class="panel em"><h4>🚚 Speedy</h4>
+          <ul class="points">
+            <li>Бугарски курир, покрива цела БГ.</li>
+            <li>Достава <b>до врата</b> или <b>до офис</b>.</li>
+            <li>Плаќање <b>COD</b> на курир.</li>
+          </ul>
+        </div>
+        <div class="panel em"><h4>📦 Econt</h4>
+          <ul class="points">
+            <li>Бугарски курир, покрива цела БГ.</li>
+            <li>Достава <b>до врата</b> или <b>до офис</b>.</li>
+            <li>Плаќање <b>COD</b> на курир.</li>
+          </ul>
+        </div>
+      </div>
+      <div class="callout">За клиентот, двете опции звучат исто: <span class="ph">„безплатна доставка до вашия адрес или офис на Еконт или Спиди“.</span> Бирај го тоа што клиентот го претпочита — не наметнувај. Целта е пратката лесно да стигне и сигурно да се наплати.</div>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">Elyon<small>Обука за агенти</small></span><span>Дел 8 · Карго</span></div>
+</section>
+
+<!-- 8.2 when sent -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Дел 8 · Карго</div>
+    <h2 class="title">Кога се праќаат пратките</h2>
+    <div class="body">
+      <div class="flow">
+        <div class="step"><span class="n">1</span><span class="t">Ти потврдуваш</span><span class="d">нарачка → confirmed</span></div>
+        <div class="arrow">→</div>
+        <div class="step"><span class="n">2</span><span class="t">Дневна листа</span><span class="d">менаџер извезува за магацин</span></div>
+        <div class="arrow">→</div>
+        <div class="step"><span class="n">3</span><span class="t">Магацин (БГ)</span><span class="d">пакува</span></div>
+        <div class="arrow">→</div>
+        <div class="step" style="border-color:var(--emerald)"><span class="n">4</span><span class="t">shipped</span><span class="d">стокот се намалува</span></div>
+      </div>
+      <div class="callout em">Потврдените нарачки одат во <b>дневната магацинска листа</b> (обично истиот или следниот ден). Кога ќе се означат како испратени, статусот станува <b>shipped</b> и системот автоматски ја намалува залихата. Затоа точноста на нарачката е важна — магацинот пакува точно тоа што си го внел.</div>
+      <p class="lead" style="margin:0">Затоа е важно <b>да потврдиш навреме</b> — задоцнета потврда = задоцнета пратка.</p>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">Elyon<small>Обука за агенти</small></span><span>Дел 8 · Карго</span></div>
+</section>
+
+<!-- 8.3 when arrive + COD -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Дел 8 · Карго</div>
+    <h2 class="title">Кога пристигаат + наплата</h2>
+    <div class="body">
+      <div class="cards g3">
+        <div class="card lift"><div class="ic">📦</div><h4>Курирот доставува</h4><p>Обично <b>1–3 работни дена</b> низ Бугарија по испраќањето.</p></div>
+        <div class="card lift"><div class="ic">💶</div><h4>Клиентот плаќа (COD)</h4><p>На курир, кога ќе ја прими пратката. Сè во <b>лв</b>.</p></div>
+        <div class="card lift"><div class="ic">✅</div><h4>Резултат</h4><p><b>paid</b> ако наплати; <b>returned</b> ако одбие — стокот се враќа.</p></div>
+      </div>
+      <div class="callout"><b>Зошто потврдата е критична:</b> ако адресата/телефонот се погрешни, или клиентот не е сигурен, пратката се враќа — губиме достава и стока. Затоа продавај цврсто, но потврдувај <b>сигурни</b> нарачки.</div>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">Elyon<small>Обука за агенти</small></span><span>Дел 8 · Карго</span></div>
+</section>
+
+<!-- 8.4 speedy vs econt + delay -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Дел 8 · Карго</div>
+    <h2 class="title">Speedy vs Econt + одложување</h2>
+    <div class="body">
+      <table class="tbl compact">
+        <tr><th>Карактеристика</th><th>Speedy</th><th>Econt</th></tr>
+        <tr><td><b>Покриеност</b></td><td>Цела Бугарија</td><td>Цела Бугарија</td></tr>
+        <tr><td><b>До врата</b></td><td>Да</td><td>Да</td></tr>
+        <tr><td><b>До офис</b></td><td>Да (избор на офис)</td><td>Да (избор на офис)</td></tr>
+        <tr><td><b>COD</b></td><td>Да</td><td>Да</td></tr>
+      </table>
+      <div class="callout em"><b>Одложување (потсетник):</b> 1–2 дена → испорака сега; 3+ дена → чека до својот ден. Запиши го датумот. За клиентот, разликата меѓу Speedy и Econt е мала — важно е само да стигне брзо и сигурно.</div>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">Elyon<small>Обука за агенти</small></span><span>Дел 8 · Карго</span></div>
+</section>
+
+<!-- ===================== EXTRAS DIVIDER ===================== -->
+<section class="slide divider">
+  <div class="wrap" style="justify-content:center">
+    <div class="dk">Бонус</div>
+    <div class="pnum">+</div>
+    <h2>Корисно да се знае</h2>
+    <div class="dl">Валута, твојата провизија, пребарување по телефон и чек-листа за совршен повик.</div>
+  </div>
+  <div class="foot"><span class="wm">Elyon<small>Обука за агенти</small></span><span>Бонус</span></div>
+</section>
+
+<!-- currency -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Бонус</div>
+    <h2 class="title">Валута — секогаш € и лв</h2>
+    <div class="body">
+      <div class="two">
+        <div class="panel em"><h4>Фиксен курс</h4>
+          <div class="stat" style="margin:6px 0"><span class="big">1.95583</span><span class="lbl">лв за 1 €  ·  фиксен курс на БНБ</span></div>
+          <p style="margin:0;color:var(--ink-dim)">Не се менува, не се пресметува „во живо“ — секогаш истиот.</p>
+        </div>
+        <div class="panel"><h4>Пример</h4>
+          <table class="tbl compact">
+            <tr><th>EUR</th><th>BGN (лв)</th></tr>
+            <tr><td>24€</td><td>46.94 лв</td></tr>
+            <tr><td>48€</td><td>93.88 лв</td></tr>
+            <tr><td>96€</td><td>187.76 лв</td></tr>
+          </table>
+        </div>
+      </div>
+      <div class="callout">Системот секаде покажува <b>и € и лв</b>. На клиент зборувај во <b>лв</b> (тоа им е јасно), но знај дека внатре сѐ е во €. Бугарија е во преод кон евро, па двете валути важат — затоа секаде ги гледаш заедно. Никогаш не пресметувај рачно; системот го прави тоа точно.</div>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">Elyon<small>Обука за агенти</small></span><span>Бонус</span></div>
+</section>
+
+<!-- commissions -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Бонус · Твојата заработка</div>
+    <h2 class="title">Провизии / бонуси</h2>
+    <div class="body">
+      <div class="two">
+        <div class="panel em"><h4>Бонус по пакет — само на ПЛАТЕНИ нарачки</h4>
+          <table class="tbl compact">
+            <tr><th>Цена по пакет</th><th>Бонус / пакет</th></tr>
+            <tr><td>под 25€</td><td class="price">1€</td></tr>
+            <tr><td>25€ – 35€</td><td class="price">2€</td></tr>
+            <tr><td>35€ и повеќе</td><td class="price">3€</td></tr>
+          </table>
+        </div>
+        <div class="panel"><h4>Правила</h4>
+          <ul class="points gold">
+            <li>Се брои <b>по пакет</b> и се <b>множи со количина</b>.</li>
+            <li><b>Нема минимум</b> — секој пакет носи.</li>
+            <li>Бонусот е само ако нарачката е <b>paid</b> (наплатена).</li>
+            <li>Пример: <b>3 пакети × 35€ = 9€</b> бонус.</li>
+          </ul>
+        </div>
+      </div>
+      <div class="callout"><b>Затоа продаваме курс:</b> повеќе пакети = повеќе бонус за тебе и подобар резултат за клиентот. Колку повеќе платени нарачки, толку повисока заработка — наградата е директно поврзана со трудот. <span class="muted">(Точните износи ги потврдува операторот пред старт.)</span></div>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">Elyon<small>Обука за агенти</small></span><span>Бонус</span></div>
+</section>
+
+<!-- phone search -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Бонус</div>
+    <h2 class="title">Пребарување по телефон</h2>
+    <div class="body">
+      <p class="lead">Секој клиент го наоѓаш по <span class="em">последните 8 цифри</span> од бројот — без разлика на форматот.</p>
+      <div class="terms" style="gap:12px">
+        <span class="chip">078319044</span><span class="chip">+38978319044</span><span class="chip">38978319044</span>
+        <span class="chip go">→ истиот клиент</span>
+      </div>
+      <div class="callout em">Пред да внесеш нов клиент, <b>пребарај го бројот</b> — често веќе постои со историја што ти помага во разговорот. Ако видиш претходни нарачки, веднаш знаеш дека е постоечки клиент и како да пристапиш. Тоа спречува и дупли внесови.</div>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">Elyon<small>Обука за агенти</small></span><span>Бонус</span></div>
+</section>
+
+<!-- checklist -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Бонус</div>
+    <h2 class="title">Чек-листа: совршен повик</h2>
+    <div class="body">
+      <p class="lead" style="margin:0 0 2px">Држи ја оваа листа пред тебе на почеток. По неколку дена сѐ ќе ти влезе во рутина и ќе тече природно.</p>
+      <div class="two">
+        <div class="panel"><h4>Пред и за време</h4>
+          <ul class="points">
+            <li>☐ Прочитај ја историјата на клиентот.</li>
+            <li>☐ Поздрав + „Натура Терапи“ + „разговорът се записва“.</li>
+            <li>☐ Прашања + слушање (емпатија).</li>
+            <li>☐ Објасни ја причината со БГ термини.</li>
+            <li>☐ Поврзи со продукт + состојки.</li>
+          </ul>
+        </div>
+        <div class="panel em"><h4>Затворање</h4>
+          <ul class="points gold">
+            <li>☐ Понуди <b>полн курс</b> прво.</li>
+            <li>☐ Приговор → <b>половин курс</b>.</li>
+            <li>☐ Земи <b>адреса + телефон + датум</b>.</li>
+            <li>☐ <b>Прочитај назад</b> сѐ.</li>
+            <li>☐ CONFIRM + точна белешка.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">Elyon<small>Обука за агенти</small></span><span>Бонус</span></div>
+</section>
+
+<!-- dos donts -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Бонус</div>
+    <h2 class="title">Do's &amp; Don'ts</h2>
+    <div class="body">
+      <p class="lead" style="margin:0 0 2px">Овие неколку правила ја прават разликата меѓу просечен и одличен агент. Запомни: продаваме грижа и доверба, не притисок.</p>
+      <div class="two">
+        <div class="panel em"><h4>✅ Прави</h4>
+          <ul class="points">
+            <li>Слушај повеќе отколку што зборуваш.</li>
+            <li>Прави паузи — остави го клиентот да одговори.</li>
+            <li>Користи <b>social proof</b> и реални очекувања.</li>
+            <li>Продавај <b>курс</b>, не една кутија.</li>
+            <li>Внесувај <b>точни</b> податоци.</li>
+          </ul>
+        </div>
+        <div class="panel"><h4>🚫 Не прави</h4>
+          <ul class="points gold">
+            <li>Не ветувај <b>излекување</b> ниту медицинска дијагноза.</li>
+            <li>Не лажи за цена, содржина или ефект.</li>
+            <li>Не притискај агресивно — гради доверба.</li>
+            <li>Не потврдувај <b>несигурна</b> адреса (= враќање).</li>
+            <li>Не заборавај белешка по повикот.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">Elyon<small>Обука за агенти</small></span><span>Бонус</span></div>
+</section>
+
+<!-- ===================== APPENDIX DIVIDER ===================== -->
+<section class="slide divider">
+  <div class="wrap" style="justify-content:center">
+    <div class="dk">Прилог</div>
+    <div class="pnum">A</div>
+    <h2>Целосни скрипти</h2>
+    <div class="dl">Полираните скрипти по продукт. Истите се секогаш достапни и во системот — „Call Support Center“.</div>
+  </div>
+  <div class="foot"><span class="wm">Elyon<small>Обука за агенти</small></span><span>Прилог · Скрипти</span></div>
+</section>
+
+<!-- APPENDIX: Brain Active -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Прилог · Скрипта</div>
+    <h2 class="title" style="font-size:34px">🧠 Brain Active</h2>
+    <div class="script scols">
+      <div class="beat"><div class="bl">Поздрав</div>Ало, здравейте господин/госпожо ___! Аз съм ___ от Натура Терапи. Обаждам ви се във връзка с вашето ползване на Brain Active. <span class="cue">Разговорът се записва с цел контрол на качеството.</span></div>
+      <div class="beat"><div class="bl">Прашања</div>Как се чувствахте, докато го ползвахте? <span class="cue">(изчакай)</span> Как беше с паметта и концентрацията — по-ясна ли беше, по-малко ли усещахте мозъчна умора? От колко време имате тези проблеми?</div>
+      <div class="beat"><div class="bl">Проблем</div>Проблемите с паметта и концентрацията често се дължат на оксидативен стрес, възпаления и влошено кръвоснабдяване на мозъка — затова забравяне и бавно мислене.</div>
+      <div class="beat"><div class="bl">Продукт</div>Brain Active съдържа 9 активни компонента с патентовани съставки <b>Bacopin®, Centilin®, Bioperine®</b>. Ключът е в редовната и продължителна употреба — ефектът се натрупва.</div>
+      <div class="beat"><div class="bl">Понуда</div>Предлагам ви пълен 4-месечен курс: <b>8 кутии</b> — плащате само 4 по 24€ (96€ / 187.76 лв), другите 4 са подарък. Доставката е безплатна.</div>
+      <div class="beat"><div class="bl">Ако е многу</div>По-малък старт — 2 месеца: 4 кутии, плащате 2 (48€), 2 подарък.</div>
+      <div class="beat"><div class="bl">Затворање</div>Кое от двете ви устройва повече? И на кой адрес и кога да изпратим пратката? <span class="cue">(затвори меко)</span></div>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">Elyon<small>Обука за агенти</small></span><span>Прилог · Скрипти</span></div>
+</section>
+
+<!-- APPENDIX: Broncho -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Прилог · Скрипта</div>
+    <h2 class="title" style="font-size:34px">🫁 Broncho Complex</h2>
+    <div class="script scols">
+      <div class="beat"><div class="bl">Поздрав</div>Ало, здравейте ___! Аз съм ___ от Натура Терапи, във връзка с вашето ползване на Broncho Complex. <span class="cue">Разговорът се записва с цел контрол на качеството.</span></div>
+      <div class="beat"><div class="bl">Прашања</div>Как се чувствахте? Как беше с дишането и кашлицата — по-леко ли дишахте, имаше ли хрипове? От колко време имате тези проблеми, пробвали ли сте инхалатори или сиропи?</div>
+      <div class="beat"><div class="bl">Проблем</div>Проблемите с белите дробове често идват от хронично възпаление на бронхите, бронхоспазъм, натрупване на слуз и отслабен имунитет — оттам затруднено дишане и чести пристъпи.</div>
+      <div class="beat"><div class="bl">Продукт</div>Broncho Complex е 100% натурален, в течна форма (500 мл), бързо усвоим: живовлек, черен кимион, розмарин, куркума, рейши, биофлавоноиди, вит. C и D. Облекчение още след 2–3 седмици.</div>
+      <div class="beat"><div class="bl">Понуда</div>Пълен 4-месечен курс: <b>8 броя</b> — плащате 4 по 24€ (96€ / 187.76 лв), 4 подарък, безплатна доставка.</div>
+      <div class="beat"><div class="bl">Ако е многу</div>Половин курс — 2 месеца: плащате 2 (48€), 2 подарък.</div>
+      <div class="beat"><div class="bl">Затворање</div>Кое от двете предпочитате? На кой адрес и кога да изпратим?</div>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">Elyon<small>Обука за агенти</small></span><span>Прилог · Скрипти</span></div>
+</section>
+
+<!-- APPENDIX: Collagen Beauty -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Прилог · Скрипта</div>
+    <h2 class="title" style="font-size:34px">✨ Collagen Peptides — Beauty</h2>
+    <div class="script scols">
+      <div class="beat"><div class="bl">Поздрав</div>Ало, здравейте ___! Аз съм ___ от Натура Терапи, във връзка с Колагеновите Пептиди. <span class="cue">Разговорът се записва за контрол на качеството.</span></div>
+      <div class="beat"><div class="bl">Прашања</div>Какви промени забелязахте по кожата, косата и ноктите — по-гладка, по-стегната кожа, по-малко бръчки? От колко време имате тези промени?</div>
+      <div class="beat"><div class="bl">Проблем</div>След 25–30 г. естественото производство на колаген намалява → загуба на еластичност и хидратация, бръчки, косопад и чупливи нокти.</div>
+      <div class="beat"><div class="bl">Продукт</div>100% натурален, с висока бионаличност (хидролизирани пептиди) + витамин C за синтез на нов колаген. Приятен ванилов вкус, като шейк. Резултати още след месец.</div>
+      <div class="beat"><div class="bl">Понуда</div>Пълен 4-месечен курс: <b>8 кутии</b> — плащате 4 по 24€ (96€ / 187.76 лв), 4 подарък, безплатна доставка.</div>
+      <div class="beat"><div class="bl">Ако е многу</div>Половин курс: плащате 2 (48€), 2 подарък.</div>
+      <div class="beat"><div class="bl">Затворање</div>Кое от двете ви устройва повече? Адрес и дата за доставка?</div>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">Elyon<small>Обука за агенти</small></span><span>Прилог · Скрипти</span></div>
+</section>
+
+<!-- APPENDIX: Collagen Bones -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Прилог · Скрипта</div>
+    <h2 class="title" style="font-size:34px">🦴 Collagen Peptides — Зглобови</h2>
+    <div class="script scols">
+      <div class="beat"><div class="bl">Поздрав</div>Ало, здравейте ___! Аз съм ___ от Натура Терапи, във връзка с Колагена за кости и стави. <span class="cue">Разговорът се записва.</span></div>
+      <div class="beat"><div class="bl">Прашања</div>По-малко ли болят коленете, тазобедрените, гърбът? По-добра ли е подвижността? От колко време имате тези проблеми?</div>
+      <div class="beat"><div class="bl">Проблем</div>Болките в ставите, артритът и дисковата херния идват от дегенерация на хрущяла, възпаление и намален колаген в тялото.</div>
+      <div class="beat"><div class="bl">Продукт</div>100% натурален, хидролизирани пептиди + витамин C — директно подпомагат регенерацията на хрущяла. Облекчение обикновено след 6–8 седмици.</div>
+      <div class="beat"><div class="bl">Понуда</div>Пълен 4-месечен курс: <b>8 кутии</b> — плащате 4 по 24€ (96€ / 187.76 лв), 4 подарък, безплатна доставка.</div>
+      <div class="beat"><div class="bl">Ако е многу</div>Половин курс: плащате 2 (48€), 2 подарък.</div>
+      <div class="beat"><div class="bl">Затворање</div>Кое от двете предпочитате? Адрес и дата?</div>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">Elyon<small>Обука за агенти</small></span><span>Прилог · Скрипти</span></div>
+</section>
+
+<!-- APPENDIX: Curcumactiv -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Прилог · Скрипта</div>
+    <h2 class="title" style="font-size:34px">🌶️ Curcumactiv</h2>
+    <div class="script scols">
+      <div class="beat"><div class="bl">Поздрав</div>Ало, здравейте ___! Аз съм ___ от Натура Терапи, във връзка с Curcumactiv. <span class="cue">Разговорът се записва.</span></div>
+      <div class="beat"><div class="bl">Прашања</div>По-малко ли болеше гърбът, вратът, ставите или мускулите? По-лесно ли се движехте? От колко време имате тези болки?</div>
+      <div class="beat"><div class="bl">Проблем</div>Болките с възпаление идват от хронични възпалителни процеси и дегенеративни изменения — спондилоза, дископатия, артроза, оксидативен стрес.</div>
+      <div class="beat"><div class="bl">Продукт</div>100% натурален сироп: <b>Curcumin C3 Complex® + Bioperine®</b> (увеличава усвояването до 20 пъти) + босвелия, коприва, розмарин. Блокира възпалението.</div>
+      <div class="beat"><div class="bl">Понуда</div>Пълен 4-месечен курс: <b>8 броя</b> — плащате 4 по 24€ (96€ / 187.76 лв), 4 подарък, безплатна доставка.</div>
+      <div class="beat"><div class="bl">Ако е многу</div>Половин курс: плащате 2 (48€), 2 подарък.</div>
+      <div class="beat"><div class="bl">Затворање</div>Кое от двете ви устройва повече? Адрес и дата?</div>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">Elyon<small>Обука за агенти</small></span><span>Прилог · Скрипти</span></div>
+</section>
+
+<!-- APPENDIX: Diabetol -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Прилог · Скрипта</div>
+    <h2 class="title" style="font-size:34px">🩸 Diabetol Форте</h2>
+    <div class="script scols">
+      <div class="beat"><div class="bl">Поздрав</div>Ало, здравейте ___! Аз съм ___ от Натура Терапи, във връзка с Диабетол Форте. <span class="cue">Разговорът се записва.</span></div>
+      <div class="beat"><div class="bl">Прашања</div>Как бяха нивата на захарта — по-стабилни ли? На диабет тип 2 ли сте? От колко време?</div>
+      <div class="beat"><div class="bl">Проблем</div>При тип 2 тялото губи способност да регулира захарта: намалена чувствителност към инсулин, слаби бета-клетки, възпаление и оксидативен стрес.</div>
+      <div class="beat"><div class="bl">Продукт</div>Алфа-липоева киселина (мощен антиоксидант, пази нервите), канела, горчив пъпеш, цинк и хром — подкрепят бета-клетките и действието на инсулина.</div>
+      <div class="beat"><div class="bl">Понуда</div>Пълен 4-месечен курс: <b>8 броя</b> — плащате 4 по 24€ (96€ / 187.76 лв), 4 подарък, безплатна доставка.</div>
+      <div class="beat"><div class="bl">Ако е многу</div>Половин курс: плащате 2 (48€), 2 подарък.</div>
+      <div class="beat"><div class="bl">Затворање</div>Кое от двете предпочитате? Адрес и дата?</div>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">Elyon<small>Обука за агенти</small></span><span>Прилог · Скрипти</span></div>
+</section>
+
+<!-- APPENDIX: Diet Combo -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Прилог · Скрипта</div>
+    <h2 class="title" style="font-size:34px">⚖️ Diet Combo</h2>
+    <div class="script scols">
+      <div class="beat"><div class="bl">Поздрав</div>Ало, здравейте ___! Аз съм ___ от Натура Терапи, във връзка с нашата система за отслабване. <span class="cue">Разговорът се записва.</span></div>
+      <div class="beat"><div class="bl">Прашања</div>По-лесно ли контролирахте глада и сладкото? По-стабилна ли беше енергията? Колко килограма свалихте, и колко искате да свалите?</div>
+      <div class="beat"><div class="bl">Проблем</div>Отслабването е трудно заради постоянен глад, бавен метаболизъм, инсулинова резистентност и йо-йо ефект от диети.</div>
+      <div class="beat"><div class="bl">Продукт</div>100% натурална синергия: контрол над апетита 24/7, ускорен метаболизъм, топене на мастните депа. Клиенти свалят 5–12 кг за 1–2 месеца — без глад и йо-йо.</div>
+      <div class="beat"><div class="bl">Понуда</div>Пълен 4-месечен курс: <b>8 броя</b> — плащате 4 по 24€ (96€ / 187.76 лв), 4 подарък, безплатна доставка.</div>
+      <div class="beat"><div class="bl">Ако е многу</div>Половин курс: плащате 2 (48€), 2 подарък.</div>
+      <div class="beat"><div class="bl">Затворање</div>Кое от двете ви устройва повече? Адрес и дата?</div>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">Elyon<small>Обука за агенти</small></span><span>Прилог · Скрипти</span></div>
+</section>
+
+<!-- APPENDIX: Enduro -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Прилог · Скрипта</div>
+    <h2 class="title" style="font-size:34px">🔥 Enduro Max</h2>
+    <div class="script scols">
+      <div class="beat"><div class="bl">Поздрав</div>Ало, здравейте господин ___! Аз съм ___ от Натура Терапи, във връзка с Enduro Max. <span class="cue">Разговорът се записва.</span></div>
+      <div class="beat"><div class="bl">Прашања</div>Силна ли беше ерекцията и издръжливостта? По-силно ли беше желанието? От колко време имате тези проблеми, пробвали ли сте друго?</div>
+      <div class="beat"><div class="bl">Проблем</div>Трудностите идват от намален тестостерон, влошено кръвоснабдяване и стрес/възпаление в тазовата област.</div>
+      <div class="beat"><div class="bl">Продукт</div>100% натурален, 7 растителни екстракта: повишават тестостерона, подобряват кръвотока и издръжливостта. Може +1 капсула 30–40 мин преди.</div>
+      <div class="beat"><div class="bl">Понуда</div>Пълен 4-месечен курс: <b>8 броя</b> — плащате 4 по 24€ (96€ / 187.76 лв), 4 подарък, безплатна доставка.</div>
+      <div class="beat"><div class="bl">Ако е многу</div>Половин курс: плащате 2 (48€), 2 подарък.</div>
+      <div class="beat"><div class="bl">Затворање</div>Кое от двете предпочитате? Адрес и дата?</div>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">Elyon<small>Обука за агенти</small></span><span>Прилог · Скрипти</span></div>
+</section>
+
+<!-- APPENDIX: Hepatol -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Прилог · Скрипта</div>
+    <h2 class="title" style="font-size:34px">🫀 Hepatol Forte</h2>
+    <div class="script scols">
+      <div class="beat"><div class="bl">Поздрав</div>Ало, здравейте ___! Аз съм ___ от Натура Терапи, във връзка с Hepatol Forte. <span class="cue">Разговорът се записва.</span></div>
+      <div class="beat"><div class="bl">Прашања</div>По-добра ли беше енергията и храносмилането? Чувствахте ли се по-леко и детоксикиран? От колко време имате нужда от подкрепа за черния дроб?</div>
+      <div class="beat"><div class="bl">Проблем</div>Претовареният черен дроб (алкохол, лекарства, мазни храни) натрупва мазнини, възпаление и токсини → умора, тежест, висок холестерол.</div>
+      <div class="beat"><div class="bl">Продукт</div>100% натурален: бял трън (силимарин), артишок, глюкуронова киселина, лецитин — защитават клетките, подобряват жлъчката и детоксикацията.</div>
+      <div class="beat"><div class="bl">Понуда</div>Пълен 4-месечен курс: <b>8 броя</b> — плащате 4 по 24€ (96€ / 187.76 лв), 4 подарък, безплатна доставка.</div>
+      <div class="beat"><div class="bl">Ако е многу</div>Половин курс: плащате 2 (48€), 2 подарък.</div>
+      <div class="beat"><div class="bl">Затворање</div>Кое от двете ви устройва повече? Адрес и дата?</div>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">Elyon<small>Обука за агенти</small></span><span>Прилог · Скрипти</span></div>
+</section>
+
+<!-- APPENDIX: Prostatol -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Прилог · Скрипта</div>
+    <h2 class="title" style="font-size:34px">🚹 Prostatol Complex</h2>
+    <div class="script scols">
+      <div class="beat"><div class="bl">Поздрав</div>Ало, здравейте господин ___! Аз съм ___ от Натура Терапи, във връзка с Prostatol Complex. <span class="cue">Разговорът се записва.</span></div>
+      <div class="beat"><div class="bl">Прашања</div>По-малко ли ставахте през нощта, по-силна ли беше струята, по-малко парене и дискомфорт? От колко време имате тези проблеми?</div>
+      <div class="beat"><div class="bl">Проблем</div>Проблемите идват от доброкачествено увеличение на простатата (БПХ), повишен DHT, хронично възпаление и оксидативен стрес.</div>
+      <div class="beat"><div class="bl">Продукт</div>100% натурален, 7 активни компонента с доказан ефект върху простатата и уринирането. Облекчение обикновено след 2–3 седмици.</div>
+      <div class="beat"><div class="bl">Понуда</div>Пълен 4-месечен курс: <b>8 броя</b> — плащате 4 по 24€ (96€ / 187.76 лв), 4 подарък, безплатна доставка.</div>
+      <div class="beat"><div class="bl">Ако е многу</div>Половин курс: плащате 2 (48€), 2 подарък.</div>
+      <div class="beat"><div class="bl">Затворање</div>Кое от двете предпочитате? Адрес и дата?</div>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">Elyon<small>Обука за агенти</small></span><span>Прилог · Скрипти</span></div>
+</section>
+
+<!-- APPENDIX: Snail -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Прилог · Скрипта</div>
+    <h2 class="title" style="font-size:34px">🐌 Snail Complex</h2>
+    <div class="script scols">
+      <div class="beat"><div class="bl">Поздрав</div>Ало, здравейте ___! Аз съм ___ от Натура Терапи, във връзка със Snail Complex. <span class="cue">Разговорът се записва.</span></div>
+      <div class="beat"><div class="bl">Прашања</div>По-малко ли боляха и подуваха ставите? По-лесно ли се движехте? От колко време имате проблеми със ставите?</div>
+      <div class="beat"><div class="bl">Проблем</div>Проблемите идват от дегенерация и възпаление на хрущяла, намалена синовиална течност и намален колаген (остеоартрит, ревматоиден артрит).</div>
+      <div class="beat"><div class="bl">Продукт</div>100% натурален: <b>Nutrelix®</b> (екстракт от охлюв Helix Pomatia) + <b>Curcumin C3 Complex®</b> + босвелия + витамин C. Само 1 капсула дневно.</div>
+      <div class="beat"><div class="bl">Понуда</div>Пълен 4-месечен курс: <b>8 броя</b> — плащате 4 по 24€ (96€ / 187.76 лв), 4 подарък, безплатна доставка.</div>
+      <div class="beat"><div class="bl">Ако е многу</div>Половин курс: плащате 2 (48€), 2 подарък.</div>
+      <div class="beat"><div class="bl">Затворање</div>Кое от двете ви устройва повече? Адрес и дата?</div>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">Elyon<small>Обука за агенти</small></span><span>Прилог · Скрипти</span></div>
+</section>
+
+<!-- ===================== CLOSING ===================== -->
+<section class="slide cover">
+  <div class="wrap" style="justify-content:center">
+    <div class="brand">Elyon Premium Group<small>Натура Терапи</small></div>
+    <h1 style="font-size:64px">Добредојде во <span class="accent">тимот</span>.</h1>
+    <div class="sub">Слушај го клиентот, поврзи го проблемот со вистинскиот продукт, продавај курс — и внесувај точно. Останатото системот го прави за тебе. Грешките на почеток се нормални — важно е да учиш од секој повик. Тука сме да ти помогнеме на секој чекор.</div>
+    <div class="rule"></div>
+    <div class="meta"><span>Прашања?</span><span class="dot"></span><span>Среќно на првиот повик 🌿</span></div>
+  </div>
+  <div class="foot"><span class="wm">Elyon<small>Обука за агенти</small></span><span>Крај</span></div>
+</section>
+
+<!-- ===================== CHROME ===================== -->
+<div class="hud">
+  <button id="prev" aria-label="Претходен">‹</button>
+  <span class="ctr"><span id="cur">1</span> / <span id="tot">1</span></span>
+  <button id="next" aria-label="Следен">›</button>
+  <button id="full" aria-label="Цел екран" title="Цел екран (F)">⛶</button>
+</div>
+
+<script>
+(function(){
+  var slides = Array.prototype.slice.call(document.querySelectorAll('.slide'));
+  var i = 0, N = slides.length;
+  var prog = document.getElementById('progress');
+  var curEl = document.getElementById('cur');
+  document.getElementById('tot').textContent = N;
+
+  function clamp(n){ return Math.max(0, Math.min(N-1, n)); }
+  function show(n){
+    i = clamp(n);
+    slides.forEach(function(s,idx){ s.classList.toggle('active', idx===i); });
+    prog.style.width = ((i+1)/N*100) + '%';
+    curEl.textContent = (i+1);
+    if (location.hash !== '#'+(i+1)) history.replaceState(null,'','#'+(i+1));
+  }
+  function next(){ show(i+1); }
+  function prev(){ show(i-1); }
+
+  document.getElementById('next').addEventListener('click', next);
+  document.getElementById('prev').addEventListener('click', prev);
+  document.getElementById('full').addEventListener('click', toggleFull);
+
+  function toggleFull(){
+    if (!document.fullscreenElement){ (document.documentElement.requestFullscreen||function(){}).call(document.documentElement); }
+    else { (document.exitFullscreen||function(){}).call(document); }
+  }
+
+  document.addEventListener('keydown', function(e){
+    if (e.key==='ArrowRight'||e.key==='PageDown'||e.key===' '||e.key==='ArrowDown'){ e.preventDefault(); next(); }
+    else if (e.key==='ArrowLeft'||e.key==='PageUp'||e.key==='ArrowUp'){ e.preventDefault(); prev(); }
+    else if (e.key==='Home'){ e.preventDefault(); show(0); }
+    else if (e.key==='End'){ e.preventDefault(); show(N-1); }
+    else if (e.key==='f'||e.key==='F'){ toggleFull(); }
+    else if (e.key==='p'||e.key==='P'){ /* let browser print dialog open */ }
+  });
+
+  // click right/left half to navigate (ignore clicks on the HUD + links/buttons)
+  document.addEventListener('click', function(e){
+    if (e.target.closest('.hud') || e.target.closest('a,button')) return;
+    if (window.matchMedia('print').matches) return;
+    var x = e.clientX / window.innerWidth;
+    if (x > 0.6) next(); else if (x < 0.25) prev();
+  });
+
+  // touch swipe
+  var sx=0;
+  document.addEventListener('touchstart', function(e){ sx = e.touches[0].clientX; }, {passive:true});
+  document.addEventListener('touchend', function(e){
+    var dx = e.changedTouches[0].clientX - sx;
+    if (Math.abs(dx) > 50){ dx<0 ? next() : prev(); }
+  }, {passive:true});
+
+  // Deep-link / browser back-forward support (also lets tooling jump to a slide).
+  window.addEventListener('hashchange', function(){
+    var n = parseInt((location.hash||'#1').slice(1),10);
+    if (!isNaN(n) && (n-1)!==i) show(n-1);
+  });
+
+  var start = parseInt((location.hash||'#1').slice(1),10);
+  show(isNaN(start)?0:start-1);
+})();
+</script>
+</body>
+</html>

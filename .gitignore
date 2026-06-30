@@ -1,0 +1,66 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Dependencies
+node_modules
+
+# Build output
+dist
+dist-ssr
+*.local
+
+# TypeScript build cache
+*.tsbuildinfo
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Vercel
+.vercel
+
+# Local secrets (DB password, service role key, etc.)
+.secrets/
+
+# Supabase local
+supabase/.branches
+supabase/.temp
+supabase/seed.sql
+
+# Lovable leftovers
+.workspace
+
+# CPA import — customer data and per-run rollback logs must not ship to git
+IN,CPA and OUT.xlsx
+scripts/cpa-analysis.json
+scripts/cpa-import-*.txt
+scripts/outbound-import-*.txt
+# Per-run rollback snapshots and recovery reports (contain customer PII)
+scripts/*-rollback-*.json
+phone-recovery-report-*.csv
+
+.vercel
+
+# Internal-only docs (business overview, vendor pricing, carrier strategy)
+docs/how-it-works.md
+
+# Local secrets vault — NEVER commit (real tokens/passwords live here)
+docs/VAULT.md

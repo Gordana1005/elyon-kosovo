@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<modification>
+    <name>Elyon CRM Bridge</name>
+    <code>elyon_crm_bridge</code>
+    <version>1.0</version>
+    <author>Elyon CRM</author>
+    <link>https://elyoncall.com</link>
+    <!--
+        This bridge ships as plain files under upload/ and registers its
+        storefront events from the module install() (Extensions > Modules >
+        Elyon CRM Bridge > Install). No core-file modifications are needed,
+        so this manifest intentionally contains no <file> operations — it
+        exists only so the package is a valid .ocmod.zip.
+    -->
+</modification>

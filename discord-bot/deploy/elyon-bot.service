@@ -1,0 +1,44 @@
+# Elyon CRM Discord Bot — systemd unit (resource-capped so it can NEVER starve Asterisk/FreePBX)
+#
+# Install on the Sofia VPS:
+#   sudo useradd --system --create-home --home-dir /opt/elyon-discord-bot elyonbot   # if not present
+#   sudo cp -r discord-bot/* /opt/elyon-discord-bot/   (incl. dist/, node_modules/, .env)
+#   sudo chown -R elyonbot:elyonbot /opt/elyon-discord-bot
+#   sudo cp /opt/elyon-discord-bot/deploy/elyon-bot.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now elyon-bot
+#   journalctl -u elyon-bot -f      # watch logs
+#
+# The bot loads its config from .env in WorkingDirectory via dotenv.
+
+[Unit]
+Description=Elyon CRM Discord Bot (read-only)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=elyonbot
+Group=elyonbot
+WorkingDirectory=/opt/elyon-discord-bot
+ExecStart=/opt/elyon-discord-bot/node/bin/node --max-old-space-size=160 dist/index.js
+Restart=on-failure
+RestartSec=5
+
+# ---- resource caps: keep the PBX safe ----
+MemoryMax=256M
+CPUQuota=50%
+TasksMax=64
+
+# ---- hardening ----
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/elyon-discord-bot/data
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=elyon-bot
+
+[Install]
+WantedBy=multi-user.target

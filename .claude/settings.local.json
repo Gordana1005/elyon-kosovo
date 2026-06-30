@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//Users/Mile/Desktop/elyoncrm/supabase/migrations/**)",
+      "Read(//c/Users/Mile/Desktop/elyoncrm/supabase/migrations/**)",
+      "Read(//Users/Mile/Desktop/elyoncrm/src/integrations/supabase/**)",
+      "Read(//c/Users/Mile/Desktop/elyoncrm/src/integrations/supabase/**)",
+      "Read(//Users/Mile/Desktop/elyoncrm/src/lib/**)",
+      "Read(//c/Users/Mile/Desktop/elyoncrm/src/lib/**)",
+      "Bash(xargs grep -l \"OrderModal\")",
+      "Read(//Users/Mile/Desktop/elyoncrm/src/pages/**)",
+      "Read(//c/Users/Mile/Desktop/elyoncrm/src/pages/**)",
+      "Bash(node --env-file=.env scripts/import-cpa-xlsx.mjs --commit)",
+      "Bash(node --env-file=.env scripts/verify-cleanup.mjs)",
+      "Read(//c/Users/Mile/.claude/plans/**)",
+      "Bash(npm test *)"
+    ]
+  }
+}

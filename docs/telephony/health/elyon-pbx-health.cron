@@ -1,0 +1,4 @@
+# /etc/cron.d/elyon-pbx-health — push a PBX health snapshot to the CRM every 3 min.
+# Drives the VOIP Health page trends + threshold alerting. Keep in sync with the
+# 30-day retention story; snapshots are tiny (one row each).
+*/3 * * * * root /usr/local/bin/elyon-pbx-health.sh

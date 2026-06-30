@@ -1,0 +1,174 @@
+{{ header }}{{ column_left }}
+<div id="content">
+  <div class="page-header">
+    <div class="container-fluid">
+      <div class="pull-right">
+        <button type="submit" form="form-elyon" data-toggle="tooltip" title="{{ button_save }}" class="btn btn-primary"><i class="fa fa-save"></i></button>
+        <a href="{{ cancel }}" data-toggle="tooltip" title="{{ button_cancel }}" class="btn btn-default"><i class="fa fa-reply"></i></a>
+      </div>
+      <h1>{{ heading_title }}</h1>
+      <ul class="breadcrumb">
+        {% for breadcrumb in breadcrumbs %}
+        <li><a href="{{ breadcrumb.href }}">{{ breadcrumb.text }}</a></li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+
+  <div class="container-fluid">
+    {% if error_warning %}
+    <div class="alert alert-danger"><i class="fa fa-exclamation-circle"></i> {{ error_warning }}
+      <button type="button" class="close" data-dismiss="alert">&times;</button></div>
+    {% endif %}
+
+    <div id="elyon-alert"></div>
+
+    <div class="panel panel-default">
+      <div class="panel-heading"><h3 class="panel-title"><i class="fa fa-exchange"></i> {{ text_edit }}</h3></div>
+      <div class="panel-body">
+        <form action="{{ action }}" method="post" enctype="multipart/form-data" id="form-elyon" class="form-horizontal">
+
+          <div class="form-group">
+            <label class="col-sm-3 control-label" for="input-status">{{ entry_status }}</label>
+            <div class="col-sm-9">
+              <select name="module_elyon_bridge_status" id="input-status" class="form-control">
+                {% if module_elyon_bridge_status %}
+                <option value="1" selected="selected">{{ text_enabled }}</option>
+                <option value="0">{{ text_disabled }}</option>
+                {% else %}
+                <option value="1">{{ text_enabled }}</option>
+                <option value="0" selected="selected">{{ text_disabled }}</option>
+                {% endif %}
+              </select>
+            </div>
+          </div>
+
+          <div class="form-group required">
+            <label class="col-sm-3 control-label" for="input-url">{{ entry_url }}</label>
+            <div class="col-sm-9">
+              <input type="text" name="module_elyon_bridge_url" value="{{ module_elyon_bridge_url }}" placeholder="https://sxymaloycddnoxudxaqp.supabase.co/functions/v1/api/webhook/opencart" id="input-url" class="form-control"/>
+              {% if error_url %}<div class="text-danger">{{ error_url }}</div>{% endif %}
+              <div class="help-block">{{ help_url }}</div>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="col-sm-3 control-label" for="input-secret">{{ entry_secret }}</label>
+            <div class="col-sm-9">
+              <input type="text" name="module_elyon_bridge_secret" value="{{ module_elyon_bridge_secret }}" id="input-secret" class="form-control" autocomplete="off"/>
+              <div class="help-block">{{ help_secret }}</div>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="col-sm-3 control-label" for="input-source">{{ entry_source }}</label>
+            <div class="col-sm-9">
+              <input type="text" name="module_elyon_bridge_source" value="{{ module_elyon_bridge_source }}" id="input-source" class="form-control"/>
+              <div class="help-block">{{ help_source }}</div>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="col-sm-3 control-label" for="input-statuses">{{ entry_statuses }}</label>
+            <div class="col-sm-9">
+              <select name="module_elyon_bridge_statuses[]" id="input-statuses" class="form-control" multiple="multiple" size="6">
+                {% for os in order_statuses %}
+                {% if os.order_status_id in module_elyon_bridge_statuses %}
+                <option value="{{ os.order_status_id }}" selected="selected">{{ os.name }}</option>
+                {% else %}
+                <option value="{{ os.order_status_id }}">{{ os.name }}</option>
+                {% endif %}
+                {% endfor %}
+              </select>
+              <div class="help-block">{{ help_statuses }}</div>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="col-sm-3 control-label" for="input-abandoned">{{ entry_abandoned }}</label>
+            <div class="col-sm-9">
+              <select name="module_elyon_bridge_abandoned" id="input-abandoned" class="form-control">
+                {% if module_elyon_bridge_abandoned %}
+                <option value="1" selected="selected">{{ text_enabled }}</option>
+                <option value="0">{{ text_disabled }}</option>
+                {% else %}
+                <option value="1">{{ text_enabled }}</option>
+                <option value="0" selected="selected">{{ text_disabled }}</option>
+                {% endif %}
+              </select>
+              <div class="help-block">{{ help_abandoned }}</div>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="col-sm-3 control-label">&nbsp;</label>
+            <div class="col-sm-9">
+              <button type="button" id="btn-test" class="btn btn-info"><i class="fa fa-plug"></i> {{ button_test }}</button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div class="panel panel-default">
+      <div class="panel-heading"><h3 class="panel-title"><i class="fa fa-download"></i> {{ text_import }}</h3></div>
+      <div class="panel-body">
+        <div class="form-horizontal">
+          <div class="form-group">
+            <label class="col-sm-3 control-label" for="input-since">{{ entry_import_since }}</label>
+            <div class="col-sm-9">
+              <input type="date" id="input-since" value="{{ import_since_default }}" class="form-control" style="max-width:220px;"/>
+              <div class="help-block">{{ help_import }}</div>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="col-sm-3 control-label">&nbsp;</label>
+            <div class="col-sm-9">
+              <button type="button" id="btn-import" class="btn btn-success"><i class="fa fa-download"></i> {{ button_import }}</button>
+              <span id="import-result" style="margin-left:12px;"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="text/javascript">
+$('#btn-test').on('click', function () {
+  var $b = $(this); $b.button('loading');
+  $('#elyon-alert').html('');
+  $.ajax({
+    url: 'index.php?route=extension/module/elyon_bridge/test&user_token={{ user_token }}', type: 'post', dataType: 'json',
+    data: { secret: $('#input-secret').val(), url: $('#input-url').val() },
+    complete: function () { $b.button('reset'); },
+    success: function (json) {
+      if (json.success) {
+        $('#elyon-alert').html('<div class="alert alert-success"><i class="fa fa-check-circle"></i> ' + json.success + ' <button type="button" class="close" data-dismiss="alert">&times;</button></div>');
+      } else {
+        $('#elyon-alert').html('<div class="alert alert-danger"><i class="fa fa-exclamation-circle"></i> ' + (json.error || 'Error') + ' <button type="button" class="close" data-dismiss="alert">&times;</button></div>');
+      }
+    },
+    error: function (xhr) { $('#elyon-alert').html('<div class="alert alert-danger">Request failed: ' + xhr.statusText + '</div>'); }
+  });
+});
+
+$('#btn-import').on('click', function () {
+  var $b = $(this); $b.button('loading');
+  $('#import-result').html('<i class="fa fa-circle-o-notch fa-spin"></i> {{ text_importing }}');
+  $.ajax({
+    url: 'index.php?route=extension/module/elyon_bridge/import&user_token={{ user_token }}', type: 'post', dataType: 'json',
+    data: { since: $('#input-since').val() },
+    complete: function () { $b.button('reset'); },
+    success: function (json) {
+      if (json.error) {
+        $('#import-result').html('<span class="text-danger">' + json.error + '</span>');
+      } else {
+        $('#import-result').html('<span class="text-success">Done: ' + json.sent + ' sent, ' + json.failed + ' failed (of ' + json.total + ' since ' + json.since + ').</span>');
+      }
+    },
+    error: function (xhr) { $('#import-result').html('<span class="text-danger">Request failed: ' + xhr.statusText + '</span>'); }
+  });
+});
+</script>
+{{ footer }}

@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Elyon CRM</title>
+    <meta name="description" content="Elyon CRM — call center & lead management platform" />
+    <meta name="author" content="Elyon" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Elyon CRM" />
+    <meta property="og:description" content="Elyon CRM — call center & lead management platform" />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Elyon CRM" />
+    <meta name="twitter:description" content="Elyon CRM — call center & lead management platform" />
+
+    <!-- Apply the saved theme before paint so dark-mode users never flash white on load.
+         Default is light, so absence of a stored "dark" value = light. Kept in sync with
+         next-themes (storageKey "theme") configured in src/App.tsx. -->
+    <script>
+      (function () {
+        try {
+          if (localStorage.getItem('theme') === 'dark') {
+            document.documentElement.classList.add('dark');
+          }
+        } catch (e) {}
+      })();
+    </script>
+  </head>
+
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

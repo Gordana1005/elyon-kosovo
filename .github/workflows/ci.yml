@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Production build
+        run: npm run build
+        env:
+          # Build-time env vars are inlined by Vite. The values below are
+          # placeholders just so the build doesn't crash; the real values
+          # are set in Vercel's project settings and used at deploy time.
+          VITE_SUPABASE_URL: https://placeholder.supabase.co
+          VITE_SUPABASE_PROJECT_ID: placeholder
+          VITE_SUPABASE_PUBLISHABLE_KEY: placeholder
+
+      - name: Run tests
+        run: npm test --silent

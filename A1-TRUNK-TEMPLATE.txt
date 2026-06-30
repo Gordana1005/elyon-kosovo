@@ -1,0 +1,36 @@
+====================================================================
+A1 BULGARIA SIP TRUNK — what to fill in via FreePBX GUI
+   Connectivity → Trunks → Add Trunk → "Add SIP (chan_pjsip) Trunk"
+====================================================================
+
+General tab
+  Trunk Name:        a1-bulgaria
+  Outbound CallerID: <YOUR_A1_DID e.g. +359XXXXXXXXX>
+  Maximum Channels:  20         (matches A1's concurrent-call limit)
+  Disable Trunk:     unchecked
+
+pjsip Settings → General tab
+  Username:           <FROM A1>
+  Secret (password):  <FROM A1>
+  Authentication:     Outbound
+  Registration:       Send
+  Language Code:      bg
+  SIP Server:         <FROM A1>           (e.g. sip.a1.bg, voip.a1.bg, or specific server)
+  SIP Server Port:    5060                (or 5061 if TLS)
+  Context:            from-trunk
+
+pjsip Settings → Advanced tab
+  Transport:          0.0.0.0-udp         (or 0.0.0.0-tls for secure)
+  DTMF Mode:          rfc4733
+  Codec:              alaw, ulaw, opus    (BG mobile prefers alaw)
+  Match (Permit):     <A1 SIP server IP>  (lock down inbound)
+
+After saving:
+  Connectivity → Outbound Routes → Add → route 0/+359 prefix to a1-bulgaria
+  Connectivity → Inbound Routes  → Add → DID = your A1 DID, dest = ring group / extension
+  Apply Config (top right)
+
+Verify:
+  asterisk -rx "pjsip show registrations"      → should show "Registered"
+  asterisk -rx "pjsip show endpoint a1-bulgaria"
+====================================================================

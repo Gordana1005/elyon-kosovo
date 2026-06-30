@@ -1,0 +1,15 @@
+# dependencies & build
+node_modules/
+dist/
+
+# secrets — NEVER commit
+.env
+.env.*
+!.env.example
+
+# bot-local data (identity map, etc.)
+data/
+
+# logs
+*.log
+npm-debug.log*

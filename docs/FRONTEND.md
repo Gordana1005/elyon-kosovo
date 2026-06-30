@@ -1,0 +1,178 @@
+# Frontend & design
+
+> React 18 + TypeScript + Vite SPA. Routing via React Router 6, server state via TanStack Query, UI via
+> shadcn/ui (Radix primitives + Tailwind). Entry: [../src/main.tsx](../src/main.tsx) → [../src/App.tsx](../src/App.tsx).
+
+---
+
+## 1. App shell & providers
+
+[../src/App.tsx](../src/App.tsx) wraps everything:
+
+```
+QueryClientProvider (staleTime 30s, refetchOnWindowFocus off, retry 1)
+ └ TooltipProvider
+   └ Toaster + Sonner            (two toast systems: shadcn useToast + sonner)
+     └ BrowserRouter
+       └ AuthProvider            (session + roles)
+         └ PermissionsProvider   (module/role/financial permissions)
+           └ VoipProvider        (the call engine — live, RealVoipEngine/sip.js)
+             └ Suspense          (route-level code splitting via React.lazy)
+               └ Routes
+```
+
+Only `LoginPage` and `NotFound` are eager; **every other page is `React.lazy`** → its own chunk, loaded
+on first navigation. (Vite's automatic chunking is used deliberately — no manual `manualChunks`.)
+
+---
+
+## 2. Routes → modules → pages
+
+Each route is wrapped in `<ProtectedRoute moduleKey="…">`. The `moduleKey` ties the route to RBAC
+(section 4) and to the sidebar. Source of truth for the mapping: `MODULE_ROUTE_MAP` in
+[../src/contexts/PermissionsContext.tsx](../src/contexts/PermissionsContext.tsx).
+
+| Path | moduleKey | Page | Audience |
+|---|---|---|---|
+| `/` | dashboard | Dashboard | all |
+| `/orders` | orders | Orders (+ Daily Fulfilment CSV) | all (agents see own) |
+| `/calls` | calls | CallsPage | agents |
+| `/personal-list` | calls | PersonalListPage | agents |
+| `/call-again` | calls | CallAgainPage | agents |
+| `/assigned` | assigned | AssignedPage | agents |
+| `/prediction-leads` | prediction_leads | PredictionLeadsPage | agents |
+| `/search-prediction` | search_prediction | SearchPredictionPage | all |
+| `/segments` · `/segments/:id` | segments | SegmentsPage / SegmentDetailPage | admin/manager |
+| `/assigner` | assigner | AssignerPage | admin/manager |
+| `/lead-distribution` | lead_distribution | LeadDistributionPage | admin/manager |
+| `/predictions` · `/predictions/:id` | prediction_lists | PredictionListsPage / Detail | admin/manager |
+| `/inbound-leads` | inbound_leads | InboundLeadsPage | admin/manager |
+| `/webhooks` | webhooks | WebhookManagementPage ("Webhooks & Ads") | manager/ads_admin |
+| `/products` | products | ProductsPage | manager/warehouse |
+| `/warehouse` | warehouse | WarehousePage | warehouse/admin |
+| `/insights` | insights | ManagementInsightsPage | admin/manager |
+| `/operations` | operations | OperationsPage | admin/manager |
+| `/performance` | performance | AgentPerformancePage | admin/manager |
+| `/users` | users | UsersPage | admin/manager |
+| `/shifts` | shifts | ShiftsManagementPage | admin/manager |
+| `/my-shifts` | my_shifts | MyShiftsPage | agents |
+| `/call-scripts` | call_scripts | CallScriptsPage | admin/manager + agents (read) |
+| `/call-history` | call_history | CallHistoryPage | all (agents see own) |
+| `/recordings` | recordings | RecordingsPage (shell) | agents |
+| `/settings` | settings | SettingsPage (RBAC admin) | admin |
+| `/ads` | — | redirects to `/webhooks` | — |
+| `*` | — | NotFound | — |
+
+---
+
+## 3. Data layer
+
+- **All app data goes through [../src/lib/api.ts](../src/lib/api.ts)** — typed wrappers around `fetch`
+  that attach the Supabase JWT + anon `apikey` and call the Edge Function. TanStack Query keys are
+  consistent (`['calls-page-orders', phone]`, `['customer-history', phone]`, etc.) so mutations can
+  invalidate precisely.
+- **Direct `supabase-js`** is used in only two places: `AuthContext` (session/login) and
+  `PermissionsContext` (the `get_my_permissions` RPC). Everything else is the Edge Function.
+- Query defaults: `staleTime: 30s`, `refetchOnWindowFocus: false`, `retry: 1`.
+
+---
+
+## 4. Auth & RBAC (three layers)
+
+**Layer 1 — Auth** ([../src/contexts/AuthContext.tsx](../src/contexts/AuthContext.tsx)):
+Supabase email/password. On session, loads `profiles` + `user_roles` into an `AuthUser` with boolean
+flags (`isAdmin`, `isManager`, `isAgent`, `isWarehouse`, `isAdsAdmin`, …) and a `role` (primary, for
+display). A **presence heartbeat** pings `presence/heartbeat` every 45 s while the tab is visible; sign‑out
+logs a shift logout first.
+
+**Layer 2 — Permissions** ([../src/contexts/PermissionsContext.tsx](../src/contexts/PermissionsContext.tsx)):
+one `get_my_permissions` RPC returns three tables — `module_settings` (feature flags), `role_permissions`
+(per‑role can_view/create/edit/delete/export), `financial_visibility` (per‑role money fields). Exposes:
+- `canAccessModule(key)` — gates routes/nav (admins always pass; a few keys are hardcoded fallbacks
+  because they aren't seeded yet: `calls`/`recordings` → any role, `segments` → admin/manager,
+  `products` → manager/warehouse, `webhooks` → manager/ads_admin).
+- `canAction(key, action)` — fine‑grained CRUD/export checks.
+- `canSeeFinancial(metric)` — hides profit/cost/net‑contribution from agents.
+
+**Layer 3 — Server** — every privileged endpoint re‑checks roles in code (RLS is the backstop). The two
+must stay in sync. See [USERS_ROLES_PERMISSIONS.md](USERS_ROLES_PERMISSIONS.md).
+
+`<ProtectedRoute>` redirects unauthenticated users to `/login` and blocks modules the user can't access.
+
+---
+
+## 5. Layout, navigation, design system
+
+- **Layout:** [../src/layouts/AppLayout.tsx](../src/layouts/AppLayout.tsx) renders the sidebar +
+  top bar; pages pass `title` and optional `headerActions`. [../src/components/AppSidebar.tsx](../src/components/AppSidebar.tsx)
+  builds the nav from the modules the user can access (so agents never see admin items).
+- **Design system:** **shadcn/ui** — Radix primitives styled with Tailwind, generated into
+  [../src/components/ui/](../src/components/ui/) (~50 primitives: button, dialog, table, popover,
+  select, command, calendar, sheet, drawer `vaul`, sidebar, chart, …). Theming is CSS‑variable based in
+  [../src/index.css](../src/index.css) with the palette in [../tailwind.config.ts](../tailwind.config.ts);
+  components reference semantic tokens (`bg-background`, `text-muted-foreground`, `border`, `primary`,
+  `destructive`, `emerald-*` for call/positive accents). `cn()` ([../src/lib/utils.ts](../src/lib/utils.ts))
+  merges class names.
+- **Icons:** lucide-react. **Toasts:** sonner + shadcn `useToast`. **Charts:** recharts. **Dates:** date-fns.
+
+### House components & conventions
+| Component / helper | Role |
+|---|---|
+| `StatusBadge`, `PhoneQualityBadge`, `StockBadge`, `LeadQualityBadge` | Consistent coloured pills for status/quality/stock |
+| `DeliveryMethodPicker` | Home/Speedy/Econt pills + cascading City→Office autocomplete (type‑to‑search, Cyrillic/Latin) |
+| `CreateOrderModal` / `OrderModal` | New‑order‑during‑call / manager review‑edit; both pre‑fill from prior orders + customer_profile |
+| `CustomerIntelligencePanel` | Phone‑keyed dossier (used by OrderModal; exports `LeadQualityBadge`) |
+| `calls/ClientProfileCard` | The Calls strip: info · 4 metrics + quality · persistent note · toolbar · Orders/Calls dossier |
+| `currency.ts` | `formatEur`, `formatLev`, `formatPriceInline` — **always show EUR + лв** |
+| `notes.ts` | `cleanNoteForDisplay()` — strip import provenance on render only |
+| `csv.ts` | `toCsv`/`downloadCsv` (default `;`+BOM; the Fulfilment CSV overrides to `,`+no‑BOM) |
+| `roles.ts`, `address.ts`, `validation.ts`, `searchFormat.ts` | Shared role labels, address formatting, zod schemas, search highlighting |
+
+> **Money rule (non‑negotiable):** every monetary value shows EUR over лв in stacked monospace numerals.
+> Use the `currency.ts` helpers, never raw numbers.
+
+---
+
+## 6. The Calls page (frontend mechanics)
+
+[../src/pages/CallsPage.tsx](../src/pages/CallsPage.tsx) is the agent's main surface. Key behaviours
+(full flow in [CALLS.md](CALLS.md)):
+- **Silent queue auto‑pick:** picks the first non‑empty assigned segment list; agents never see a
+  remaining‑count that would create pacing pressure. Admin/manager get a visible Queue dropdown.
+- **TAKE soft‑lock:** `useActiveCallView(phone)` heartbeats so the customer's pending orders flip to
+  `take` (other agents see it's being worked); reverts ~2 min after disconnect.
+- **Dial:** `useVoip().startCall(phone, linkedContext)` — `linkedContext` is the customer's most
+  relevant order so the logged call attaches to it.
+- **Outcome:** `ChooseAnswerButton` → Confirmed (opens `CreateOrderModal`, status forced `confirmed`)
+  / Cancelled (records a cancelled order with reason) / Trash / Didn't Answer (re‑queues ~2 h).
+- **After call:** the screen stays on the customer with a "Next customer" button so the agent can still
+  create an order / edit notes post‑call.
+
+---
+
+## 7. Page catalogue (one line each)
+
+Dashboard (today + lifetime KPIs) · Orders (master list, filters, Fulfilment CSV, bulk ops) · CallsPage
+(agent workspace) · PersonalListPage (claimed customers) · CallAgainPage (follow‑ups due) · AssignedPage
+(agent's assigned orders) · PredictionLeadsPage (agent's imported leads) · SearchPredictionPage (phone/name/order
+search → dossier) · SegmentsPage / SegmentDetailPage (27 rule lists + bulk assign) · AssignerPage (distribute
+pendings) · LeadDistributionPage (auto‑assign config ⚠️) · PredictionListsPage / Detail (XLSX lead lists) ·
+InboundLeadsPage (raw webhook stream) · WebhookManagementPage (webhook admin) · ProductsPage (catalogue/stock)
+· WarehousePage (ship calendar + incoming) · ManagementInsightsPage (analytics) · OperationsPage (live ops) ·
+AgentPerformancePage (per‑agent) · UsersPage (accounts/roles) · ShiftsManagementPage / MyShiftsPage ·
+CallScriptsPage · CallHistoryPage · RecordingsPage (shell) · SettingsPage (RBAC matrix admin) · LoginPage · NotFound.
+
+---
+
+## 8. Build & quality notes
+
+- `npm run build` passes (~8 s). Largest chunks: app `index` ~526 kB, `xlsx` ~429 kB, recharts
+  `AreaChart` ~413 kB (each lazy/own‑chunk; the warehouse/insights/orders pages that need them pull them
+  on demand). The 500 kB warning is on the main `index` chunk.
+- `npm run lint` is **red**: 643 errors / 35 warnings, ~623 are `@typescript-eslint/no-explicit-any`
+  (the API layer is intentionally `any`‑heavy) plus a few `react-hooks/exhaustive-deps` warnings.
+  **CI does not run lint**, so this doesn't block deploys. See [AUDIT_FINDINGS.md](AUDIT_FINDINGS.md).
+- `npm test` runs one trivial vitest — there is effectively **no UI test coverage**.
+
+> VoIP rule: the softphone is **live** (`RealVoipEngine` behind `VoipContext`). Keep engine changes
+> behind that seam and don't entangle them with Calls-page/queue refactors — keep diffs focused ([CALLS.md](CALLS.md)).
