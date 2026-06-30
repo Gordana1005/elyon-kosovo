@@ -484,6 +484,33 @@ export const apiCreatePredictionList = (body: { name: string; entries: any[] }) 
 export const apiAssignLeads = (listId: string, agentId: string, leadIds: string[]) =>
   apiFetch(`prediction-lists/${listId}/assign`, { method: 'POST', body: JSON.stringify({ agent_id: agentId, lead_ids: leadIds }) });
 
+// Bulk historical-order import (admin only). The page chunks large files and
+// calls this once per chunk, summing the returned counts.
+export interface ImportOrderRow {
+  external_order_id?: string;
+  order_date?: string;
+  customer_name?: string;
+  customer_phone: string;
+  product_name?: string;
+  quantity?: number;
+  price?: number;
+  status?: string;
+  customer_city?: string;
+  customer_address?: string;
+  postal_code?: string;
+  note?: string;
+}
+export interface ImportOrdersResult {
+  success: boolean;
+  total: number;
+  created: number;
+  duplicates: number;
+  skipped_no_phone: number;
+  failed: number;
+}
+export const apiImportOrders = (body: { source?: string; upsert_profiles?: boolean; rows: ImportOrderRow[] }): Promise<ImportOrdersResult> =>
+  apiFetch('orders/import', { method: 'POST', body: JSON.stringify(body) });
+
 // Prediction Leads
 export const apiGetMyLeads = (params?: { search?: string }) => {
   const sp = new URLSearchParams();

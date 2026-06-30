@@ -279,6 +279,60 @@ const predictionListSchema = z.object({
   })).min(1, "No entries provided"),
 });
 
+// Bulk historical-order import (admin-only). One row = one past order. Money is
+// already EUR (Kosovo), phones get normalized to +383, products matched by name
+// against the catalogue. Dedupe is by (external_source, external_order_id) so an
+// admin can re-upload the same file safely. The front-end chunks large files and
+// calls this repeatedly, aggregating the returned counts.
+const orderImportRowSchema = z.object({
+  external_order_id: z.string().trim().max(120).optional().default(""),
+  order_date: z.string().trim().max(40).optional().default(""),
+  customer_name: z.string().trim().max(200).optional().default(""),
+  customer_phone: z.string().trim().max(40),
+  product_name: z.string().trim().max(300).optional().default(""),
+  quantity: z.coerce.number().int().min(1).max(100000).optional().default(1),
+  price: z.coerce.number().min(0).max(10000000).optional().default(0),
+  status: z.enum([
+    "pending", "confirmed", "shipped", "delivered", "paid",
+    "cancelled", "returned", "trashed", "call_again",
+  ]).optional().default("paid"),
+  customer_city: z.string().max(200).optional().default(""),
+  customer_address: z.string().max(600).optional().default(""),
+  postal_code: z.string().max(30).optional().default(""),
+  note: z.string().max(2000).optional().default(""),
+});
+
+const orderImportSchema = z.object({
+  source: z.string().trim().max(120).optional().default("import"),
+  upsert_profiles: z.boolean().optional().default(true),
+  rows: z.array(orderImportRowSchema).min(1, "No rows provided").max(1000),
+});
+
+// Parse an import date cell into an ISO timestamp (anchored to noon UTC so the
+// calendar day is stable across timezones). Accepts ISO (yyyy-mm-dd[...]) and the
+// common dd.mm.yyyy / dd/mm/yyyy / dd-mm-yyyy forms (2-digit years → 20xx). When
+// the day/month are ambiguous it assumes day-first but swaps if the first number
+// can only be a month-overflowing day. Returns null when unparseable.
+function isoFromYMD(y: number, mo: number, d: number): string | null {
+  if (mo < 1 || mo > 12 || d < 1 || d > 31 || y < 2000 || y > 2100) return null;
+  return `${y}-${String(mo).padStart(2, "0")}-${String(d).padStart(2, "0")}T12:00:00Z`;
+}
+function parseImportDate(raw: string): string | null {
+  if (!raw) return null;
+  const s = String(raw).trim();
+  let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (m) return isoFromYMD(Number(m[1]), Number(m[2]), Number(m[3]));
+  m = s.match(/^(\d{1,2})[.\/-](\d{1,2})[.\/-](\d{2,4})$/);
+  if (m) {
+    let d = Number(m[1]);
+    let mo = Number(m[2]);
+    let y = Number(m[3].length === 2 ? "20" + m[3] : m[3]);
+    if (mo > 12 && d <= 12) { const t = d; d = mo; mo = t; }
+    return isoFromYMD(y, mo, d);
+  }
+  return null;
+}
+
 const inboundLeadSchema = z.object({
   name: z.string().trim().min(1, "Name is required").max(200),
   phone: z.string().trim().min(1, "Phone is required").max(30),
@@ -2796,6 +2850,193 @@ async function handleRequest(req: Request): Promise<Response> {
       }
 
       return json(order);
+    }
+
+    // POST /api/orders/import (bulk historical-order import — admin only)
+    // Turns a CSV/Excel of real past orders into real `orders` rows (+ one
+    // order_items line + a provenance order_note each), exactly like the
+    // import-cpa-xlsx.mjs script but adapted for Kosovo: money is already EUR,
+    // phones normalize to +383, no lev peg, no transliteration. Importing these
+    // also feeds the segments engine (it recomputes from order history), which is
+    // the whole point — it backfills the prediction lists. Optionally upserts
+    // customer_profiles so future calls to the number pre-fill name + address.
+    if (req.method === "POST" && path === "orders/import") {
+      if (!isAdmin) return json({ error: "Forbidden" }, 403);
+      let body;
+      try { body = parseBody(orderImportSchema, await req.json()); } catch (e: any) { return json({ error: e.message }, 400); }
+
+      const externalSource = (body.source || "import").trim();
+      const upsertProfiles = body.upsert_profiles !== false;
+      const nowIso = new Date().toISOString();
+
+      // Catalogue snapshot — match products in memory by name, then sku (some
+      // sheets put a code in the product column). Unmatched rows still import
+      // with product_id null, keeping the raw text in product_name.
+      const { data: catRows } = await adminClient.from("products").select("id, name, sku");
+      const catalogue = catRows || [];
+      const byName = new Map(
+        catalogue.filter((c: any) => c.name).map((c: any) => [String(c.name).toLowerCase().trim(), c]),
+      );
+      const bySku = new Map(
+        catalogue.filter((c: any) => c.sku).map((c: any) => [String(c.sku).toLowerCase().trim(), c]),
+      );
+
+      type Prepared = {
+        row: any; phone: string; productId: string | null; productName: string;
+        createdAt: string | null; status: string; extId: string;
+      };
+      const prepared: Prepared[] = [];
+      let skippedNoPhone = 0;
+      for (const r of body.rows) {
+        const phone = normalizeBgPhone(r.customer_phone || "");
+        if (!phone) { skippedNoPhone++; continue; }
+        const key = (r.product_name || "").toLowerCase().trim();
+        const prod = key ? (byName.get(key) || bySku.get(key) || null) : null;
+        prepared.push({
+          row: r,
+          phone,
+          productId: prod ? prod.id : null,
+          productName: prod ? prod.name : ((r.product_name || "").trim() || "—"),
+          createdAt: parseImportDate(r.order_date),
+          status: r.status || "paid",
+          extId: (r.external_order_id || "").trim(),
+        });
+      }
+
+      // Dedupe against already-imported orders (one query) AND within this batch,
+      // both keyed on external_order_id. Rows without an order number can't be
+      // deduped, so they always insert.
+      const extIds = [...new Set(prepared.map((p) => p.extId).filter(Boolean))];
+      const existingExt = new Set<string>();
+      if (extIds.length) {
+        const { data: ex } = await adminClient
+          .from("orders")
+          .select("external_order_id")
+          .eq("external_source", externalSource)
+          .in("external_order_id", extIds);
+        for (const e of (ex || [])) existingExt.add(String(e.external_order_id));
+      }
+
+      const toInsert: Prepared[] = [];
+      const seenExt = new Set<string>();
+      let duplicates = 0;
+      for (const p of prepared) {
+        if (p.extId) {
+          if (existingExt.has(p.extId) || seenExt.has(p.extId)) { duplicates++; continue; }
+          seenExt.add(p.extId);
+        }
+        toInsert.push(p);
+      }
+
+      const orderRows = toInsert.map((p) => {
+        const real = REAL_ORDER_STATUSES.includes(p.status);
+        const created = p.createdAt || nowIso;
+        return {
+          product_id: p.productId,
+          product_name: p.productName,
+          customer_name: (p.row.customer_name || "").trim() || "—",
+          customer_phone: p.phone,
+          customer_city: p.row.customer_city || "",
+          customer_address: p.row.customer_address || "",
+          postal_code: p.row.postal_code || "",
+          price: Number(p.row.price) || 0,
+          quantity: Number(p.row.quantity) || 1,
+          status: p.status,
+          source_type: "import",
+          external_source: externalSource,
+          external_order_id: p.extId || null,
+          created_at: created,
+          // Historical orders have no live agent — stamp a text confirmer only so
+          // analytics don't attribute them to a real person, but real-sale
+          // statuses still carry a confirmed_at for time-series reports.
+          confirmed_at: real ? created : null,
+          confirmed_by_name: real ? "Import" : null,
+        };
+      });
+
+      // Batch insert; on failure fall back to per-row so one bad row can't sink
+      // the batch. Postgres returns rows in insertion order, so index i maps back
+      // to toInsert[i] (same convention as import-cpa-xlsx.mjs).
+      const insertedIdx: { id: string; i: number }[] = [];
+      let failed = 0;
+      if (orderRows.length) {
+        const { data, error } = await adminClient.from("orders").insert(orderRows).select("id");
+        if (!error && data) {
+          data.forEach((o: any, i: number) => insertedIdx.push({ id: o.id, i }));
+        } else {
+          for (let i = 0; i < orderRows.length; i++) {
+            const { data: one, error: e1 } = await adminClient.from("orders").insert([orderRows[i]]).select("id");
+            if (e1 || !one?.[0]) { failed++; continue; }
+            insertedIdx.push({ id: one[0].id, i });
+          }
+        }
+      }
+
+      // Line items + provenance note for every successfully inserted order.
+      if (insertedIdx.length) {
+        const itemRows = insertedIdx.map(({ id, i }) => {
+          const p = toInsert[i];
+          const qty = Number(p.row.quantity) || 1;
+          const price = Number(p.row.price) || 0;
+          return {
+            order_id: id,
+            product_id: p.productId,
+            product_name: p.productName,
+            quantity: qty,
+            price_per_unit: Math.round((price / qty) * 100) / 100,
+            total_price: price,
+          };
+        });
+        const { error: itemErr } = await adminClient.from("order_items").insert(itemRows);
+        if (itemErr) console.warn("orders/import: order_items insert warning:", itemErr.message);
+
+        const noteRows = insertedIdx.map(({ id, i }) => {
+          const p = toInsert[i];
+          const bits = [
+            `Imported from "${externalSource}"${p.extId ? ` (order #${p.extId})` : ""}`,
+            p.row.order_date ? `Original date: ${p.row.order_date}` : "",
+            (!p.createdAt && p.row.order_date) ? "(date could not be parsed — placed at import time)" : "",
+            p.row.note ? `Note: ${p.row.note}` : "",
+          ].filter(Boolean);
+          return { order_id: id, text: bits.join("\n"), author_id: null, author_name: "System (Order Import)" };
+        });
+        const { error: noteErr } = await adminClient.from("order_notes").insert(noteRows);
+        if (noteErr) console.warn("orders/import: order_notes insert warning:", noteErr.message);
+      }
+
+      // Customer profiles — upsert per phone so future calls pre-fill. Only write
+      // fields we actually have (never blank out an existing profile), and dedupe
+      // by phone keeping the last seen values. Per-row upsert avoids the
+      // bulk-upsert null-clobber on heterogeneous columns.
+      if (upsertProfiles && insertedIdx.length) {
+        const profileByPhone = new Map<string, Record<string, any>>();
+        for (const { i } of insertedIdx) {
+          const p = toInsert[i];
+          const prof = profileByPhone.get(p.phone) || { phone: p.phone };
+          if ((p.row.customer_name || "").trim()) prof.customer_name = p.row.customer_name.trim();
+          if ((p.row.customer_city || "").trim()) prof.city = p.row.customer_city.trim();
+          if ((p.row.customer_address || "").trim()) prof.street = p.row.customer_address.trim();
+          if ((p.row.postal_code || "").trim()) prof.postal_code = p.row.postal_code.trim();
+          prof.updated_by = user.id;
+          prof.updated_at = nowIso;
+          profileByPhone.set(p.phone, prof);
+        }
+        for (const prof of profileByPhone.values()) {
+          const { error: profErr } = await adminClient
+            .from("customer_profiles")
+            .upsert(prof, { onConflict: "phone" });
+          if (profErr) { console.warn("orders/import: profile upsert warning:", profErr.message); break; }
+        }
+      }
+
+      return json({
+        success: true,
+        total: body.rows.length,
+        created: insertedIdx.length,
+        duplicates,
+        skipped_no_phone: skippedNoPhone,
+        failed,
+      });
     }
 
     // GET /api/orders

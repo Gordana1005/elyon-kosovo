@@ -76,6 +76,7 @@ export const MODULE_ROUTE_MAP: Record<string, string> = {
   assigned: '/assigned',
   prediction_leads: '/prediction-leads',
   prediction_lists: '/predictions',
+  order_import: '/import-orders',
   search_prediction: '/search-prediction',
   warehouse: '/warehouse',
   users: '/users',

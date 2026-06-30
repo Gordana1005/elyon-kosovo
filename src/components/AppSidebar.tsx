@@ -8,7 +8,7 @@ import {
   LayoutDashboard, ShoppingCart, ClipboardList, FileSpreadsheet, Package,
   Users, CalendarDays, FileText, History, ChevronLeft,
   ChevronRight, ChevronDown, Phone, PhoneCall, PhoneIncoming, Warehouse, Settings, Inbox,
-  Webhook, UserPlus, SearchIcon, TrendingUp, Activity, Zap, Layers, Lock, Clock, Gauge,
+  Webhook, UserPlus, SearchIcon, TrendingUp, Activity, Zap, Layers, Lock, Clock, Gauge, FileUp,
 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { SidebarCallIndicator } from '@/components/calls/SidebarCallIndicator';
@@ -65,6 +65,9 @@ const sections: NavSection[] = [
       { titleKey: 'nav.predictionLeads', path: '/prediction-leads', icon: FileSpreadsheet, moduleKey: 'prediction_leads' },
       { titleKey: 'nav.predictionLists', path: '/segments', icon: Layers, moduleKey: 'segments' },
       { titleKey: 'nav.searchPrediction', path: '/search-prediction', icon: SearchIcon, moduleKey: 'search_prediction' },
+      // Admin-only: the 'order_import' module key isn't seeded for any role, so
+      // canAccessModule() returns true only for admins (who bypass the check).
+      { titleKey: 'nav.importOrders', path: '/import-orders', icon: FileUp, moduleKey: 'order_import' },
     ],
   },
   {

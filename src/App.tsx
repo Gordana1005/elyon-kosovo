@@ -29,6 +29,7 @@ const AssignerPage = lazy(() => import("./pages/AssignerPage"));
 const PredictionListsPage = lazy(() => import("./pages/PredictionListsPage"));
 const PredictionListDetail = lazy(() => import("./pages/PredictionListDetail"));
 const PredictionLeadsPage = lazy(() => import("./pages/PredictionLeadsPage"));
+const ImportOrdersPage = lazy(() => import("./pages/ImportOrdersPage"));
 const ShiftsManagementPage = lazy(() => import("./pages/ShiftsManagementPage"));
 const MyShiftsPage = lazy(() => import("./pages/MyShiftsPage"));
 const CallScriptsPage = lazy(() => import("./pages/CallScriptsPage"));
@@ -101,6 +102,7 @@ const App = () => (
                 <Route path="/predictions" element={<ProtectedRoute moduleKey="prediction_lists"><PredictionListsPage /></ProtectedRoute>} />
                 <Route path="/predictions/:id" element={<ProtectedRoute moduleKey="prediction_lists"><PredictionListDetail /></ProtectedRoute>} />
                 <Route path="/prediction-leads" element={<ProtectedRoute moduleKey="prediction_leads"><PredictionLeadsPage /></ProtectedRoute>} />
+                <Route path="/import-orders" element={<ProtectedRoute moduleKey="order_import"><ImportOrdersPage /></ProtectedRoute>} />
                 {/* Performance + Agent Activity merged into Insights (2026-06). Keep old paths working. */}
                 <Route path="/performance" element={<Navigate to="/insights?tab=agents" replace />} />
                 <Route path="/agent-activity" element={<Navigate to="/insights?tab=call-activity" replace />} />
