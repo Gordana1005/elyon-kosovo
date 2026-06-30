@@ -70,10 +70,19 @@ EXCEPTION WHEN OTHERS THEN
 END;
 $$;
 
-DROP TRIGGER IF EXISTS trg_notify_missed_call ON public.missed_calls;
-CREATE TRIGGER trg_notify_missed_call
-  AFTER INSERT ON public.missed_calls
-  FOR EACH ROW EXECUTE FUNCTION public.tg_notify_missed_call();
+-- public.missed_calls is created later (20260614120000). On a from-scratch apply
+-- (timestamp order) it doesn't exist yet, so guard this DDL; the table's own
+-- migration (re)creates the trigger once the table is present.
+DO $guard_mc$
+BEGIN
+  IF to_regclass('public.missed_calls') IS NOT NULL THEN
+    DROP TRIGGER IF EXISTS trg_notify_missed_call ON public.missed_calls;
+    CREATE TRIGGER trg_notify_missed_call
+      AFTER INSERT ON public.missed_calls
+      FOR EACH ROW EXECUTE FUNCTION public.tg_notify_missed_call();
+  END IF;
+END
+$guard_mc$;
 
 -- ════════════════════════════════════════════════════════════════
 -- 2) Order returned → confirming/owning agent + every admin

@@ -25,6 +25,12 @@ SET recency_months_min = 1.9,
 WHERE name LIKE '57d %'
   AND is_static = false;
 
+-- Replay-safety (from-scratch apply): 20260601 seeds BOTH '2-4m …' and '4-6m …'
+-- rows, so the rename below collides with the existing 4-6m rows (the live DB never
+-- replayed 0601, so it never hit this). Drop the pre-existing 4-6m rows first; the
+-- rename recreates the 4-6m set from the 2-4m rows.
+DELETE FROM prediction_segment_lists WHERE name LIKE '4-6m %' AND is_static = false;
+
 -- Current "2-4m" buckets (60-120 days) → become the next one after the new 57d window, i.e. 4-6 months
 UPDATE prediction_segment_lists
 SET recency_months_min = 4,

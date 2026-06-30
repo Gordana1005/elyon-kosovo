@@ -32,3 +32,17 @@ CREATE POLICY "Admins/managers read all missed calls"
 CREATE POLICY "Agents read assigned missed calls"
   ON public.missed_calls FOR SELECT
   USING (assigned_agent_id = auth.uid());
+
+-- The missed-call notification trigger function tg_notify_missed_call() is defined
+-- in 20260604130000, which (on a from-scratch apply) ran before this table existed
+-- and therefore skipped creating the trigger. Create it now that the table exists.
+DO $mc_trg$
+BEGIN
+  IF to_regproc('public.tg_notify_missed_call') IS NOT NULL THEN
+    DROP TRIGGER IF EXISTS trg_notify_missed_call ON public.missed_calls;
+    CREATE TRIGGER trg_notify_missed_call
+      AFTER INSERT ON public.missed_calls
+      FOR EACH ROW EXECUTE FUNCTION public.tg_notify_missed_call();
+  END IF;
+END
+$mc_trg$;

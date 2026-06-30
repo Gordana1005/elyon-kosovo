@@ -64,3 +64,5 @@ docs/how-it-works.md
 
 # Local secrets vault — NEVER commit (real tokens/passwords live here)
 docs/VAULT.md
+
+.vercel

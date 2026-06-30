@@ -10,6 +10,20 @@ just the *current state* of this fork.
 
 ---
 
+## 🟢 LIVE NOW (Phases 0–5 complete)
+
+- **Frontend (Vercel):** https://elyon-kosovo.vercel.app  (project `gordanas-projects-a53c0208/elyon-kosovo`, GitHub-connected)
+- **Local dev:** `npm run dev` → http://localhost:8080
+- **Backend (Supabase):** project `bmfxhgznttcnnlqloqzp` — all 131 migrations applied, edge function `api` deployed, `WEBHOOK_SECRET` set, `pg_cron` on.
+- **Seeded:** 3 admin users (`@elyon-xk.local`, pw `12345678` — rotate!), 67 products (EUR), 10 call scripts, 67 per-product webhooks.
+- **Verified end-to-end:** admin login ✓ · 67 products readable ✓ · unsigned webhook → 401 (fail-closed) ✓ · signed webhook → lead+order created ✓ · Vercel↔Supabase CORS ✓.
+- **Secrets** live in `docs/VAULT.md` (gitignored). DB password not needed — the CLI access token drove `db push`.
+
+> Migration replay fixes made for a from-scratch build (live BG never replayed these):
+> guarded the `missed_calls` trigger in `20260604130000` + recreated it in `…0614120000`;
+> dropped the colliding `4-6m` rows before the rename in `…0605120000`; renamed two
+> duplicate-version files (`…0710000000`/`…0711000000` → `…0710010000`/`…0711010000`).
+
 ## ✅ Done (Phase 0 + Phase 1)
 
 - **Standalone copy** of the entire front + back end (no BG runtime data, no secrets, no git
