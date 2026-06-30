@@ -1,41 +1,62 @@
-## Grok Skills System (May 2026 Onward)
+# Elyon CRM — KOSOVO edition (Natura Therapy XK)
 
-**This project now has a first-class skills system** located in `.grok/skills/`.
+This repository is the **Kosovo** instance of the Elyon CRM — a hard fork of the Bulgarian
+system, run as a completely separate operation. It has its OWN infrastructure and shares
+**nothing at runtime** with Bulgaria.
 
-These skills are the best way to avoid repeating complex domain explanations in every session.
+## 🛑 GOLDEN RULE — never touch the Bulgarian system
+This is the #1 rule. A mistake here already caused a live Bulgarian outage once (2026-06-30).
+**Bulgaria is OFF LIMITS.** Never run any command against, deploy to, or edit:
+- Supabase project `sxymaloycddnoxudxaqp`
+- Domains `elyoncall.com` / `www.elyoncall.com`
+- The Bulgarian repo folder `C:\Users\Mile\Desktop\elyoncrm`
+- The Bulgarian Vercel project `elyoncrm` (`prj_965V2iBg793RmiJJw9m6Tl3djllX`)
 
-### At the Start of Every Session (Mandatory Behavior)
+Everything here targets **Kosovo only** (see Infra below). If you ever see `sxymaloycddnoxudxaqp`
+or `elyoncall.com` in a command you're about to run → **STOP.** That is the live BG system.
 
-1. When beginning work on anything non-trivial, especially if it touches money, phones, warehouse, stock, webhooks, or fulfilment, **first check what skills are available**.
-2. Use the `/skills` command (or `grok inspect`) to list them.
-3. If a relevant skill exists for the task, **inject it** before writing code or giving advice.
-4. Follow the skill's instructions as if they were written by the operator himself.
+## ⚠️ CLI safety (this is how the BG incident happened — read it)
+The shell's working directory **silently resets between tool calls**. NEVER rely on the current
+directory to choose which project a command acts on. For ANY state-changing command, pass the
+target **explicitly** and verify it before running:
+- **Vercel:** `vercel <cmd> --cwd "C:\Users\Mile\Desktop\elyon-kosovo" --scope gordanas-projects-a53c0208`
+- **Supabase:** confirm `supabase/config.toml` `project_id = "bmfxhgznttcnnlqloqzp"` before any link/push/deploy
+- **Git:** `git -C "C:\Users\Mile\Desktop\elyon-kosovo" …`
+- Read the tool's echoed target (e.g. "to Project X"); if it's ever `elyoncrm`/BG → abort immediately.
+- **Vercel env vars:** prefer the Vercel REST API (JSON body) over `vercel env add` stdin — PowerShell
+  piping injects a UTF-8 BOM ("non ISO-8859-1 code point" login error) and bash `printf` w/o newline
+  sets empty. Always verify with `vercel env pull`.
 
-### Current High-Value Skills
+## Infra (Kosovo only)
+- **Supabase:** ref `bmfxhgznttcnnlqloqzp` → https://bmfxhgznttcnnlqloqzp.supabase.co
+- **Vercel:** project `elyon-kosovo`, scope `gordanas-projects-a53c0208` → https://elyon-kosovo.vercel.app (GitHub-connected → auto-deploys on push to `main`)
+- **GitHub:** `Gordana1005/elyon-kosovo`
+- **Secrets:** `docs/VAULT.md` (gitignored) — keys, webhook secret, admin logins
+- **Status / done / TODO:** `KOSOVO-FORK-STATUS.md` (repo root)
 
-- `elyon-currency` — The sacred 1.95583 peg and dual EUR/LEV display rules.
-- `elyon-phone-normalization` — Last-8-digits search + E.164 storage + pollution protection.
-- `elyon-fulfilment-csv` — Exact warehouse hand-off format and business rules.
-- `elyon-warehouse-incoming` — The full daily warehouse workflow and stock safety.
-- `elyon-webhook-and-lead-ingestion` — Inbound pipeline, HMAC, per-product slugs.
-- `elyon-stock-and-bigarena` — Stock movements, import rules, and historical operator decisions.
-- `elyon-agent-commissions` — Per-package agent bonuses on every PAID order (only gate is paid; source irrelevant), tiered 1/2/3€ by unit price, no minimum, credited to the confirmer. Read before touching any payout/commission math.
+## Per-market rules (Kosovo ≠ Bulgaria) — these OVERRIDE the copied BG docs/skills
+`.grok/skills/` and `docs/` were copied from Bulgaria and still describe BG specifics in places.
+**Where they conflict with the list below, THIS LIST WINS** (and update the skill/doc):
+- **Currency: EUR-only.** Kosovo is euro-native. NO lev, NO 1.95583 peg, NO dual display. `formatLev`/`formatPriceInline` are neutralized to EUR. (`elyon-currency` skill is updated for XK.)
+- **Timezone:** `Europe/Belgrade` (Pristina, CET) — not Europe/Sofia.
+- **Phone:** country code **+383** — not +359. Last-8 matching is unchanged.
+- **Language:** default UI is Albanian (`sq`); en/bg kept as fallbacks.
+- **Login email domain:** `elyon-xk.local` (placeholder — see TODO).
+- **Couriers/cities:** still BG (Speedy/Econt + `bg_settlements`) — **TODO:** replace with Kosovo.
+- **Telephony:** deferred (Phase 2). `VITE_USE_REAL_VOIP=false`; PBX/DID values are BG placeholders.
+- Search the code for `TODO(kosovo)` to find every unfinished real-value spot.
 
-New skills should be added to `.grok/skills/` whenever you find yourself re-explaining the same complicated rule or workflow.
+## Skills system (`.grok/skills/`)
+Same first-class skills system as BG — check `/skills` before non-trivial work on money, phones,
+warehouse, stock, webhooks, or fulfilment. **But apply the Kosovo per-market overrides above** —
+several skills still teach BG rules (lev peg, +359). When a skill conflicts with the overrides,
+the overrides win; fix the skill. Add new skills with project scope.
 
-### How to Create New Skills
-
-Use `/skillify` (or `/create-skill`) right after completing a complex piece of work. Prefer **project scope** so the skill is committed to the repo.
-
-### Relationship to This File and Memory
-
-- This `Claude.md` remains the master constitution.
-- Skills are modular, focused expertise packages that complement it.
-- Use `/flush` and `/dream` to capture session learnings into long-term memory.
-- Together, these three systems (Claude.md + Skills + Memory) form the "Elyon Agent Operating System".
-
-**From this point forward, treating the skills system as optional or forgetting to check it first on relevant tasks is considered a serious process failure.**
+## Memory
+This Kosovo workspace has its OWN memory store, separate from Bulgaria. `MEMORY.md` is loaded each
+session. Keep only Kosovo facts there; never write BG facts into this project's memory, and never
+let a recalled BG fact send you to touch the BG system.
 
 ---
-
-*Last meaningful update: 2026-05-23 — Grok skills system introduced for Elyon CRM (currency, phones, fulfilment, warehouse, webhooks, stock). Full project-specific agent infrastructure created in `.grok/`. This is now the canonical long-term partnership setup.*
+*Kosovo fork stood up 2026-06-30 from `deploy-kit/`. This file is the Kosovo constitution
+(Claude.md + Skills + Memory = the Elyon Agent OS, Kosovo instance).*
