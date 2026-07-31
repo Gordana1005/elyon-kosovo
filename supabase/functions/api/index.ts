@@ -755,22 +755,28 @@ const corsHeaders = {
 // Browser-call origins allowed to use this function. Server-to-server
 // callers (e.g. webhook senders without an Origin header) bypass CORS
 // entirely and are gated by the HMAC signature instead.
+// Both Vercel project names are accepted on purpose. The project was created as
+// `elyon-kosovo` and renamed to `elyon-natura`; keeping the old one means the
+// rename can happen in either order without a window where the SPA is alive but
+// every API call is CORS-blocked. Drop `elyon-kosovo` once the rename has
+// settled and nobody is using the old link.
 const ALLOWED_ORIGINS = [
   "https://elyon-mk.com",       // TODO(mk): real Macedonian prod domain
   "https://www.elyon-mk.com",   // TODO(mk): real Macedonian prod domain
-  "https://elyon-kosovo.vercel.app", // TODO(mk): set after first `vercel --prod` (Phase 5)
+  "https://elyon-natura.vercel.app",
+  "https://elyon-kosovo.vercel.app", // legacy — remove after the rename settles
   "http://localhost:8080",
   "http://localhost:5173",
   "http://localhost:3000",
 ];
 
+// Vercel preview deploys: <project>-<hash>-gordanas-projects-a53c0208.vercel.app
+const PREVIEW_ORIGIN = /^https:\/\/elyon-(natura|kosovo)-[a-z0-9-]+-gordanas-projects-a53c0208\.vercel\.app$/;
+
 function pickAllowedOrigin(origin: string): string | null {
   if (!origin) return null;
   if (ALLOWED_ORIGINS.includes(origin)) return origin;
-  // Vercel preview deploys: elyon-kosovo-<hash>-gordanas-projects-a53c0208.vercel.app  (TODO(mk): confirm team slug after first deploy)
-  if (/^https:\/\/elyon-kosovo-[a-z0-9-]+-gordanas-projects-a53c0208\.vercel\.app$/.test(origin)) {
-    return origin;
-  }
+  if (PREVIEW_ORIGIN.test(origin)) return origin;
   return null;
 }
 

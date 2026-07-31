@@ -24,7 +24,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 const EXPECTED_REF = 'bmfxhgznttcnnlqloqzp';   // Macedonia
 const FORBIDDEN_REF = 'sxymaloycddnoxudxaqp';  // live Bulgaria — never a target
-const EXPECTED_VERCEL = 'elyon-kosovo';        // project id kept; display name only
+const EXPECTED_VERCEL = 'elyon-natura';  // renamed from elyon-kosovo 2026-08-01
 const MAX_ORDERS = Number(process.env.MK_MAX_ORDERS || 50_000);
 
 const fail = (msg) => { console.error(`\x1b[31m✗ ABORT\x1b[0m  ${msg}`); process.exit(1); };

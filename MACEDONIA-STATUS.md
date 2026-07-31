@@ -16,7 +16,7 @@ operation. It shares **nothing at runtime** with Bulgaria (own repo / own Supaba
 
 ## 🟢 Current state
 
-- **Frontend (Vercel):** https://elyon-kosovo.vercel.app (`gordanas-projects-a53c0208/elyon-kosovo`, GitHub-connected → **push to `main` auto-deploys production**)
+- **Frontend (Vercel):** https://elyon-natura.vercel.app (`gordanas-projects-a53c0208/elyon-natura`, GitHub-connected → **push to `main` auto-deploys production**)
 - **Backend (Supabase):** `bmfxhgznttcnnlqloqzp` — **159 migrations applied**, edge function `api` deployed, `WEBHOOK_SECRET` set, `pg_cron` on.
 - **Data:** empty (0 orders / 0 customers / 0 call logs). 67 products, 4 admin profiles.
 - **Logins:** `@elyon-mk.local`, usernames `MileStoev` / `MikiMitrov` / `TomeDonchev` / `ntmacedonia`. Password still the seeded one — **rotate**.
