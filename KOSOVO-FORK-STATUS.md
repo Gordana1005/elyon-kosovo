@@ -1,3 +1,11 @@
+> # ⚠️ SUPERSEDED — this deployment now serves MACEDONIA, not Kosovo.
+> Read [`MACEDONIA-STATUS.md`](MACEDONIA-STATUS.md) instead. Everything below describes
+> the Kosovo configuration as it stood on 2026-06-30 and is kept only for history:
+> the currency (EUR-only), phone prefix (+383), timezone (Belgrade), login domain
+> (elyon-xk.local) and migration count (131) are all out of date.
+
+---
+
 # Elyon CRM — Kosovo Fork (Natura Therapy XK)
 
 This repo is a **hard fork** of the live Bulgarian Elyon CRM, prepared for a separate Kosovo
