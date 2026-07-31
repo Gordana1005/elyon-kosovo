@@ -109,9 +109,19 @@ manual (agent) ─────────────────┘           
 
 Three distribution mechanisms, all admin/manager:
 
-1. **Assigner** ([../src/pages/AssignerPage.tsx](../src/pages/AssignerPage.tsx)) — pulls
-   `orders/unassigned-pending`, lets you select orders and `bulk-assign` to an agent (or `bulk-unassign`).
-   Cross‑list basket UI for moving customers between agents.
+1. **Assigner** ([../src/pages/AssignerPage.tsx](../src/pages/AssignerPage.tsx)) — three tabs plus a
+   right‑hand agents panel (each card shows a live **In call / Available / Offline** status and the
+   agent's "clients to call"):
+   - **Prediction Lists** — expandable list rows with a Distribute bar (whole/half/custom × N agents,
+     round‑robin) and the cross‑list basket for hand‑picking customers across lists.
+   - **Pendings** — the unassigned pending pool; select orders and `bulk-assign` to an agent. A chip
+     strip shows who already holds pendings.
+   - **Unassign** — who holds what, per agent × list (`assigner/assignment-summary`). Expand an agent to
+     see their lists and pending leads; expand a list to see the individual clients (already‑called ones
+     badged *Done*) and free them one by one. Bulk buttons **fully detach**: they clear the agent stamp
+     on already‑called members too (`include_done`), so an emptied list stops hanging off the agent's
+     profile. Only the three assignment columns move — call history, the *done* mark and sales credit
+     (`confirmed_by_*`) are never touched. See [BACKEND_API.md](BACKEND_API.md#assigner-crosslist-mass-distribution).
 2. **Lead Distribution** ([../src/pages/LeadDistributionPage.tsx](../src/pages/LeadDistributionPage.tsx))
    — `lead-distribution/auto-assign` with a strategy (`round_robin` / `load_balance` / `priority`),
    `max_leads_per_agent`, `priority_threshold`. ⚠️ The config PATCH + auto‑assign currently throw 500
@@ -180,6 +190,11 @@ Lists page lives at `/predictions` (hidden from the sidebar but still routable).
   **never overwritten by normal status changes** — so a CSV flip to shipped/paid keeps the original confirming agent.
 - The **only** way for an admin to change the original sales credit after the fact is the privileged
   `POST /orders/:id/attribution` endpoint (visible in OrderModal only to admins).
+- **Unassigning never moves credit.** The Assigner's Unassign tab (including the full‑detach path that
+  clears the stamp on already‑called prediction members) only nulls `assigned_agent_id/_name/_at` — on
+  orders it also clears `assigned_by`, and it is limited to `status='pending'` rows. `confirmed_by_*`,
+  `cancelled_by_agent_id`, `call_logs` and commission history are untouched, so taking work back from an
+  agent can never change who earned a package bonus.
 - **`cancelled_by_agent_id`** credits whoever cancelled (separate, first-wins).
 - **`cancelled_at`** is now guaranteed on **every** path a row enters `cancelled` — the call-outcome
   status change, the synthetic cancelled record created straight from the Calls page (`POST /orders`),

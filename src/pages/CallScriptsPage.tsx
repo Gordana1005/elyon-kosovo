@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { apiErrorText } from '@/i18n/apiErrors';
 import { useTranslation } from 'react-i18next';
 import { AppLayout } from '@/layouts/AppLayout';
-import { FileText, Save, Loader2, Clock, Plus, Pencil, Trash2, ChevronDown, ChevronRight, Package, Copy } from 'lucide-react';
+import { FileText, Save, Loader2, Clock, Plus, Pencil, Trash2, ChevronDown, ChevronRight, Package, Copy, Flame } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
@@ -20,14 +20,13 @@ import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
 import { BASE_SCRIPT_LANG, translatedLanguages } from '@/lib/callScripts';
 import { FlagIcon } from '@/components/LanguageSwitcher';
+import { LangTabs } from '@/components/callscripts/LangTabs';
+import { PromoOfTheDayTab } from '@/components/callscripts/PromoOfTheDayTab';
 import {
   apiGetCallScript, apiUpdateCallScript,
   apiGetAllCallScripts, apiCreateProductScript, apiUpdateProductScript, apiDeleteProductScript,
   type CallScript, type CallScriptHelper, type CallScriptTranslation,
 } from '@/lib/api';
-
-// Editor language order: Bulgarian base first, then the rest (en, sq).
-const EDITOR_LANGS: AppLanguage[] = [BASE_SCRIPT_LANG, ...SUPPORTED_LANGUAGES.filter(l => l !== BASE_SCRIPT_LANG)];
 
 type ProductScriptInput = {
   title: string;
@@ -54,46 +53,6 @@ function cleanTranslations(translations: Record<string, CallScriptTranslation>):
     if (Object.keys(entry).length) out[lang] = entry;
   }
   return out;
-}
-
-// Compact language switch used inside the editors. `present` marks non-base
-// languages that already have content (a small green dot) for at-a-glance review.
-function LangTabs({
-  value,
-  onChange,
-  present,
-}: {
-  value: AppLanguage;
-  onChange: (l: AppLanguage) => void;
-  present?: string[];
-}) {
-  const { t } = useTranslation();
-  return (
-    <div className="inline-flex items-center gap-0.5 rounded-lg border border-border/60 bg-muted/30 p-0.5">
-      {EDITOR_LANGS.map(l => {
-        const active = l === value;
-        const isBase = l === BASE_SCRIPT_LANG;
-        return (
-          <button
-            key={l}
-            type="button"
-            onClick={() => onChange(l)}
-            className={cn(
-              'flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
-              active ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground',
-            )}
-          >
-            <FlagIcon lang={l} className="h-2.5 w-5" />
-            <span>{t('languages.' + l)}</span>
-            {isBase && <span className="text-[9px] text-muted-foreground/70">({t('callScripts.baseLabel')})</span>}
-            {!isBase && present?.includes(l) && (
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" title={t('callScripts.hasTranslation')} />
-            )}
-          </button>
-        );
-      })}
-    </div>
-  );
 }
 
 // Labels resolved at render via t(labelKey).
@@ -800,6 +759,10 @@ export default function CallScriptsPage() {
             <Package className="h-4 w-4" />
             {t('callScripts.scriptsHelpersTab')}
           </TabsTrigger>
+          <TabsTrigger value="promo" className="gap-2">
+            <Flame className="h-4 w-4" />
+            {t('promo.tab')}
+          </TabsTrigger>
         </TabsList>
 
         {LEGACY_SCRIPT_TYPES.map(st => (
@@ -810,6 +773,10 @@ export default function CallScriptsPage() {
 
         <TabsContent value="product">
           <ProductScriptsTab isAdmin={isAdmin} />
+        </TabsContent>
+
+        <TabsContent value="promo">
+          <PromoOfTheDayTab isAdmin={isAdmin} />
         </TabsContent>
       </Tabs>
     </AppLayout>

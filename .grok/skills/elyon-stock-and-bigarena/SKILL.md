@@ -15,6 +15,25 @@ Stock is real money and real warehouse capacity. Mistakes here have physical con
 
 This logic lives in four places in the backend (PATCH status + bulk-status-update, for both shipped and returned). Touching any of them requires touching all of them or extracting a helper.
 
+## Stock Sync Button (Primary Path since 2026-07-22)
+
+The operator no longer needs a developer to re-align stock. Warehouse → Inventory →
+**BigArena Stock** uploads the fulfilment-panel CSV/XLSX and overwrites `stock_quantity`
+after a full preview.
+
+- Parser + matcher: `src/lib/bigarenaStock.ts` (**shared** by the UI and the guard in
+  `BigArenaStatusSync`). Unit tests: `src/lib/bigarenaStock.test.ts`.
+- Endpoint: `POST /api/products/bigarena-stock-sync` in `supabase/functions/api/index.ts`.
+- CRM stock = **"Свободна наличност" (free)**, never free+reserved.
+- Match order **SKU → barcode → normalized name**, re-computed server-side.
+- Shared-barcode rows are merged by **summing** (NT0108 + 000982 today).
+- Products missing from the CRM are **reported only, never auto-created** — this
+  supersedes the old script's "stock > 10 inserts new" heuristic for the UI path.
+- Logs `reason=bigarena_import`, `movement_type=bigarena_sync`.
+
+`scripts/import-products-bigarena.mjs` remains as the CLI fallback and still follows the
+older insert heuristic. If you change one parser, change the other.
+
 ## BigArena Import Rules (Historical Operator Decisions — Treat as Law)
 
 When reconciling `stock.xlsx` (positive stock rows) against live CRM products, the operator has given very precise instructions in the past:

@@ -30,6 +30,7 @@ import {
 } from '@/lib/design-utils';
 import { KpiCard as Kpi } from '@/components/insights/KpiCard';
 import AgentsTab from '@/components/insights/AgentsTab';
+import PayoutTab from '@/components/insights/PayoutTab';
 import CallActivityTimeline from '@/components/insights/CallActivityTimeline';
 import PureProfitExportDialog from '@/components/insights/PureProfitExportDialog';
 import MarginLabTab from '@/components/insights/MarginLabTab';
@@ -44,6 +45,7 @@ const TAB_DEFS = [
   { value: 'overview', labelKey: 'insights.tabOverview', need: 'insights' },
   { value: 'sales', labelKey: 'insights.tabSales', need: 'insights' },
   { value: 'agents', labelKey: 'insights.tabAgents', need: 'agents' },
+  { value: 'payout', labelKey: 'insights.tabPayout', need: 'payout' },
   { value: 'pure-profit', labelKey: 'insights.tabPureProfit', need: 'insights' },
   { value: 'margin-lab', labelKey: 'insights.tabMarginLab', need: 'insights' },
   { value: 'prediction-lists', labelKey: 'insights.tabPredictionLists', need: 'insights' },
@@ -65,6 +67,8 @@ export default function ManagementInsightsPage() {
   const access: Record<string, boolean> = {
     insights: canInsights,
     agents: canInsights || canAccessModule('performance'),
+    // PAYOUT: admin/manager only (insights access implies management).
+    payout: canInsights,
     // Call Activity is its own module now (admin-only by default) so it can be
     // governed per-role from Settings → Role Permissions.
     calls: canAccessModule('call_activity'),
@@ -83,10 +87,10 @@ export default function ManagementInsightsPage() {
     enabled: canInsights,
   });
 
-  // Date range drives the aggregate tabs; Agents brings its own filter bar.
-  const showRangePicker = canInsights && activeTab !== 'agents';
+  // Date range drives the aggregate tabs; Agents/Payout bring their own filter bars.
+  const showRangePicker = canInsights && activeTab !== 'agents' && activeTab !== 'payout';
   // Loader only for tabs that depend on the aggregate fetch.
-  const aggregateTab = activeTab !== 'agents' && activeTab !== 'call-activity';
+  const aggregateTab = activeTab !== 'agents' && activeTab !== 'payout' && activeTab !== 'call-activity';
 
   return (
     <AppLayout title={t('nav.insights')}>
@@ -114,6 +118,10 @@ export default function ManagementInsightsPage() {
 
               {access.agents && (
                 <TabsContent value="agents" className="mt-4"><AgentsTab /></TabsContent>
+              )}
+
+              {access.payout && (
+                <TabsContent value="payout" className="mt-4"><PayoutTab /></TabsContent>
               )}
 
               {access.calls && (
@@ -510,7 +518,7 @@ function PureProfit({ data, range }: { data: InsightsResponse; range: DateRange 
                   <tr key={a.name} className="border-b last:border-0">
                     <td className="py-2 font-medium">{a.name}</td>
                     <td className="py-2 text-right font-semibold text-emerald-600">{formatEur(a.payout_earned || 0)}</td>
-                    <td className="py-2 text-right">{(a.units || 0).toLocaleString()}</td>
+                    <td className="py-2 text-right">{(a.packages_sold ?? a.units ?? 0).toLocaleString()}</td>
                   </tr>
                 ))}
               </tbody>

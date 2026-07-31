@@ -12,8 +12,9 @@
 | Piece | File | Role |
 |---|---|---|
 | Calls page | [../src/pages/CallsPage.tsx](../src/pages/CallsPage.tsx) | Orchestrates queue, customer, dial, outcomes |
-| Call engine | [../src/contexts/VoipContext.tsx](../src/contexts/VoipContext.tsx) | `useVoip()` — `startCall/hangup/endCall/confirmCall`, call state, telemetry. **Live (RealVoipEngine).** |
+| Call engine | [../src/contexts/VoipContext.tsx](../src/contexts/VoipContext.tsx) | `useVoip()` — `startCall/hangup/endCall/confirmCall`, call state, telemetry. Also publishes every state transition to the call‑state bus for presence reporting. **Live (RealVoipEngine).** |
 | Softphone engine | [../src/lib/voip/RealVoipEngine.ts](../src/lib/voip/RealVoipEngine.ts), [../src/lib/voip/pbxConfig.ts](../src/lib/voip/pbxConfig.ts) | sip.js WebRTC client over WSS to the Sofia PBX |
+| Call‑state bus | [../src/lib/voip/callStateBus.ts](../src/lib/voip/callStateBus.ts) | Dependency‑free module store broadcasting softphone state transitions; `AuthContext` relays them to `POST /presence/heartbeat` as `voip_state` (see §3b) |
 | Queue | [../src/components/calls/useMyQueue.ts](../src/components/calls/useMyQueue.ts) | The agent's assigned segment lists + members |
 | Customer strip | [../src/components/calls/ClientProfileCard.tsx](../src/components/calls/ClientProfileCard.tsx) | Info · 4 metrics + quality badge · persistent note · toolbar · Orders/Calls dossier |
 | Active call widget | [../src/components/calls/ActiveCallWidget.tsx](../src/components/calls/ActiveCallWidget.tsx) | Live status pill, duration, mute/hangup |
@@ -38,8 +39,9 @@
    • "Confirm Order" → opens CreateOrderModal (status forced 'confirmed'), call stays live so the agent
      can read back address/price; saving the order logs the call as 'interested' and advances the queue
    • "Choose Answer" (ChooseAnswerButton):
-        Answered → Confirmed / Cancelled (reason) / Trash
-        Not answered → Didn't answer (re-queue ~2h)
+        Answered → Confirmed / Cancelled (reason) / Trash (reason: wrong number / wrong person /
+                   Unreachable / rude / uncooperative / other)
+        Not answered → Didn't answer (paced retry — see §5b)
 6. End → hangup() freezes the duration + snapshots ended_at → outcome picker → finalize() → POST /call-logs
 7. Screen STAYS on the customer with a "Next customer" button (so the agent can still create an order /
    edit notes post-call). Clicking it advances to the next queue member.
@@ -69,6 +71,27 @@ The **call record is fully structured** and analytics run off it. `VoipContext` 
 `connection_state` / `customer_phone` / `outcome` / `notes` (+ structured `cancellation_reason` when
 cancelling). The DB columns `ring_seconds` / `talk_seconds` / `total_seconds` exist for richer telemetry.
 
+### 3b. Live call presence (who's on a call right now)
+
+Separate from telemetry: a **live** "is this agent on a call?" signal, used for supervision.
+
+- The softphone has five states — `idle · dialing · in_call · wrapping · ending`. `VoipContext` writes each
+  transition to [../src/lib/voip/callStateBus.ts](../src/lib/voip/callStateBus.ts) **and** immediately fires
+  `POST /presence/heartbeat` with `{voip_state}` so the change lands within a second, not on the next beat.
+- `AuthContext`'s regular **45 s presence beat** reads the bus and includes `voip_state` **only while
+  non‑idle**. While a call is live the beat keeps running even if the tab is hidden.
+- Server side: `profiles.voip_state` + `voip_state_at` (migration `20260908000000`). `GET /agents/online`
+  and `GET /operations-center` compute **`in_call` = `is_online` AND `voip_state ∈ {dialing, in_call}` AND
+  `voip_state_at` younger than 3 min** — the staleness guard, so a browser that dies mid‑call doesn't
+  freeze the agent as permanently busy.
+- **Multi‑tab safety:** `idle` is only ever written by the tab that actually ends the call, and
+  `VoipContext` skips its report on initial mount. A second, idle tab therefore can't clobber a live call.
+- **Where it surfaces:** the Assigner agent card's **Status tile** (In call / Available / Offline — it
+  replaced the old "Open orders" tile) and the **"In call" badge** on Ops‑Center online rows.
+- **Caveat — this is browser‑self‑reported, not PBX‑derived.** An agent sitting on a tab loaded before the
+  deploy shows "Available" until they refresh. Have them refresh **between** calls: reloading mid‑call kills
+  the WebRTC session.
+
 ---
 
 ## 4. What happens server‑side on a logged call
@@ -97,8 +120,24 @@ The agent sees a friendly two‑level picker; the DB stores leaf values:
 | Answered → Confirmed | (order created `confirmed` via modal) | pending→confirmed |
 | Answered → Cancelled (+reason) | `cancelled` | →cancelled (records a cancelled order with the customer's last real product) |
 | Answered → Trash | `trash` | →trashed |
-| Not answered → Didn't answer | `didnt_answer` (queue) / `no_answer` (log) | re‑queues ~2 h |
+| Not answered → Didn't answer | `didnt_answer` (queue) / `no_answer` (log) | paced retry, then auto‑trash — see §5b |
 | (lead context) Interested / Not interested | `interested` / `not_interested` | updates `prediction_leads.status` |
+
+---
+
+## 5b. No‑answer → paced retries → auto‑trash "Unreachable"
+
+All no‑answer logic is server‑side in `POST /api/call-logs` (supabase/functions/api/index.ts) — event‑driven, no cron. On every logged no‑answer for a phone (matched by last‑8 digits):
+
+- The **trailing consecutive no‑answer streak** is counted from `call_logs`.
+- **Streak ≥ 9 → auto‑trash** the customer: `status='trashed'`, `trash_reason='not_reachable'` (shown as **Unreachable**), unassigned, dropped from every calling queue, and parked in the **Trash List** (/segments). This is the same reason an agent can now pick by hand.
+- **Streak < 9 → paced retry** (humane, so we don't anger the customer):
+  - **Max 2 calls per client per Europe/Sofia day.**
+  - After the **1st** no‑answer today → resurfaces to the **same agent** in **~3.5 h** (`next_call_after` / `in_call_again_until`).
+  - After the **2nd** no‑answer today → does **not** reappear today; resurfaces at **~09:00 Sofia the next morning**.
+  - Repeats across days → ~4–5 calling days ≈ **8–9 attempts** → the 9th triggers the trash above.
+- The client stays on the **same agent** the whole time (assignment is only cleared on trash). Constants (`UNREACHABLE_TRASH_STREAK=9`, `MAX_CALLS_PER_DAY=2`, `INTRA_DAY_COOLDOWN_MS≈3.5h`, `NEXT_DAY_RESUME_HOUR=9`) are hardcoded in the no‑answer block for now.
+- The Call‑Again window (`call_again_since`, lazy `expire_call_again_window()`) was extended **3d → 6d** so it never cuts a schedule short before the 9‑attempt trash.
 
 ---
 
@@ -123,6 +162,7 @@ all. PBX-side matching is handled by `elyon-rec.php` (see `docs/telephony/`).
 ## 8. The one rule
 
 The `VoipContext` consumer surface (`startCall`, `hangup`, `endCall`, `confirmCall`, `state`, `call`,
-`lastFinished`) is the stable contract between the Calls page and the softphone engine. Keep engine
-changes behind `RealVoipEngine` and don't entangle them with Calls-page/queue/outcome refactors —
-keep diffs focused.
+`lastFinished`) is the stable contract between the Calls page and the softphone engine. It now has **two**
+consumers: the Calls page UI, and `AuthContext` via `callStateBus` (§3b) — so changing the `state` machine
+also changes the Assigner status tile and the Ops‑Center badge. Keep engine changes behind
+`RealVoipEngine` and don't entangle them with Calls-page/queue/outcome refactors — keep diffs focused.

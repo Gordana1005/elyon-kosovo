@@ -10,6 +10,7 @@ const FRIENDLY_LABEL_KEYS: Partial<Record<AppRole, string>> = {
   manager: 'roles.manager',
   warehouse: 'roles.warehouse',
   ads_admin: 'roles.adsAdmin',
+  affiliate: 'roles.affiliate',
 };
 
 /**

@@ -64,6 +64,11 @@ interface PermissionsContextType {
 
 const PermissionsContext = createContext<PermissionsContextType | undefined>(undefined);
 
+/** The ONLY modules an external affiliate (partner with no internal role) may
+ *  reach. Frontend twin of the server hard wall in
+ *  supabase/functions/api/index.ts — keep the two in sync. */
+const EXTERNAL_AFFILIATE_MODULES = new Set(['affiliate_portal']);
+
 // ── Module key → route path mapping ──
 export const MODULE_ROUTE_MAP: Record<string, string> = {
   dashboard: '/',
@@ -92,6 +97,8 @@ export const MODULE_ROUTE_MAP: Record<string, string> = {
   segments: '/segments',
   products: '/products',
   webhooks: '/webhooks',
+  affiliates_admin: '/affiliates-admin',
+  affiliate_portal: '/affiliate',
   ads: '/ads',
   settings: '/settings',
   voip_health: '/voip-health',
@@ -147,6 +154,11 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
 
   const canAccessModule = useCallback((moduleKey: string): boolean => {
     if (!isModuleEnabled(moduleKey)) return false;
+    // External partner: allowlist, not blocklist. The hardcoded module
+    // short-circuits below (calls/missed_calls) grant staff pages to any login
+    // holding at least one role, which used to put Calls / Call Again /
+    // Missed Calls / Personal List in an affiliate's sidebar.
+    if (user?.isExternalAffiliate) return EXTERNAL_AFFILIATE_MODULES.has(moduleKey);
     // Admin always has access
     if (userRoles.includes('admin')) return true;
     // VOIP mockup: keys not yet seeded in module_settings. Remove when seed migration lands.
@@ -166,10 +178,11 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
       const perm = rolePermissions.find(p => p.role === role && p.module_key === moduleKey);
       return perm?.can_view ?? false;
     });
-  }, [isModuleEnabled, userRoles, rolePermissions, privacy]);
+  }, [isModuleEnabled, userRoles, rolePermissions, privacy, user]);
 
   const canAction = useCallback((moduleKey: string, action: 'view' | 'create' | 'edit' | 'delete' | 'export'): boolean => {
     if (!isModuleEnabled(moduleKey)) return false;
+    if (user?.isExternalAffiliate && !EXTERNAL_AFFILIATE_MODULES.has(moduleKey)) return false;
     if (userRoles.includes('admin')) return true;
     return userRoles.some(role => {
       const perm = rolePermissions.find(p => p.role === role && p.module_key === moduleKey);
@@ -183,7 +196,7 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
         default: return false;
       }
     });
-  }, [isModuleEnabled, userRoles, rolePermissions]);
+  }, [isModuleEnabled, userRoles, rolePermissions, user]);
 
   const canSeeFinancial = useCallback((metric: keyof Omit<FinancialVisibility, 'role'>): boolean => {
     if (userRoles.includes('admin')) return true;

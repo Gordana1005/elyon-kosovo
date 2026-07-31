@@ -48,10 +48,37 @@ function AlFlag({ className }: { className?: string }) {
   );
 }
 
+// Macedonian flag — the golden sun on red: a central disc with eight rays
+// broadening out to the four corners and the middle of each edge. Drawn as a
+// triangle fan from the centre with the disc painted over the convergence, so
+// it stays clean at the 24×12px switcher size.
+function MkFlag({ className }: { className?: string }) {
+  const rays = [
+    '30,15 60,10.5 60,19.5',   // right
+    '30,15 0,10.5 0,19.5',     // left
+    '30,15 24,0 36,0',         // up
+    '30,15 24,30 36,30',       // down
+    '30,15 52,0 60,0 60,4',    // top-right corner
+    '30,15 8,0 0,0 0,4',       // top-left corner
+    '30,15 52,30 60,30 60,26', // bottom-right corner
+    '30,15 8,30 0,30 0,26',    // bottom-left corner
+  ];
+  return (
+    <svg viewBox="0 0 60 30" className={className} aria-hidden="true">
+      <rect width="60" height="30" fill="#D20000" />
+      {rays.map(points => (
+        <polygon key={points} points={points} fill="#F8E71C" />
+      ))}
+      <circle cx="30" cy="15" r="4.6" fill="#F8E71C" stroke="#D20000" strokeWidth="1.2" />
+    </svg>
+  );
+}
+
 const FLAGS: Record<AppLanguage, (p: { className?: string }) => JSX.Element> = {
   en: UkFlag,
   bg: BgFlag,
   sq: AlFlag,
+  mk: MkFlag,
 };
 
 /** Flag for a language, shared by the top-bar switcher and Settings → Appearance. */

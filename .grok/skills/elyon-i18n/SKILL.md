@@ -1,34 +1,57 @@
 ---
 name: elyon-i18n
-description: Use whenever adding, changing, or translating ANY user-facing text in Elyon CRM (labels, toasts, placeholders, table headers, page titles, statuses). The app is trilingual (English + Bulgarian + Albanian) with a per-user switcher in the top bar. New UI strings must NEVER be hardcoded — they go through i18next keys in src/i18n/locales/. Also read before touching dates, exports, or anything that LOOKS like display text but is actually data.
+description: Use whenever adding, changing, or translating ANY user-facing text in Elyon CRM (labels, toasts, placeholders, table headers, page titles, statuses). The app is quadrilingual (English + Bulgarian + Albanian + Macedonian) with a per-user switcher in the top bar. New UI strings must NEVER be hardcoded — they go through i18next keys in src/i18n/locales/. Also read before touching dates, exports, or anything that LOOKS like display text but is actually data.
 ---
 
-# Elyon i18n Skill — Trilingual UI Rules (EN + BG + SQ)
+# Elyon i18n Skill — Quadrilingual UI Rules (EN + BG + SQ + MK)
 
 Since 2026-06-12 the CRM is internationalized with **i18next + react-i18next**.
 Every user-facing string lives in `src/i18n/locales/en.json` + `bg.json` + `sq.json`
-(single namespace, dot-path keys, identical key trees — enforced by
-`src/i18n/__tests__/parity.test.ts` in `npm test`).
++ `mk.json` (single namespace, dot-path keys, identical key trees — enforced by
+`src/i18n/__tests__/parity.test.ts` in `npm test`). **2,744 keys** as of 2026-07-22.
 
-**Albanian (`sq`, Kosovo standard)** was added 2026-06-22 and is **LIVE** — it's in
-`SUPPORTED_LANGUAGES`, so the top-bar switcher and Settings → Appearance show it.
-Professional wording review happens in-app (operator workflow); keys stay stable,
-only values change. Cross-device persistence needs migration
-`20260622120000_profiles_language_sq.sql` applied remotely (Mgmt API); until then
-the `profiles.language='sq'` write fails silently and the choice sticks per-device
-via localStorage.
+**Adding a 5th language is now a one-line change in three places**: the
+`LOCALES` map in `parity.test.ts`, the `TRANSLATED` map in `keys-used.test.ts`,
+and `SUPPORTED_LANGUAGES` in `src/i18n/index.ts`. Nothing else iterates a
+hardcoded language list — the switcher, Settings → Appearance and the Call
+Scripts editor tabs all read `SUPPORTED_LANGUAGES`. Keep it that way.
+
+**Albanian (`sq`, Kosovo standard)** was added 2026-06-22 and is **LIVE**.
+**Macedonian (`mk`, literary Skopje standard)** was added 2026-07-22 and is
+**LIVE**. Both are in `SUPPORTED_LANGUAGES`, so the top-bar switcher and
+Settings → Appearance show them. Professional wording review happens in-app
+(operator workflow); keys stay stable, only values change.
+
+Cross-device persistence needs the `profiles.language` CHECK constraint to allow
+the code — migration `20260906000000_profiles_language_mk.sql` sets the full set
+`('en','bg','sq','mk')` idempotently (it also repairs a DB where the earlier
+`..._sq.sql` was never applied). Until applied, the write fails silently and the
+choice sticks per-device via localStorage.
+
+> **Trap, cost us Albanian silently for a month:** `AuthContext.fetchProfile`
+> used to read `language: profile?.language === 'bg' ? 'bg' : 'en'`, a hardcoded
+> two-language list. Any user whose stored preference was `sq` got coerced back
+> to English on every fresh device, so the DB column looked broken when it
+> wasn't. It now validates against `SUPPORTED_LANGUAGES`. **Never hardcode a
+> language list anywhere outside `src/i18n/index.ts`.**
 
 The top-bar switcher (`LanguageSwitcher.tsx`) is a **dropdown**: the trigger shows
 only the active flag + chevron, and clicking lists all languages (flag + native
-name, active one checked). Adding a 4th language needs no switcher change — it
-reads `SUPPORTED_LANGUAGES`.
+name, active one checked). Adding a language needs no switcher change beyond one
+inline flag SVG in `FLAGS` — use **inline SVG, never an emoji flag**: Windows
+renders 🇬🇧/🇧🇬 as plain letters and most agents are on Windows.
+
+The **public TV board** (`/tv/leaderboard?key=…`) has no logged-in user to read a
+preference from, so it takes an optional **`?lang=` query param** (validated
+against `SUPPORTED_LANGUAGES`) and otherwise falls back to the localStorage
+default. Office TV URL therefore looks like `/tv/leaderboard?key=…&lang=mk`.
 
 ## The Rules
 
 1. **Never hardcode user-facing text** in JSX, toasts, placeholders, or labels.
-   Add a key to ALL THREE locale files (`en.json`, `bg.json`, `sq.json`) in the
-   same commit, then render with `t('domain.key')`. The parity test fails if any
-   locale is missing the key.
+   Add a key to ALL FOUR locale files (`en.json`, `bg.json`, `sq.json`,
+   `mk.json`) in the same commit, then render with `t('domain.key')`. The parity
+   test fails if any locale is missing the key.
 2. **Key convention**: `domain.subarea.key`. Enum lookups use the raw enum
    value as the leaf key: `t('status.' + status)`. Domains: `common`, `nav`,
    `titles`, `status`, `leadStatus`, `cancelReason`, `roles`, `delivery`,
@@ -50,6 +73,41 @@ reads `SUPPORTED_LANGUAGES`.
    `src/i18n/dates.ts` (Bulgarian month names in BG, Albanian in SQ — both via
    `date-fns/locale`). Machine formats (`'yyyy-MM-dd'` payloads, fulfilment CSV
    timestamp) keep RAW `date-fns`.
+
+## Macedonian (`mk`) — the close-language trap
+
+Macedonian and Bulgarian are close enough that a careless translation reads to a
+Skopje agent as *"Bulgarian with typos"*. `scripts/data/mk-glossary.md` is the
+**binding term list** (Нарачка not Поръчка, Зачувај not Запази, Испорака not
+Доставка, Магацин not Склад, Залиха not Наличност…). Read it before touching
+`mk.json`; translate from the **English** source with Bulgarian as context only,
+never by editing the Bulgarian.
+
+Orthography is a hard, machine-checkable rule: **Macedonian has no `ъ`, `щ`,
+`я`, `ю`, `ь`** (Bulgarian `щ` → Macedonian `шт`). `parity.test.ts` fails the
+build if any of those letters appear in `mk.json`. Also mind `Недела` = *Sunday*
+in Macedonian; *week* is `Седмица`.
+
+### Foreign literals — text that is DATA, not language
+
+This bit off three real bugs during the MK rollout and the orthography test
+carries an explicit allowlist for it. **If the ENGLISH value itself contains
+Cyrillic, that text is external data and must be copied byte-identical:**
+
+- `bigArenaStock.errUnrecognized` names the `Наименование / Информация /
+  Количество` **columns of the BigArena export file**. MK "helpfully" wrote
+  `Информација` — which would send an agent hunting for a column that does not
+  exist in the file in front of them.
+- `delivery.typeCityPlaceholder` shows `София` because the **address database
+  holds Bulgarian city names**; the Macedonianised `Софија` matches nothing when
+  typed.
+- `languages.*` names every language **in its own language** (`English`,
+  `Български`, `Shqip`, `Македонски`) in all four files. Do not "translate" them.
+
+Quick audit for this whole class:
+```
+node -e "const en=require('./src/i18n/locales/en.json');/* any Cyrillic in an EN value = a literal token */"
+```
 
 ## What is NEVER translated
 
@@ -107,6 +165,18 @@ keys), date-fns `sq` locale wired, Albanian flag + dropdown switcher, `'sq'` in
 Same change also swept the last hardcoded stragglers (AgentTimeline legend/tooltip,
 CrossListBasketBar) into keys.
 
+**Macedonian (MK) added 2026-07-22 — LIVE:** full `mk.json` (2,744 keys),
+date-fns `mk` locale, Macedonian sun flag, `'mk'` in `SUPPORTED_LANGUAGES`,
+migration `20260906000000_profiles_language_mk.sql`, glossary at
+`scripts/data/mk-glossary.md`, per-product call scripts drafted into
+`call_scripts.translations.mk`. The same pass also closed **drift that had made
+three screens English in EVERY language** — they were built after the June sweep
+and nobody re-ran the scan: `insights/PayoutTab.tsx`,
+`settings/LeaderboardTab.tsx` and `pages/TvLeaderboardPage.tsx` (which had no
+`useTranslation` at all). 79 keys added across `settings.lb*`, `payout.*`,
+`tvBoard.*`. **Lesson: run `node scripts/i18n-scan.mjs` when you SHIP a new
+screen, not only when you add a language.**
+
 Deliberately NOT translated: RecordingsPage + Index.tsx (unrouted/dead),
 SettingsPage DEV-only test-notification panel, `INV-001`-style format examples,
 export FILE content (CSV/XLSX headers + AgentsTab CSV row).
@@ -128,6 +198,11 @@ export FILE content (CSV/XLSX headers + AgentsTab CSV row).
 Bulgarian terminology is call-centre Bulgarian, terse (operator preference).
 The operator reviews `bg.json` in-app; adjust wording when he objects, but keep
 keys stable.
+
+Macedonian (`mk.json`) is literary Skopje standard in the same terse register,
+produced 2026-07-22 as a glossary-bound draft plus an independent
+anti-Bulgarianism review pass, and is **pending operator review** — adjust
+wording on feedback, keep keys stable, and keep it inside the glossary.
 
 Albanian (`sq.json`) is Kosovo-standard, same terse register. It was produced as
 a Claude first-draft (2026-06-22) and is **pending professional review** — adjust

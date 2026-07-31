@@ -12,7 +12,7 @@ These skills encode the hard-won operational wisdom of running this Bulgarian ca
 - Use `/skills` in the TUI to list or inject a specific skill.
 - Good skills are **automatically invoked** when your prompt matches their `description`.
 
-## Current Skills (as of May 2026)
+## Current Skills (as of July 2026)
 
 | Skill | When to Use | Sacred Area |
 |-------|-------------|-------------|
@@ -25,9 +25,12 @@ These skills encode the hard-won operational wisdom of running this Bulgarian ca
 | `elyon-voip-and-pbx` | Telephony, SIP trunk, Asterisk, FreePBX, softphone swap, recordings, **A1 trunk connection** | The long-term real call infrastructure (significantly strengthened May 2026) |
 | `elyon-segments-and-prediction` | Prediction lists, segments, recompute, bulk assign, Assigner | The intelligent lead distribution engine |
 | `elyon-security` | Authentication, RLS, webhook HMAC, permissions, audit, CORS, secrets | Protecting data and operational integrity |
-| `elyon-assigner` | Assigner page, bulk assignment, per-agent inspector, unassign rules, workload management | Lead distribution and agent workload fairness |
+| `elyon-assigner` | Assigner page, bulk assignment, the Unassign tab / full detach, unassign rules, workload management | Lead distribution and agent workload fairness |
 | `elyon-agent-commissions` | Agent bonus/commission/payout math, attribution, who gets credited | Per-package pay; one first-confirming agent; super-admins earn nothing |
 | `elyon-logistics-costs` | Shipping/return/courier cost, Pure Profit actuals, courier rate card | Per-courier+service rates; full round-trip return loss; cash-basis profit |
+| `elyon-affiliates` | `/cpa/*` endpoints, affiliate tables, webmaster API keys, offers/payouts, lead stages, postback queue, affiliate portal/admin pages | External CPA identities + payout math; partners must never see internal data |
+| `elyon-i18n` | Any user-facing text: labels, toasts, placeholders, table headers, page titles, statuses; also dates/exports that only look like display text | Quadrilingual EN/BG/SQ/MK parity — never hardcode a string |
+| `elyon-notifications` | The bell dropdown, any DB trigger or pg_cron job writing to `notifications`, notification text, unpaid-delivery chase alerts | English-in-DB + `meta.i18n` translation contract; owner = confirmer; REVOKE FROM PUBLIC on every new table/RPC |
 
 ## Best Practice for Future Work
 
@@ -53,4 +56,4 @@ Together, skills + memory + this `Claude.md` form the "Elyon Agent Operating Sys
 
 ---
 
-**This setup was created and significantly strengthened in May 2026 to make the partnership between the human operator and Grok as powerful and low-friction as possible for the long term.**
+**This setup was created and significantly strengthened in May 2026, and last extended in July 2026 (affiliates, i18n, notifications), to make the partnership between the human operator and Grok as powerful and low-friction as possible for the long term.**

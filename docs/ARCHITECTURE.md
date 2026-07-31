@@ -39,11 +39,11 @@
                                          │ HTTPS (fetch + supabase-js)
                                          ▼
         ┌────────────────────────────────────────────────────────────────────┐
-        │  SUPABASE  (project ref sxymaloycddnoxudxaqp)                        │
+        │  SUPABASE  (project ref bmfxhgznttcnnlqloqzp)                        │
         │                                                                      │
         │   • Auth (email/password, JWT)                                       │
         │   • Postgres (RLS on every table) ── ~39 tables                      │
-        │   • Edge Function `api` (Deno, one file, ~7,325 lines)               │
+        │   • Edge Function `api` (Deno, one file, ~14,900 lines)              │
         │       - REST surface for the whole app (~130 routes)                 │
         │       - public webhooks (HMAC) for landing pages + OpenCart          │
         │   • Storage: (none yet — call-recordings bucket lands with VOIP P2)  │
@@ -104,7 +104,15 @@ Full detail in [WEBSITES_WEBHOOKS.md](WEBSITES_WEBHOOKS.md).
 Browser softphone (sip.js over WSS) → Asterisk@Sofia → A1 Business Voice SIP trunk → PSTN → BG mobile
 ```
 The Calls page uses the real softphone (`RealVoipEngine` behind `VoipContext`); calls are recorded and
-logged to `call_logs`. See [CALLS.md](CALLS.md) and the go‑live record [CALLING_PLAN_SIP.md](CALLING_PLAN_SIP.md).
+logged to `call_logs`.
+
+There is a **reverse path** for live call presence (who's on a call right now):
+```
+VoipContext → callStateBus → AuthContext (45 s beat) → POST /presence/heartbeat
+   → profiles.voip_state → GET /agents/online .in_call → Assigner status tile / Ops-Center badge
+```
+This is **browser‑self‑reported, not PBX‑derived**, and is staleness‑guarded at 3 min.
+See [CALLS.md](CALLS.md) §3b and the go‑live record [CALLING_PLAN_SIP.md](CALLING_PLAN_SIP.md).
 
 ---
 
@@ -154,7 +162,7 @@ Transitions, side effects, and who's allowed to do them: [ORDERS_AND_CLIENTS.md]
 | Tests | `npm test` (vitest — currently 1 trivial test) |
 | Lint | `npm run lint` (eslint — currently **red**, 643 errors, mostly `any`) |
 | Frontend deploy | push to `main` → Vercel auto‑deploys |
-| Edge function deploy | `npx supabase functions deploy api --project-ref sxymaloycddnoxudxaqp` |
+| Edge function deploy | `npx supabase functions deploy api --project-ref bmfxhgznttcnnlqloqzp` |
 | DB migration | `npx supabase db push --linked` |
 | CI | GitHub Actions `.github/workflows/ci.yml` — runs **build + test only** (not lint) on push/PR to `main` |
 
@@ -172,6 +180,9 @@ All secrets are in [VAULT.md](VAULT.md) (git‑ignored).
 5. **CORS allow‑list lives in the function** (`ALLOWED_ORIGINS`) — adding a domain needs an edit **and a redeploy**.
 6. **`WEBHOOK_SECRET`** gates every inbound webhook; if unset the function accepts unsigned bodies — never unset in prod.
 7. **Note provenance** (`Imported from …`) stays in storage; stripped only on render via `cleanNoteForDisplay()`.
+8. **Live call status is browser‑self‑reported, not PBX‑derived** (`profiles.voip_state`, written by the
+   agent's tab) — always pair it with a **3‑minute staleness guard** on `voip_state_at`, or a browser that
+   dies mid‑call leaves the agent stuck "In call" forever.
 
 ---
 

@@ -1,7 +1,7 @@
 # Database — Supabase Postgres, end to end
 
 > Every table, enum, function, trigger, the RLS model, the segment engine, and how data actually
-> moves. Project ref **`sxymaloycddnoxudxaqp`**. ~39 tables, 3 enums, ~18 functions, ~70 migrations in
+> moves. Project ref **`bmfxhgznttcnnlqloqzp`**. ~39 tables, 3 enums, ~18 functions, ~70 migrations in
 > [../supabase/migrations](../supabase/migrations). Apply with `npx supabase db push --linked`.
 
 > ⚠️ **The generated types file is stale.** [src/integrations/supabase/types.ts](../src/integrations/supabase/types.ts)
@@ -107,11 +107,11 @@ Legend: **PK** primary key · **FK** foreign key · _italic_ = added by a later 
 
 ### 3.5 Shifts & presence
 
-**`shifts`** (`name`, `date`, `start_time`, `end_time`, `created_by`), **`shift_assignments`** (`shift_id`, `user_id`), **`shift_templates`** (reusable shift defs), **`shift_login_logs`** (`user_id`, `shift_id`, `shift_date`, `login_time`, `logout_time`, `shift_start/end_time`), _**`shift_breaks`**_ (pause within a shift). Presence: _`profiles.last_seen_at`_ bumped by the `presence/heartbeat` endpoint.
+**`shifts`** (`name`, `date`, `start_time`, `end_time`, `created_by`), **`shift_assignments`** (`shift_id`, `user_id`), **`shift_templates`** (reusable shift defs), **`shift_login_logs`** (`user_id`, `shift_id`, `shift_date`, `login_time`, `logout_time`, `shift_start/end_time`), _**`shift_breaks`**_ (pause within a shift). Presence: _`profiles.last_seen_at`_ bumped by the `presence/heartbeat` endpoint (2‑min "online" window), which also records the browser‑reported softphone state in _`profiles.voip_state`_ / _`voip_state_at`_ (3‑min staleness window → the `in_call` flag on `agents/online` and `operations-center`).
 
 ### 3.6 Auth, roles & permissions
 
-**`profiles`** — one per `auth.users`: `user_id`, `full_name`, `email`, `is_active`, _`last_seen_at`_. Auto‑created by the `handle_new_user` trigger on signup.
+**`profiles`** — one per `auth.users`: `user_id`, `full_name`, `email`, `is_active`, `language`, _`last_seen_at`_, _`voip_state`_ (`text NOT NULL DEFAULT 'idle'`, CHECK `idle|dialing|in_call|wrapping|ending`), _`voip_state_at`_ (`timestamptz`). Auto‑created by the `handle_new_user` trigger on signup. The two `voip_*` columns are written only by the edge function's service‑role client, from the presence heartbeat.
 
 **`user_roles`** — `(user_id, role)` many‑to‑many.
 
@@ -139,7 +139,11 @@ Legend: **PK** primary key · **FK** foreign key · _italic_ = added by a later 
 
 **`ads_campaigns`** + **`ads_audit_logs`** — ads module (separate from the call‑centre core).
 
-**`notifications`** — in‑app notifications: `user_id`, `title`, `message`, `type`, `link`, `is_read`.
+**`notifications`** — in‑app notifications: `user_id`, `title`, `message`, `type`, `link`, `is_read`, `meta`.
+`title`/`message` are written in **English** by the DB triggers/jobs. `meta` (jsonb, 2026‑09) optionally carries `{ i18n: 'notif.<key>', ...vars }` so the bell renders the row in the reader's own language, falling back to the stored English when a locale key is missing. `meta IS NULL` = legacy row, rendered verbatim.
+Types in use: `missed_call`, `order_returned`, `order_paid`, `low_stock`, `shipped_unpaid`, `unpaid_digest`.
+
+**`order_unpaid_alerts`** — append‑only ledger of unpaid‑delivery chase pings: `order_id`, `alert_date` (Europe/Sofia day), `days_shipped`, `owner_id`. PK `(order_id, alert_date)` is what makes the daily job idempotent. **Internal only** — RLS on with zero policies *and* all grants revoked from `PUBLIC`/`anon`/`authenticated`; only the SECURITY DEFINER job and `service_role` can reach it.
 
 **`user_warehouse`** — assigns product stock to a warehouse user: `user_id`, `product_id`, `quantity`, `notes`.
 
@@ -160,6 +164,10 @@ Legend: **PK** primary key · **FK** foreign key · _italic_ = added by a later 
 | `recompute_customer_segments(_phone)` | Reclassify ONE phone into the 27 lists from order history | DEFINER |
 | `recompute_all_segments() → int` | Full rebuild across all customers (bootstrap / on‑demand) | DEFINER, service_role only |
 | `trg_orders_recompute_segments()` | Trigger fn driving the above on order changes | DEFINER |
+| `assignment_matrix()` | Who holds what: `(agent_id, list_id, members_assigned, members_open)` over `prediction_segment_members WHERE assigned_agent_id IS NOT NULL`. **Deliberately has no `is_completed` filter** — that is what surfaces done‑only lists in the Assigner's Unassign tab. Feeds `GET /assigner/assignment-summary`. | DEFINER, service_role only |
+| `assigned_pending_counts()` | Per‑agent count of assigned `status='pending'` orders (the leads side of the same summary) | DEFINER, service_role only |
+| `agent_workloads()` | Per agent: `orders_open` (assigned orders in `pending\|take\|call_again`) + `members_assigned/open/parked`. Powers the Assigner agent cards' "Clients to call" tile in one aggregate instead of an unbounded select. | DEFINER, service_role only |
+| `bulk_last_calls(p8s text[])` | Latest real `call_logs` row per last‑8 phone — overlays `real_last_call_*` onto member tables at read time | DEFINER |
 | `orders_set_cancelled_at()` | Trigger fn — stamps `cancelled_at = now()` when an order enters `cancelled` without one (NULL‑only; explicit code‑set values win) | — |
 | `orders_set_returned_at()` | Trigger fn — stamps `returned_at = now()` when an order enters `returned` without one (NULL‑only; same pattern as cancelled_at) | — |
 | `cleanup_expired_order_locks()` | Drop stale `order_locks` | — |
@@ -168,6 +176,15 @@ Legend: **PK** primary key · **FK** foreign key · _italic_ = added by a later 
 | `check_phone_duplicates(_phone, _exclude_order_id)` | Find suspected duplicate customers by phone | — |
 | `audit_log_no_mutation()` | Raises on any UPDATE/DELETE of `audit_log` | — |
 | `update_updated_at_column()` | Generic `updated_at = now()` trigger fn | — |
+| `notify_unpaid_shipped_orders(_force, _dry_run) → int` | Daily unpaid‑delivery chase: one notification per stale shipped order to the owning agent (`confirmed_by ?? assigned`) + one digest per superadmin. Idempotent via `order_unpaid_alerts`. `_force` skips the 09:00–11:00 Sofia gate, `_dry_run` writes nothing. | DEFINER, **EXECUTE revoked from PUBLIC/anon/authenticated** |
+
+### pg_cron jobs
+
+| Job | Schedule | Runs |
+|---|---|---|
+| `nightly-segment-recompute` | `0 0 * * *` | `recompute_all_segments()` |
+| `reconcile-recording-links` | `*/10 * * * *` | `reconcile_recording_links(12)` |
+| `unpaid-delivery-chase` | `0 * * * *` | `notify_unpaid_shipped_orders()` — self‑gated to 09:00–11:00 Europe/Sofia, so hourly ticks are cheap no‑ops and a missed 09:00 heals at 10:00 |
 
 ---
 

@@ -18,6 +18,8 @@ interface AgentInfo {
   email: string;
   roles: string[];
   is_online: boolean;
+  /** Live browser-reported softphone state (dialing/in_call, staleness-guarded). */
+  in_call?: boolean;
   login_time: string | null;
   active_leads: number;
   today_confirmed: number;
@@ -213,7 +215,15 @@ export default function OperationsPage() {
                         <Users className="h-4 w-4 text-emerald-600" />
                       </div>
                       <div>
-                        <p className="text-sm font-medium">{agent.full_name}</p>
+                        <p className="text-sm font-medium flex items-center gap-1.5">
+                          {agent.full_name}
+                          {agent.in_call && (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-rose-500/10 border border-rose-500/30 px-1.5 py-0.5 text-[10px] font-semibold text-rose-600 dark:text-rose-400">
+                              <span className="h-1.5 w-1.5 rounded-full bg-rose-500 animate-pulse" />
+                              {t('assigner.statusInCall')}
+                            </span>
+                          )}
+                        </p>
                         <p className="text-[11px] text-muted-foreground">
                           {agent.login_time ? t('ops.since', { time: new Date(agent.login_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }) : t('ops.active')}
                         </p>

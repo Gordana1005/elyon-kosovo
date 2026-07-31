@@ -21,14 +21,27 @@ export const CANCEL_REASON_VALUES: CancellationReason[] = [
   'not_interested',
   'bought_elsewhere',
   'will_call_back',
+  // Catch-all, always last: when the real reason isn't above the agent picks
+  // 'other' and the free-text note carries it (see cancelReasonRequiresNote).
+  'other',
 ];
 
 // Label for DISPLAY (pickers, history tabs, synthetic records). Covers the
 // active values above plus retired reasons (family_refused, wrong_product,
-// duplicate_order, other) that still exist on historical orders. Unknown
-// values render as-is.
+// duplicate_order) that still exist on historical orders. Unknown values
+// render as-is.
 export const cancelReasonLabel = (value: string): string =>
   i18n.t(`cancelReason.${value}`, { defaultValue: value });
 
 export const getCancelReasonOptions = (): { value: CancellationReason; label: string }[] =>
   CANCEL_REASON_VALUES.map(value => ({ value, label: cancelReasonLabel(value) }));
+
+// 'other' is a catch-all — the free-text note carries the real reason, so the
+// note is mandatory for this value only; every other reason keeps it optional.
+export const cancelReasonRequiresNote = (v: CancellationReason | null): boolean => v === 'other';
+
+// A cancellation selection is complete only when a reason is chosen and, for
+// 'other', a non-empty note explains it. Reused by every cancel save-gate
+// (CancellationReasonPicker consumers) so the rule can't drift between them.
+export const isCancelSelectionValid = (v: CancellationReason | null, notes: string): boolean =>
+  !!v && (!cancelReasonRequiresNote(v) || notes.trim().length > 0);

@@ -15,7 +15,7 @@ This is the high-level trigger table for routing work to the correct skills, mem
 | Telephony, SIP, PBX, softphone, recordings, **A1 trunk connection** | Respect infrastructure & current status | `elyon-voip-and-pbx` (strengthened May 2026)                 | VOIP / PBX section |
 | Prediction lists, segments, recompute, bulk assign | Protect membership integrity & recompute rules | `elyon-segments-and-prediction`                          | Segments section |
 | Security, RLS, permissions, audit, secrets, CORS | Follow security model and least-privilege | `elyon-security`                                             | Security section |
-| Assigner, bulk assignment, inspector, unassign rules | Fair distribution + workload visibility | `elyon-assigner`                                             | Assigner section |
+| Assigner, bulk assignment, Unassign tab / full detach, unassign rules | Fair distribution + workload visibility | `elyon-assigner`                                             | Assigner section |
 | Big refactor or complex feature          | Consider using `/best-of-n`               | Relevant domain skills + best-of-n                            | N/A |
 
 ## Core Principles
@@ -30,4 +30,4 @@ This constitution should be consulted at the beginning of any non-trivial piece 
 
 ---
 
-Maintained as part of the Elyon Agent Operating System. Last updated with Security, Assigner, and strengthened VOIP skills: May 2026.
+Maintained as part of the Elyon Agent Operating System. Last updated 2026-07-28 (Assigner Unassign tab / full detach; skills table extended with affiliates, i18n and notifications). Previously updated with Security, Assigner, and strengthened VOIP skills: May 2026.

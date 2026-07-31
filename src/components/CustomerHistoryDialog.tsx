@@ -7,6 +7,7 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { useTranslation } from 'react-i18next';
 import { formatDate } from '@/i18n/dates';
 import { OrderStatus, statusLabel } from '@/types';
+import { formatOrderProducts } from '@/lib/monadonSubstitutes';
 
 interface CustomerHistoryDialogProps {
   open: boolean;
@@ -37,6 +38,7 @@ interface HistoryOrder {
   customer_phone: string;
   customer_city: string;
   product_name: string;
+  source_type?: string | null;
   price: number;
   status: string;
   created_at: string;
@@ -76,7 +78,7 @@ export function CustomerHistoryDialog({ open, onClose, customerPhone, customerNa
     Promise.all([
       supabase
         .from('orders')
-        .select('id, display_id, customer_name, customer_phone, customer_city, product_name, price, status, created_at, assigned_agent_name')
+        .select('id, display_id, customer_name, customer_phone, customer_city, product_name, source_type, price, status, created_at, assigned_agent_name')
         .ilike('customer_phone', `%${normalizedPhone.slice(-8)}%`)
         .order('created_at', { ascending: false })
         .limit(50),
@@ -188,7 +190,7 @@ export function CustomerHistoryDialog({ open, onClose, customerPhone, customerNa
                               )}
                             </div>
                             <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
-                              <span className="flex items-center gap-1"><Package className="h-3 w-3" />{o.product_name}</span>
+                              <span className="flex items-center gap-1"><Package className="h-3 w-3" />{formatOrderProducts(o)}</span>
                               {o.customer_city && <span className="flex items-center gap-1"><MapPin className="h-3 w-3" />{o.customer_city}</span>}
                             </div>
                           </div>

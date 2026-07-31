@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Bell, CheckCheck, Clock, AlertTriangle, Info, Package, PhoneMissed, RotateCcw, PackageX, UserPlus, BadgeCheck, Copy } from 'lucide-react';
+import { Bell, CheckCheck, Clock, AlertTriangle, Info, Package, PhoneMissed, RotateCcw, PackageX, UserPlus, BadgeCheck, Copy, Truck as TruckIcon, PackageSearch } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
@@ -24,18 +24,55 @@ interface Notification {
   is_read: boolean;
   link: string | null;
   created_at: string;
+  // Optional structured payload written by the newer DB jobs:
+  // { i18n: 'notif.<key>', ...interpolation vars }. See migration
+  // 20260905000000_notifications_meta.sql.
+  meta?: Record<string, any> | null;
 }
 
-// Pull the caller's number out of a missed-call notification so the row can offer
-// a one-tap copy and a deep-link straight to that caller in the Missed Calls inbox.
-// Prefer a structured `?phone=` on the link; otherwise fall back to the first
-// phone-like digit run in the message (the trigger always embeds the number there).
+// Render a notification in the READER's language.
+//
+// The DB cannot know which language the reader picked, so triggers/jobs write
+// English title+message AND (since 2026-09) an optional `meta.i18n` key plus its
+// interpolation vars. When the key is present we translate; the stored English
+// text is passed as i18next's `defaultValue`, so a missing locale key degrades to
+// readable English instead of a `⟪key⟫` placeholder. Legacy rows (meta = NULL)
+// render exactly as before.
+//
+// Module-level on purpose → uses `i18n.t`, never `t`. Inside the custom toast
+// renderers below `t` is the sonner toast instance, and inside the component the
+// useTranslation() subscription already re-renders on a language switch.
+function localizeNotification(n: Notification): { title: string; message: string } {
+  const key = n.meta?.i18n;
+  if (!key) return { title: n.title, message: n.message };
+  // Spread the payload FIRST so `defaultValue` (and any other i18next control
+  // option) always wins over the stored data. meta is row data, and row data
+  // must never steer the translator.
+  const vars = { ...n.meta };
+  let message = i18n.t(`${key}.body`, { ...vars, defaultValue: n.message });
+  // The digest carries how stale the manual BigArena upload is. Say so when it
+  // is over a day and a half old — the counts are only as fresh as that sync.
+  if (n.type === 'unpaid_digest' && Number(n.meta?.syncAgeHours) >= 36) {
+    message += ' ' + i18n.t(`${key}.staleSync`, { ...vars, defaultValue: '' });
+  }
+  return { title: i18n.t(`${key}.title`, { ...vars, defaultValue: n.title }), message };
+}
+
+// Pull the client's number out of a notification so the row can offer a one-tap
+// copy (and, for missed calls, a deep-link straight to that caller in the inbox).
+// Prefer structured data — `meta.phone`, then a `?phone=` on the link — and only
+// then fall back to the first phone-like digit run in the message.
 function extractCallerPhone(n: Notification): string | null {
-  if (n.type !== 'missed_call') return null;
+  if (n.type !== 'missed_call' && n.type !== 'shipped_unpaid') return null;
+  if (n.meta?.phone) return String(n.meta.phone);
   if (n.link && n.link.includes('phone=')) {
     const p = new URLSearchParams(n.link.split('?')[1] || '').get('phone');
     if (p) return p;
   }
+  // Digit-scraping the message is a last resort for the older missed-call rows
+  // that predate `meta`; never applied to a message that could contain an order
+  // number instead of a phone.
+  if (n.type !== 'missed_call') return null;
   const m = n.message?.match(/\+?\d[\d\s().-]{6,}\d/);
   return m ? m[0].replace(/[\s().-]/g, '') : null;
 }
@@ -50,6 +87,8 @@ const typeIcons: Record<string, typeof Info> = {
   order_paid: BadgeCheck,
   low_stock: PackageX,
   assignment: UserPlus,
+  shipped_unpaid: TruckIcon,
+  unpaid_digest: PackageSearch,
 };
 
 const typeColors: Record<string, string> = {
@@ -62,6 +101,9 @@ const typeColors: Record<string, string> = {
   order_paid: 'text-emerald-500',
   low_stock: 'text-amber-500',
   assignment: 'text-primary',
+  // Amber = "act today or this becomes a return" (same weight as low stock).
+  shipped_unpaid: 'text-amber-500',
+  unpaid_digest: 'text-amber-500',
 };
 
 // Per-type "mood" styling for unread items in the dropdown.
@@ -78,6 +120,8 @@ const getUnreadMoodClass = (type: string): string => {
     case 'missed_call':
       return 'bg-rose-500/10 border-l-2 border-rose-500 data-[highlighted]:bg-rose-500/15 focus:bg-rose-500/15';
     case 'low_stock':
+    case 'shipped_unpaid':
+    case 'unpaid_digest':
       return 'bg-amber-500/10 border-l-2 border-amber-500 data-[highlighted]:bg-amber-500/15 focus:bg-amber-500/15';
     default:
       return 'bg-red-500/5 border-l-2 border-red-500 data-[highlighted]:bg-red-500/15 focus:bg-red-500/15';
@@ -93,6 +137,8 @@ const getUnreadTitleClass = (type: string): string => {
     case 'missed_call':
       return 'font-semibold text-rose-600 dark:text-rose-400';
     case 'low_stock':
+    case 'shipped_unpaid':
+    case 'unpaid_digest':
       return 'font-semibold text-amber-600 dark:text-amber-400';
     default:
       return 'font-semibold text-foreground';
@@ -105,6 +151,8 @@ const toastSeverity: Record<string, 'error' | 'warning' | 'success' | 'default'>
   order_returned: 'error',
   order_paid: 'success',
   low_stock: 'warning',
+  shipped_unpaid: 'warning',
+  unpaid_digest: 'warning',
 };
 
 export function NotificationsDropdown() {
@@ -233,6 +281,7 @@ export function NotificationsDropdown() {
               const moodClass = isUnread ? getUnreadMoodClass(n.type) : '';
               const titleClass = isUnread ? getUnreadTitleClass(n.type) : 'text-muted-foreground';
               const phone = extractCallerPhone(n);
+              const { title, message } = localizeNotification(n);
               // Universal small red dot = "this is still unread / new".
               // The bar + icon + title color now communicate the emotional tone (happy green, sad pink, urgent red).
               return (
@@ -247,10 +296,10 @@ export function NotificationsDropdown() {
                   <Icon className={`h-4 w-4 mt-0.5 shrink-0 ${iconColor}`} />
                   <div className="flex-1 min-w-0">
                     <p className={`text-sm truncate ${titleClass}`}>
-                      {n.title}
+                      {title}
                     </p>
-                    {n.message && (
-                      <p className="text-xs text-muted-foreground break-words mt-0.5">{n.message}</p>
+                    {message && (
+                      <p className="text-xs text-muted-foreground break-words mt-0.5">{message}</p>
                     )}
                     {phone && (
                       <button
@@ -290,7 +339,8 @@ export function NotificationsDropdown() {
 ------------------------------------------------------------------ */
 
 function renderNotificationToast(n: Notification) {
-  const description = n.message || undefined;
+  const local = localizeNotification(n);
+  const description = local.message || undefined;
 
   if (n.type === 'order_paid') {
     toast.custom(
@@ -312,10 +362,10 @@ function renderNotificationToast(n: Notification) {
   // (missed_call stays loud/error, low_stock warning, etc.)
   const sev = toastSeverity[n.type] || 'default';
   const opts = description ? { description } : {};
-  if (sev === 'error') toast.error(n.title, opts);
-  else if (sev === 'warning') toast.warning(n.title, opts);
-  else if (sev === 'success') toast.success(n.title, opts);
-  else toast(n.title, opts);
+  if (sev === 'error') toast.error(local.title, opts);
+  else if (sev === 'warning') toast.warning(local.title, opts);
+  else if (sev === 'success') toast.success(local.title, opts);
+  else toast(local.title, opts);
 }
 
 function RainingMoney({
@@ -355,6 +405,7 @@ function RainingMoney({
 }
 
 function HappyOrderPaidToast({ t, n }: { t: { id: string | number }; n: Notification }) {
+  const local = localizeNotification(n);
   return (
     <div className="relative w-full max-w-[340px] overflow-hidden rounded-xl border border-emerald-500/40 bg-background p-4 shadow-xl">
       <div className="flex items-start gap-3 pr-5">
@@ -364,11 +415,11 @@ function HappyOrderPaidToast({ t, n }: { t: { id: string | number }; n: Notifica
             {i18n.t('notif.congrats')}
           </div>
           <div className="mt-0.5 text-sm font-medium leading-snug text-foreground">
-            {n.title}
+            {local.title}
           </div>
-          {n.message && (
+          {local.message && (
             <div className="mt-1 text-xs text-muted-foreground leading-snug">
-              {n.message}
+              {local.message}
             </div>
           )}
           <div className="mt-1 text-[10px] text-emerald-500/80 font-medium">{i18n.t('notif.kaChing')}</div>
@@ -389,6 +440,7 @@ function HappyOrderPaidToast({ t, n }: { t: { id: string | number }; n: Notifica
 }
 
 function SadRefundToast({ t, n }: { t: { id: string | number }; n: Notification }) {
+  const local = localizeNotification(n);
   return (
     <div className="relative w-full max-w-[340px] overflow-hidden rounded-xl border border-pink-500/40 bg-background p-4 shadow-xl">
       <div className="flex items-start gap-3 pr-5">
@@ -398,11 +450,11 @@ function SadRefundToast({ t, n }: { t: { id: string | number }; n: Notification 
             {i18n.t('notif.refundProcessed')}
           </div>
           <div className="mt-0.5 text-sm font-medium leading-snug text-foreground">
-            {n.title}
+            {local.title}
           </div>
-          {n.message && (
+          {local.message && (
             <div className="mt-1 text-xs text-muted-foreground leading-snug">
-              {n.message}
+              {local.message}
             </div>
           )}
           <div className="mt-1 text-[10px] text-pink-500/70">{i18n.t('notif.nextOne')}</div>

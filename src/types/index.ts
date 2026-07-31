@@ -9,8 +9,9 @@ export type OrderStatus =
   | 'delivered'
   | 'returned' 
   | 'paid' 
-  | 'trashed' 
-  | 'cancelled';
+  | 'trashed'
+  | 'cancelled'
+  | 'duplicated';
 
 export interface Order {
   id: string;
@@ -92,6 +93,7 @@ export const STATUS_COLORS: Record<OrderStatus, string> = {
   paid: 'bg-emerald-600 text-white border-emerald-600',      // dark green
   trashed: 'bg-gray-500 text-white border-gray-500',         // gray
   cancelled: 'bg-red-500 text-white border-red-500',         // red
+  duplicated: 'bg-indigo-500 text-white border-indigo-500',  // indigo — admin/manager-only status
 };
 
 export const AGENT_ALLOWED_STATUSES: OrderStatus[] = ['pending', 'take', 'call_again', 'confirmed'];

@@ -18,7 +18,7 @@ import { useAuth } from '@/contexts/AuthContext';
 // Lives inside the Insights hub now; brings its own filters/date controls and
 // CSV export. The single authoritative per-agent sales & financial table.
 
-type FilterPreset = 'today' | 'week' | 'month' | 'custom';
+type FilterPreset = 'today' | 'week' | 'month' | 'start' | 'custom';
 
 function getDateRange(preset: FilterPreset): { from: string; to: string } | null {
   const now = new Date();
@@ -26,15 +26,17 @@ function getDateRange(preset: FilterPreset): { from: string; to: string } | null
   if (preset === 'today') return { from: now.toISOString().substring(0, 10), to: toStr };
   if (preset === 'week') return { from: new Date(now.getTime() - 7 * 86400000).toISOString().substring(0, 10), to: toStr };
   if (preset === 'month') return { from: new Date(now.getTime() - 30 * 86400000).toISOString().substring(0, 10), to: toStr };
+  // Start = open-ended lifetime (backend paid_at merge still applies without from)
+  if (preset === 'start') return null;
   return null;
 }
 
 const fmt = (n: number | undefined | null) => { const v = n ?? 0; return v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v.toFixed(2); };
 
 function exportCSV(data: AgentPerformanceRow[]) {
-  const header = 'Agent,Leads,Confirmed,Shipped,Paid,Packages,Avg/Pkg,Payout,Returned,Cancelled,Trashed,Conv%,Ship%,Collect%,Ret%,Gross Rev,Paid Rev,Outstanding,Returned Val,Profit,AOV,Rev/Lead,Profit/Lead';
+  const header = 'Agent,Leads,Confirmed,Shipped,Paid,PackagesSold,PackagesAwaiting,Avg/Pkg,Payout,ReturnedOrders,ReturnedPackages,Cancelled,Trashed,Conv%,Ship%,Collect%,Ret%,Gross Rev,Paid Rev,Outstanding,Returned Val,Profit,AOV,Rev/Lead,Profit/Lead';
   const rows = data.map(a =>
-    `"${a.full_name}",${a.leads_assigned},${a.total_confirmed},${a.total_shipped},${a.total_paid},${a.packages_sold ?? 0},${(a.avg_per_package ?? 0).toFixed(2)},${a.payout_earned ?? 0},${a.total_returned},${a.total_cancelled},${a.total_trashed},${a.conversion_rate},${a.shipment_rate},${a.collection_rate},${a.return_rate},${(a.gross_revenue ?? 0).toFixed(2)},${(a.paid_revenue ?? 0).toFixed(2)},${(a.outstanding_revenue ?? 0).toFixed(2)},${(a.returned_value ?? 0).toFixed(2)},${(a.total_profit ?? 0).toFixed(2)},${(a.avg_order_value ?? 0).toFixed(2)},${(a.revenue_per_lead ?? 0).toFixed(2)},${(a.profit_per_lead ?? 0).toFixed(2)}`
+    `"${a.full_name}",${a.leads_assigned},${a.total_confirmed},${a.total_shipped},${a.total_paid},${a.packages_sold ?? 0},${a.packages_awaiting ?? 0},${(a.avg_per_package ?? 0).toFixed(2)},${a.payout_earned ?? 0},${a.total_returned},${a.packages_returned ?? 0},${a.total_cancelled},${a.total_trashed},${a.conversion_rate},${a.shipment_rate},${a.collection_rate},${a.return_rate},${(a.gross_revenue ?? 0).toFixed(2)},${(a.paid_revenue ?? 0).toFixed(2)},${(a.outstanding_revenue ?? 0).toFixed(2)},${(a.returned_value ?? 0).toFixed(2)},${(a.total_profit ?? 0).toFixed(2)},${(a.avg_order_value ?? 0).toFixed(2)},${(a.revenue_per_lead ?? 0).toFixed(2)},${(a.profit_per_lead ?? 0).toFixed(2)}`
   );
   const csv = [header, ...rows].join('\n');
   const blob = new Blob([csv], { type: 'text/csv' });
@@ -152,9 +154,13 @@ export default function AgentsTab() {
       <div className="flex flex-wrap items-center gap-3 rounded-xl border bg-card/60 backdrop-blur-sm p-3">
         {/* Date presets */}
         <div className="flex items-center gap-1">
-          {(['today', 'week', 'month', 'custom'] as FilterPreset[]).map(p => (
+          {(['today', 'week', 'month', 'start', 'custom'] as FilterPreset[]).map(p => (
             <Button key={p} variant={filter === p ? 'default' : 'outline'} size="sm" className="h-8 text-xs" onClick={() => handleFilterChange(p)}>
-              {p === 'today' ? t('agentsTab.today') : p === 'week' ? t('agentsTab.week') : p === 'month' ? t('agentsTab.month') : t('agentsTab.custom')}
+              {p === 'today' ? t('agentsTab.today')
+                : p === 'week' ? t('agentsTab.week')
+                : p === 'month' ? t('agentsTab.month')
+                : p === 'start' ? t('agentsTab.start')
+                : t('agentsTab.custom')}
             </Button>
           ))}
         </div>
@@ -322,12 +328,13 @@ export default function AgentsTab() {
                   <th className="text-right px-3 py-3 font-medium text-muted-foreground">{t('agentsTab.colConf')}</th>
                   <th className="text-right px-3 py-3 font-medium text-muted-foreground">{t('agentsTab.colShip')}</th>
                   <th className="text-right px-3 py-3 font-medium text-muted-foreground">{t('status.paid')}</th>
-                  <th className="text-right px-3 py-3 font-medium text-muted-foreground">{t('agentsTab.colPackages')}</th>
+                  <th className="text-right px-3 py-3 font-medium text-muted-foreground" title={t('agentsTab.packagesSoldTitle')}>{t('agentsTab.colPackages')}</th>
+                  <th className="text-right px-3 py-3 font-medium text-muted-foreground" title={t('agentsTab.packagesAwaitingTitle')}>{t('agentsTab.colAwaiting')}</th>
                   <th className="text-right px-3 py-3 font-medium text-muted-foreground" title={t('agentsTab.avgPkgTitle')}>{t('agentsTab.colAvgPkg')}</th>
                   {(canSeeFinance || isAgentSelfView) && (
                     <th className="text-right px-3 py-3 font-medium text-muted-foreground">{t('agentsTab.colPayout')}</th>
                   )}
-                  <th className="text-right px-3 py-3 font-medium text-muted-foreground">{t('agentsTab.colRet')}</th>
+                  <th className="text-right px-3 py-3 font-medium text-muted-foreground" title={t('agentsTab.returnsTitle')}>{t('agentsTab.colRet')}</th>
                   <th className="text-right px-3 py-3 font-medium text-muted-foreground">{t('agentsTab.colCanc')}</th>
                   <th className="text-right px-3 py-3 font-medium text-muted-foreground" title={t('agentsTab.trashTitle')}>{t('agentsTab.colTrash')}</th>
                   <th className="text-right px-3 py-3 font-medium text-muted-foreground">{t('agentsTab.colConvPct')}</th>
@@ -359,14 +366,20 @@ export default function AgentsTab() {
                     <td className="px-3 py-3 text-right">{a.total_confirmed}</td>
                     <td className="px-3 py-3 text-right">{a.total_shipped}</td>
                     <td className="px-3 py-3 text-right font-semibold">{a.total_paid}</td>
-                    <td className="px-3 py-3 text-right">{a.packages_sold ?? '—'}</td>
+                    <td className="px-3 py-3 text-right font-semibold">{a.packages_sold ?? '—'}</td>
+                    <td className="px-3 py-3 text-right text-muted-foreground">{a.packages_awaiting ?? '—'}</td>
                     <td className="px-3 py-3 text-right">{a.avg_per_package ? fmt(a.avg_per_package) : '—'}</td>
                     {(canSeeFinance || isAgentSelfView) && (
                       <td className="px-3 py-3 text-right font-semibold text-emerald-600">
                         {a.payout_earned ? fmt(a.payout_earned) : '—'}
                       </td>
                     )}
-                    <td className="px-3 py-3 text-right text-destructive">{a.total_returned}</td>
+                    <td className="px-3 py-3 text-right text-destructive">
+                      {a.total_returned}
+                      {(a.packages_returned ?? 0) > 0 && (
+                        <span className="text-xs text-muted-foreground ml-1">({a.packages_returned} pkg)</span>
+                      )}
+                    </td>
                     <td className="px-3 py-3 text-right text-muted-foreground">{a.total_cancelled}</td>
                     <td className="px-3 py-3 text-right text-muted-foreground">{a.total_trashed ?? 0}</td>
                     <td className="px-3 py-3 text-right">

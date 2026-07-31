@@ -5,6 +5,7 @@ import { Phone, PhoneOutgoing, ArrowRight, Layers } from 'lucide-react';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { AppLayout } from '@/layouts/AppLayout';
 import { ChooseAnswerButton } from '@/components/calls/ChooseAnswerButton';
+import { PromoOfTheDayBanner, PROMO_QUERY_KEY } from '@/components/calls/PromoOfTheDayBanner';
 import { ClientProfileCard } from '@/components/calls/ClientProfileCard';
 import { useMyQueue, useQueueMutations, type QueueMember } from '@/components/calls/useMyQueue';
 import { getCallSession, setCallSession, type CallSessionSnapshot } from '@/components/calls/callSession';
@@ -98,12 +99,14 @@ export default function CallsPage() {
   const [selectedPhone, setSelectedPhone] = useState(() => restored?.selectedPhone ?? '');
   const [manualPhoneDraft, setManualPhoneDraft] = useState('');
   const [dialOpen, setDialOpen] = useState(false);
+  const [listPickerOpen, setListPickerOpen] = useState(false);
   const [orderModalData, setOrderModalData] = useState<OrderModalData | null>(null);
-  const [createOrderProps, setCreateOrderProps] = useState<{ 
-    open: boolean; 
-    phone?: string; 
-    name?: string; 
+  const [createOrderProps, setCreateOrderProps] = useState<{
+    open: boolean;
+    phone?: string;
+    name?: string;
     isManual?: boolean;   // true = free-form manual order, do not touch queue
+    existingOrderId?: string; // set = complete this pending order in place (lead confirm)
   }>({ open: false });
   const [currentSource, setCurrentSource] = useState<'pending' | 'prediction' | 'manual' | null>(() => restored?.currentSource ?? null);
   const [currentPendingOrderId, setCurrentPendingOrderId] = useState<string | null>(() => restored?.currentPendingOrderId ?? null);
@@ -475,9 +478,19 @@ export default function CallsPage() {
   }, [pendingAdvance, advanceQueue]);
 
   // Confirm-from-call → CreateOrderModal pre-filled with the call's phone.
+  // If that phone IS a pending lead, complete the existing order instead of
+  // creating a second one (which would orphan the lead + its affiliate sidecar).
   useEffect(() => {
     if (!pendingConfirm) return;
-    setCreateOrderProps({ open: true, phone: pendingConfirm.phone });
+    const key = normalizePhoneKey(pendingConfirm.phone || '');
+    const matched = key
+      ? pendingOrders.find((o: any) => normalizePhoneKey(o.customer_phone || '') === key) || null
+      : null;
+    setCreateOrderProps({
+      open: true,
+      phone: pendingConfirm.phone,
+      ...(matched ? { existingOrderId: matched.id } : {}),
+    });
     clearPendingConfirm();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingConfirm]);
@@ -553,28 +566,24 @@ export default function CallsPage() {
   }, [qc, currentSource, activeListId, markAfterCall, advanceQueue]);
 
   // Confirmed → open the order modal (status forced confirmed there).
+  // A customer with an actionable pending order (a lead) gets the SAME modal,
+  // but in complete-existing mode: it fills and confirms that order in place.
+  // The old direct status flip here produced "empty" confirmed orders — the
+  // sparse webhook row went straight to confirmed with no products/address.
   const handleAnswerConfirmed = useCallback(async () => {
     if (!phoneReady) return;
     const pendingId = currentPendingOrderId || activePendingOrder?.id || null;
-    if (pendingId) {
-      try {
-        await apiUpdateOrderStatus(pendingId, 'confirmed');
-        toast({ title: t('callsPage.orderConfirmed'), description: t('callsPage.markedConfirmed') });
-        qc.invalidateQueries({ queryKey: ['calls-page-pendings', user?.id] });
-        qc.invalidateQueries({ queryKey: ['calls-page-orders', selectedPhone] });
-        qc.invalidateQueries({ queryKey: ['customer-history', selectedPhone] });
-        qc.invalidateQueries({ queryKey: ['customer-intelligence', selectedPhone] });
-        try { await apiReleaseActiveView(selectedPhone); } catch { /* best effort */ }
-        setPendingAdvance(null);
-        advanceQueue(selectedPhone);
-        return;
-      } catch (err: any) {
-        toast({ title: t('callsPage.confirmFailed'), description: err?.message || t('common.unknownError'), variant: 'destructive' });
-        return;
-      }
+    if (pendingId && !currentPendingOrderId) {
+      // Phone-matched pending: remember it so advanceQueue's pickNextPending
+      // exclusion works after the modal confirms it.
+      setCurrentPendingOrderId(pendingId);
     }
-    setCreateOrderProps({ open: true, phone: selectedPhone }); // normal flow for current customer
-  }, [phoneReady, selectedPhone, currentPendingOrderId, activePendingOrder, toast, qc, user?.id, advanceQueue]);
+    setCreateOrderProps({
+      open: true,
+      phone: selectedPhone,
+      ...(pendingId ? { existingOrderId: pendingId } : {}),
+    });
+  }, [phoneReady, selectedPhone, currentPendingOrderId, activePendingOrder]);
 
   // Fetch this customer's recent orders fresh so the recorded name + product
   // always match the customer on screen (not a lagging memo). Returns the
@@ -726,9 +735,20 @@ export default function CallsPage() {
   const handleCreateOrderClosed = useCallback((created?: boolean, outcome?: string, wasManualFromModal?: boolean) => {
     const phone = createOrderProps.phone || selectedPhone;
     const wasManual = wasManualFromModal || !!createOrderProps.isManual;
+    const wasConfirmOfPending = !!createOrderProps.existingOrderId;
     setCreateOrderProps({ open: false });
 
     if (!created) return;
+
+    qc.invalidateQueries({ queryKey: PROMO_QUERY_KEY }); // a new order may be a promo up-sell
+
+    // A pending lead was just completed+confirmed in place — refresh the
+    // agent's pending queue and release the active-view claim, exactly what
+    // the old direct-flip path did.
+    if (wasConfirmOfPending && !wasManual) {
+      qc.invalidateQueries({ queryKey: ['calls-page-pendings', user?.id] });
+      void apiReleaseActiveView(phone).catch(() => { /* best effort */ });
+    }
 
     // The VoIP call is fully decoupled from order recording: it already ended
     // (and reset to idle) the moment the agent hung up, so there is nothing to
@@ -764,7 +784,7 @@ export default function CallsPage() {
     // Clear any pending "Next customer" banner from a prior call end and jump.
     setPendingAdvance(null);
     advanceQueue(phone);
-  }, [createOrderProps.phone, selectedPhone, activeListId, markAfterCall, advanceQueue, qc]);
+  }, [createOrderProps.phone, createOrderProps.isManual, createOrderProps.existingOrderId, selectedPhone, activeListId, markAfterCall, advanceQueue, qc, user?.id]);
 
   // Topbar controls (next to the "Calls" title): the manual dial input and the
   // queue picker. The queue shows for ANYONE with assigned lists — agents
@@ -807,6 +827,44 @@ export default function CallsPage() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
+
+          {/* Mobile: a Layers icon to pick which list (queue) to work — the
+              desktop dropdown is hidden on small screens, so this is the only
+              way agents can switch lists on a phone. Shows a small count badge. */}
+          {queues && queues.length > 0 && (
+            <>
+              <Button
+                size="icon"
+                variant="outline"
+                className="relative h-8 w-8 shrink-0"
+                onClick={() => setListPickerOpen(true)}
+                aria-label={t('callsPage.queueLabel')}
+              >
+                <Layers className="h-4 w-4" />
+                <span className="absolute -right-1 -top-1 flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold leading-none text-primary-foreground">
+                  {queues.length}
+                </span>
+              </Button>
+              <Dialog open={listPickerOpen} onOpenChange={setListPickerOpen}>
+                <DialogContent className="max-w-xs">
+                  <DialogHeader><DialogTitle>{t('callsPage.chooseList')}</DialogTitle></DialogHeader>
+                  <div className="flex flex-col gap-1.5">
+                    {queues.map(q => (
+                      <Button
+                        key={q.list_id}
+                        variant={q.list_id === activeListId ? 'default' : 'outline'}
+                        className="h-auto w-full justify-between gap-2 py-2 text-left"
+                        onClick={() => { switchToList(q.list_id); setListPickerOpen(false); }}
+                      >
+                        <span className="truncate">{q.list_name}</span>
+                        <span className="shrink-0 text-xs opacity-80">{q.remaining} ({q.total})</span>
+                      </Button>
+                    ))}
+                  </div>
+                </DialogContent>
+              </Dialog>
+            </>
+          )}
         </>
       ) : (
         <div className={`inline-flex items-center gap-1 rounded-lg border bg-background px-1.5 py-0.5 ${hoverLift}`}>
@@ -869,7 +927,11 @@ export default function CallsPage() {
   // stacking. The queue moved to the topbar; the green dial into the strip.
   const actionBar = (
     <div className="space-y-3">
-      <div className="flex items-center justify-center gap-3">
+      {/* Three columns on desktop: an empty spacer, the button dead-centre, and
+          the promo strip filling the free space on the right — so the promo
+          costs horizontal room, not vertical (the History cards never move
+          down). Below lg it collapses to a centred stack. */}
+      <div className="flex flex-col items-center gap-3 lg:grid lg:grid-cols-[1fr_auto_1fr] lg:items-center">
         {/* The active-call strip is now a global floating element pinned
             top-left (mounted once in App.tsx) — no longer rendered inline. */}
         {phoneReady && (
@@ -878,9 +940,14 @@ export default function CallsPage() {
             onCancelled={handleAnswerCancelled}
             onTrashed={handleAnswerTrashed}
             onDidntAnswer={handleAnswerDidntAnswer}
-            className="h-9 min-w-[180px] shrink-0 justify-center text-sm mt-1 !bg-transparent border border-orange-500 text-orange-600 hover:!bg-orange-50 hover:border-orange-600 hover:text-orange-700 dark:hover:!bg-orange-500/10 dark:hover:text-orange-300 transition-all duration-200 ease-out hover:-translate-y-[1px] hover:shadow-sm"
+            className="h-9 min-w-[180px] shrink-0 justify-center text-sm mt-1 lg:col-start-2 lg:justify-self-center !bg-transparent border border-orange-500 text-orange-600 hover:!bg-orange-50 hover:border-orange-600 hover:text-orange-700 dark:hover:!bg-orange-500/10 dark:hover:text-orange-300 transition-all duration-200 ease-out hover:-translate-y-[1px] hover:shadow-sm"
           />
         )}
+        {/* Product of the Day — a one-line strip in the right column on desktop,
+            a full-width card under the button on mobile (the component picks).
+            Explicit col-start so it stays right even when the button is absent
+            (empty queue). Renders nothing when no promo is running. */}
+        <PromoOfTheDayBanner className="lg:col-start-3 lg:mt-1 lg:justify-self-stretch" />
       </div>
 
       {pendingAdvance && pendingAdvance.phone === selectedPhone && (
@@ -950,7 +1017,10 @@ export default function CallsPage() {
         prefillName={createOrderProps.name}
         defaultStatus="confirmed"
         hideStatusPicker
-        title={t('callsPage.confirmOrderTitle', { phone: createOrderProps.phone || '' })}
+        existingOrderId={createOrderProps.existingOrderId}
+        title={createOrderProps.existingOrderId
+          ? t('callsPage.completeOrderTitle', { phone: createOrderProps.phone || '' })
+          : t('callsPage.confirmOrderTitle', { phone: createOrderProps.phone || '' })}
       />
     </AppLayout>
   );

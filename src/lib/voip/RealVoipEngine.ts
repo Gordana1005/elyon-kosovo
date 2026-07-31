@@ -367,8 +367,15 @@ export class RealVoipEngine {
             // other ring-out. Surfacing a red "Call failed" toast here is just
             // misleading noise, so swallow it (still logged, just quietly).
             if (code === 487) return;
-            // 503 = trunk congestion (all A1 channels busy); 486/480/600 = busy/unavailable.
-            if (code === 503 || code === 486 || code === 480 || code === 600) {
+            // 486 Busy / 480 Unavailable describe the CALLEE's phone (on another
+            // call, or switched off / out of coverage) — NOT a shortage of our trunk
+            // lines, so they must never be reported as "all lines busy". Only a
+            // 503/600 from the carrier means all our lines are actually in use.
+            if (code === 486) {
+              this.onError?.(new Error('The number you called is busy (on another call).'), 'callee-busy');
+            } else if (code === 480) {
+              this.onError?.(new Error('The number you called is unavailable (switched off or out of coverage).'), 'callee-unavailable');
+            } else if (code === 503 || code === 600) {
               this.onError?.(new Error('All phone lines are busy right now. Please try again in a moment.'), 'congestion');
             } else if (code && code >= 400) {
               this.onError?.(new Error(`Call could not connect (code ${code}).`), 'call-rejected');

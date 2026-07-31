@@ -51,7 +51,16 @@ export function computePerf(all: PerfInput[], itemsMap: ItemsMap = {}, includeCa
   const outstanding = sum(agentOrders.filter((o) => o.status === 'shipped'));
   const grossRevenue = sum(agentOrders.filter((o) => o.status === 'shipped' || o.status === 'paid'));
   const returnedValue = sum(agentOrders.filter((o) => o.status === 'returned'));
-  const packagesSold = agentOrders.reduce((s, o) => s + Number(o.quantity || 0), 0);
+  // packagesSold = PAID units only (mirrors CRM agent-performance / elyon-agent-commissions)
+  let packagesSold = 0;
+  for (const o of paidOrders) {
+    const items = itemsMap[o.id];
+    if (items?.length) {
+      packagesSold += items.reduce((s, it) => s + Number(it.quantity || 0), 0);
+    } else {
+      packagesSold += Number(o.quantity || 0) || 1;
+    }
+  }
 
   let commission = 0;
   for (const o of paidOrders) {

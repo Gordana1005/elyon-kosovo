@@ -657,6 +657,10 @@ function InventoryTab() {
             </SelectContent>
           </Select>
         )}
+        {/* BigArena stock-sync upload is deliberately not shipped in Macedonia:
+            its parser reads the Bulgarian fulfilment panel's Cyrillic column
+            headers ("Свободна наличност", "Баркод"), and MK uses a different
+            provider. Restore <BigArenaStockSync /> here if that ever changes. */}
         <span className="text-sm text-muted-foreground ml-auto">{t('wh.ofProducts', { shown: filtered.length, total: products.length })}</span>
       </div>
 
@@ -822,6 +826,8 @@ function StockMovementsTab() {
             <SelectItem value="restock">{t('wh.mv.restock')}</SelectItem>
             <SelectItem value="order_deduction">{t('wh.mv.order_deduction')}</SelectItem>
             <SelectItem value="manual_adjust">{t('wh.mv.manual_adjust')}</SelectItem>
+            <SelectItem value="order_return">{t('wh.mv.order_return')}</SelectItem>
+            <SelectItem value="bigarena_sync">{t('wh.mv.bigarena_sync')}</SelectItem>
           </SelectContent>
         </Select>
         <Select value={productFilter} onValueChange={setProductFilter}>

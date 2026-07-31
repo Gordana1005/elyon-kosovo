@@ -67,9 +67,10 @@ export const apiSetAgentCallerId = (userId: string, caller_id: string) =>
   apiFetch(`voip/agents/${userId}/caller-id`, { method: 'PUT', body: JSON.stringify({ caller_id }) });
 
 // ── VOIP / Telephony Health (superadmin) ──
-// Live PBX/server status (disk, memory, lines in use vs the 4-line A1 cap, trunk
-// up/down, fail2ban attacks, recordings) merged with today's call/recording/
-// quality stats, plus incidents[] that drive the in-CRM alert banner.
+// Live PBX/server status (disk, memory, lines in use vs the A1 trunk's channel
+// cap, trunk up/down, fail2ban attacks, recordings) merged with today's call/
+// recording/quality stats, plus incidents[] that drive the in-CRM alert banner.
+// The cap is never hardcoded here — it comes from the PBX in `pbx.lines.max`.
 export interface VoipIncident { level: 'critical' | 'warning'; code: string; message: string; }
 export interface PbxLiveHealth {
   ok?: boolean;
@@ -113,8 +114,23 @@ export const apiGetRecordingCoverage = (range: '24h' | '7d' | '30d' = '7d'): Pro
   answered: number; recorded: number; unrecorded: number; coverage_pct: number; gaps: RecordingGap[];
 }> => apiFetch(`voip/recording-coverage?range=${range}`);
 
+/** Current A1 billing cycle vs the contracted bundle. Estimated from our own
+ *  call_logs, NOT from A1's invoice — see the caveat shown on the Minutes tab. */
+export interface VoipMinutesCycle {
+  start: string; end: string;
+  days_total: number; days_elapsed: number; days_remaining: number;
+  /** Which seconds column feeds `used_minutes`: 'talk' (what A1 bills) or 'total' (incl. ring). */
+  metric: 'talk' | 'total';
+  used_minutes: number; used_total_minutes: number; included_minutes: number;
+  pct_used: number;
+  /** Weekday-aware month-end forecast — weekends run far quieter than weekdays. */
+  projected_minutes: number; projected_pct: number; projected_over_by: number;
+  status: 'ok' | 'warn' | 'critical';
+}
 export const apiGetVoipMinutes = (range: '24h' | '7d' | '30d' = '7d', group: 'agent' | 'day' = 'day'): Promise<{
-  total_minutes: number; talk_minutes: number; group: string; series: Array<{ key: string; minutes: number }>;
+  total_minutes: number; talk_minutes: number; group: string;
+  series: Array<{ key: string; minutes: number }>;
+  cycle?: VoipMinutesCycle;
 }> => apiFetch(`voip/minutes?range=${range}&group=${group}`);
 
 // Missed (incoming) calls
@@ -172,6 +188,11 @@ export const apiUpdateUserRole = (userId: string, role: string) =>
   apiFetch(`users/${userId}/role`, { method: 'PATCH', body: JSON.stringify({ role }) });
 export const apiSetUserRoles = (userId: string, roles: string[]) =>
   apiFetch(`users/${userId}/roles`, { method: 'PUT', body: JSON.stringify({ roles }) });
+// Edit an existing user's identity (Superadmin only). Send only the fields that change.
+export const apiUpdateUser = (
+  userId: string,
+  body: { full_name?: string; email?: string; password?: string },
+) => apiFetch(`users/${userId}`, { method: 'PATCH', body: JSON.stringify(body) });
 export const apiDeleteUser = (userId: string) =>
   apiFetch(`users/${userId}`, { method: 'DELETE' });
 
@@ -293,6 +314,11 @@ export interface CreateOrderBody {
 }
 export const apiCreateOrder = (body: CreateOrderBody) =>
   apiFetch('orders', { method: 'POST', body: JSON.stringify(body) });
+
+// Duplicate an order (admin/manager only): server copies the order with the
+// next sequential ORD number, status 'duplicated' + permanent link to source.
+export const apiDuplicateOrder = (id: string) =>
+  apiFetch(`orders/${id}/duplicate`, { method: 'POST' });
 
 // Customer profile — per-phone customer info (birthday, address, delivery
 // prefs, notes) saved independently of orders. Used to pre-fill the order
@@ -432,11 +458,65 @@ export const apiGetOrderStats = (from?: string, to?: string) => {
   if (to) sp.set('to', to);
   return apiFetch(`orders/stats?${sp.toString()}`);
 };
-export const apiGetDashboardStats = (params?: { period?: string; agent_id?: string }) => {
+export const apiGetDashboardStats = (params?: { period?: string; date?: string; from?: string; to?: string; agent_id?: string }) => {
   const sp = new URLSearchParams();
   if (params?.period) sp.set('period', params.period);
+  if (params?.date) sp.set('date', params.date); // single-day override (◀ ▶ browsing), past days only
+  if (params?.from) sp.set('from', params.from); // custom range (period=custom)
+  if (params?.to) sp.set('to', params.to);
   if (params?.agent_id) sp.set('agent_id', params.agent_id);
   return apiFetch(`dashboard-stats?${sp.toString()}`);
+};
+
+// ── My Orders (agent dashboard drill-down) ──
+// Server-scoped to the calling agent (salesOwner attribution); only the four
+// detail tabs exist — cancelled/trashed are count-only by design.
+export type MyOrdersTab = 'confirmed' | 'shipped' | 'paid' | 'returned';
+export interface MyOrderItem {
+  product_name: string;
+  quantity: number;
+  price_per_unit: number;
+  total_price: number;
+}
+export interface MyOrderRow {
+  id: string;
+  display_id: string | null;
+  status: MyOrdersTab;
+  price: number;
+  quantity: number | null;
+  product_name: string | null;
+  customer_name: string | null;
+  customer_phone: string | null;
+  created_at: string;
+  confirmed_at: string | null;
+  shipped_at: string | null;
+  paid_at: string | null;
+  returned_at: string | null;
+  return_reason: string | null;
+  order_items: MyOrderItem[];
+}
+export interface MyOrdersResponse {
+  orders: MyOrderRow[];
+  total: number;
+  page: number;
+  limit: number;
+  counts: Record<MyOrdersTab, number>;
+  tab: MyOrdersTab;
+  period: string;
+  from: string;
+  to: string;
+}
+export const apiGetMyOrders = (params: {
+  tab: MyOrdersTab; period: 'today' | 'month' | 'custom'; date?: string;
+  from?: string; to?: string; page?: number; agent_id?: string;
+}): Promise<MyOrdersResponse> => {
+  const sp = new URLSearchParams({ tab: params.tab, period: params.period });
+  if (params.date) sp.set('date', params.date);
+  if (params.from) sp.set('from', params.from);
+  if (params.to) sp.set('to', params.to);
+  if (params.page) sp.set('page', String(params.page));
+  if (params.agent_id) sp.set('agent_id', params.agent_id);
+  return apiFetch(`my-orders?${sp.toString()}`);
 };
 export const apiGetCeoDashboardStats = (params?: { period?: string; agent_id?: string; from?: string; to?: string }) => {
   const sp = new URLSearchParams();
@@ -704,6 +784,9 @@ export const apiCreatePersonalHold = (body: { customer_phone: string; customer_n
   apiFetch('personal-list', { method: 'POST', body: JSON.stringify(body) });
 export const apiGetMyPersonalHolds = (): Promise<PersonalHold[]> =>
   apiFetch('personal-list?mine=true');
+// Admin/manager only: server returns every agent's active holds when no `mine` flag.
+export const apiGetAllPersonalHolds = (): Promise<PersonalHold[]> =>
+  apiFetch('personal-list');
 export const apiLookupPersonalHold = (phone: string): Promise<PersonalHold | null> =>
   apiFetch(`personal-list/lookup?phone=${encodeURIComponent(phone)}`);
 export const apiReleasePersonalHold = (id: string): Promise<{ ok: true }> =>
@@ -718,11 +801,65 @@ export const apiExtendPersonalHold = (id: string, days: number): Promise<Persona
 // App settings (operator-tunable global knobs)
 export interface AppSettings {
   personal_list_max_holds: number;
+  /** Days after shipping before the owning agent is reminded to chase an unpaid delivery. */
+  unpaid_chase_days: number;
+  /** Age at which those daily reminders stop. */
+  unpaid_chase_stop_days: number;
+  /** Product of the Day — the motivational promo banner on /calls. */
+  promo_of_the_day: PromoConfig;
+  /** A1 minutes bundle — commercial terms, so operator-tunable. */
+  voip_minutes_bundle: VoipMinutesBundle;
   [key: string]: any;
+}
+/** Mirrors VOIP_MINUTES_BUNDLE_DEFAULT in the edge function. */
+export interface VoipMinutesBundle {
+  included_minutes: number;
+  /** Day of month the cycle resets — A1's invoice date, not necessarily the 1st. */
+  billing_day: number;
+  metric: 'talk' | 'total';
+  warn_pct: number;
+  critical_pct: number;
 }
 export const apiGetAppSettings = (): Promise<AppSettings> => apiFetch('app-settings');
 export const apiUpdateAppSettings = (patch: Partial<AppSettings>): Promise<{ success: true }> =>
   apiFetch('app-settings', { method: 'PATCH', body: JSON.stringify(patch) });
+
+// Product of the Day — operator-authored promo shown to agents on /calls.
+// Display-only: no order is ever stamped and no payout is ever affected.
+export interface PromoConfig {
+  enabled: boolean;
+  product_id: string | null;
+  product_name: string;
+  /** MINIMUM unit price the promo product must be sold at to count. */
+  price_eur: number | null;
+  /** Extra € the agent earns per qualifying ORDER (once, not per unit). */
+  bonus_eur: number | null;
+  /** YYYY-MM-DD — the banner hides itself after this Sofia day. Null = until switched off. */
+  expires_on: string | null;
+  note: string;
+  /**
+   * Optional hand-written wording per language ('bg' is the base, en/sq fall back
+   * to it, and an empty entry falls back to the built-in translated default).
+   * `short` is the desktop one-liner, `full` the mobile/tooltip sentence. Both
+   * may use the {{product}} / {{price}} / {{bonus}} tokens.
+   */
+  custom_text?: Record<string, { short?: string; full?: string }>;
+}
+export type PromoStatus =
+  | { active: false }
+  | {
+      active: true;
+      product_name: string;
+      price_eur: number;
+      bonus_eur: number;
+      note: string;
+      /** Operator's own wording, if any — resolved against the viewer's language. */
+      custom_text?: Record<string, { short?: string; full?: string }>;
+      /** The CALLER's own qualifying orders today — never anyone else's. */
+      my_orders_today: number;
+      my_bonus_today: number;
+    };
+export const apiGetPromoOfTheDay = (): Promise<PromoStatus> => apiFetch('promo-of-the-day');
 
 // Call History
 export const apiGetCallHistory = (params?: { agent_id?: string; result?: string; source?: string; from?: string; to?: string; search?: string; page?: number; limit?: number }) => {
@@ -737,6 +874,32 @@ export const apiGetCallHistory = (params?: { agent_id?: string; result?: string;
   if (params?.limit) sp.set('limit', String(params.limit));
   return apiFetch(`call-history?${sp.toString()}`);
 };
+
+// Order Calls — lazy inline "Calls" panel on /orders expanded rows. Order-id
+// based (not phone) so it works even when the viewer's phone copy is
+// privacy-masked; the server resolves the real number and matches last-8.
+export interface OrderCall {
+  id: string;
+  agent_id: string;
+  agent_name: string | null;
+  context_type: 'order' | 'prediction_lead' | 'standalone';
+  is_this_order: boolean;
+  outcome: string | null;
+  created_at: string;
+  started_at: string | null;
+  connected_at: string | null;
+  talk_seconds: number | null;
+  total_seconds: number | null;
+  recording_file: string | null;
+  recording_locked: boolean;
+  listened_at: string | null;
+  listened_by_name: string | null;
+}
+export const apiGetOrderCalls = (orderId: string): Promise<{ calls: OrderCall[] }> =>
+  apiFetch(`orders/${orderId}/calls`);
+// Team-wide "reviewed" mark — fired by the player after >=10s of real playback.
+export const apiMarkCallListened = (callId: string): Promise<{ ok: true }> =>
+  apiFetch(`call-logs/${callId}/listened`, { method: 'POST' });
 
 // ── Agent Activity Timeline ──
 export interface AgentActivityCall {
@@ -805,13 +968,20 @@ export interface AgentPerformanceRow {
   revenue_per_lead: number;
   profit_per_lead: number;
   is_special_agent?: boolean;
+  /** Paid packages only (COD collected). */
   packages_sold?: number;
+  /** Confirmed/shipped/delivered packages not yet paid. */
+  packages_awaiting?: number;
+  /** Units on returned orders. */
+  packages_returned?: number;
   avg_per_package?: number;
   payout_earned?: number;
+  date_basis?: 'paid_at' | 'created_at';
 }
 export const apiGetAgentPerformance = (params?: {
   from?: string; to?: string; search?: string; source?: string;
   status?: string; agent_id?: string; include_cancelled?: boolean; show_zero?: boolean;
+  date_basis?: 'paid_at' | 'created_at';
 }): Promise<AgentPerformanceRow[]> => {
   const sp = new URLSearchParams();
   if (params?.from) sp.set('from', params.from);
@@ -822,9 +992,99 @@ export const apiGetAgentPerformance = (params?: {
   if (params?.agent_id) sp.set('agent_id', params.agent_id);
   if (params?.include_cancelled) sp.set('include_cancelled', 'true');
   if (params?.show_zero) sp.set('show_zero', 'true');
+  if (params?.date_basis) sp.set('date_basis', params.date_basis);
   const qs = sp.toString();
   return apiFetch<AgentPerformanceRow[]>(`agent-performance${qs ? `?${qs}` : ''}`);
 };
+
+// ── Agent payout settlements ──
+export interface AgentPayoutSummaryRow {
+  agent_user_id: string;
+  full_name: string;
+  email: string;
+  packages_sold: number;
+  packages_awaiting: number;
+  packages_returned: number;
+  payout_earned: number;
+  payout_settled: number;
+  payout_unpaid: number;
+  last_paid_on: string | null;
+  unsettled_orders: number;
+}
+export interface AgentPayoutSettlement {
+  id: string;
+  agent_user_id: string;
+  agent_name?: string;
+  period_from: string;
+  period_to: string;
+  packages_count: number;
+  amount_eur: number;
+  /** What the per-package engine calculated — may differ from amount_eur. */
+  computed_amount_eur?: number | null;
+  amount_source?: 'formula' | 'manual';
+  override_reason?: string | null;
+  paid_on: string;
+  paid_by: string | null;
+  method: string | null;
+  notes: string | null;
+  status: 'paid' | 'voided';
+  voided_at?: string | null;
+  void_reason?: string | null;
+  created_at: string;
+  updated_at?: string | null;
+  items?: { order_id: string; display_id?: string | null; package_units: number; bonus_eur: number; paid_at?: string | null }[];
+}
+export interface AgentPayoutPreview {
+  agent_user_id: string;
+  full_name: string;
+  period_from: string;
+  period_to: string;
+  packages_count: number;
+  amount_eur: number;
+  order_count: number;
+  items: { order_id: string; display_id: string | null; package_units: number; bonus_eur: number; paid_at: string | null; price: number }[];
+}
+export const apiGetAgentPayoutSummary = (params?: { from?: string; to?: string; agent_id?: string }) => {
+  const sp = new URLSearchParams();
+  if (params?.from) sp.set('from', params.from);
+  if (params?.to) sp.set('to', params.to);
+  if (params?.agent_id) sp.set('agent_id', params.agent_id);
+  const qs = sp.toString();
+  return apiFetch<AgentPayoutSummaryRow[]>(`agent-payouts/summary${qs ? `?${qs}` : ''}`);
+};
+export const apiGetAgentPayouts = (params?: { agent_id?: string; status?: string }) => {
+  const sp = new URLSearchParams();
+  if (params?.agent_id) sp.set('agent_id', params.agent_id);
+  if (params?.status) sp.set('status', params.status);
+  const qs = sp.toString();
+  return apiFetch<AgentPayoutSettlement[]>(`agent-payouts${qs ? `?${qs}` : ''}`);
+};
+export const apiGetAgentPayout = (id: string) =>
+  apiFetch<AgentPayoutSettlement>(`agent-payouts/${id}`);
+export const apiPreviewAgentPayout = (params: { agent_id: string; from?: string; to?: string }) => {
+  const sp = new URLSearchParams();
+  sp.set('agent_id', params.agent_id);
+  if (params.from) sp.set('from', params.from);
+  if (params.to) sp.set('to', params.to);
+  return apiFetch<AgentPayoutPreview>(`agent-payouts/preview?${sp.toString()}`);
+};
+export const apiCreateAgentPayout = (body: {
+  agent_id: string; from?: string; to?: string; paid_on?: string; method?: string; notes?: string;
+  /** Omit to pay exactly what the engine calculated; set to override it. */
+  amount_eur?: number; override_reason?: string;
+}) => apiFetch<AgentPayoutSettlement>('agent-payouts', { method: 'POST', body: JSON.stringify(body) });
+export const apiUpdateAgentPayout = (id: string, body: {
+  amount_eur?: number; paid_on?: string; period_from?: string; period_to?: string;
+  method?: string; notes?: string; override_reason?: string;
+}) => apiFetch<AgentPayoutSettlement>(`agent-payouts/${id}`, {
+  method: 'PATCH', body: JSON.stringify(body),
+});
+export const apiVoidAgentPayout = (id: string, reason?: string) =>
+  apiFetch<AgentPayoutSettlement>(`agent-payouts/${id}/void`, {
+    method: 'POST', body: JSON.stringify({ reason: reason || null }),
+  });
+export const apiGetAgentPayoutReport = (id: string) =>
+  apiFetch<any>(`agent-payouts/${id}/report`);
 
 // Warehouse
 export const apiGetIncomingOrders = (params?: { agent_id?: string; from?: string; to?: string; product?: string; source?: string; status?: string }) => {
@@ -942,10 +1202,22 @@ export const apiBulkStatusUpdate = (orderIds: string[], newStatus: string) =>
   apiFetch('orders/bulk-status-update', { method: 'POST', body: JSON.stringify({ order_ids: orderIds, new_status: newStatus }) });
 export const apiBigArenaSync = (updates: Array<{ ref: string; rawStatus: string; targetStatus: 'paid' | 'returned' | 'cancelled' }>, meta?: { filename?: string; uploadedAt?: string }) =>
   apiFetch('orders/bigarena-sync', { method: 'POST', body: JSON.stringify({ updates, meta: meta || {} }) });
+// BigArena "Fulfillment Panel" stock export → overwrite CRM stock_quantity.
+// Rows are the parsed/merged output of src/lib/bigarenaStock.ts; the server
+// re-matches them against the catalogue and never trusts a client product id.
+export const apiBigArenaStockSync = (
+  rows: Array<{ sku?: string | null; barcode?: string | null; name: string; free: number }>,
+  meta?: { filename?: string },
+) =>
+  apiFetch('products/bigarena-stock-sync', { method: 'POST', body: JSON.stringify({ rows, meta: meta || {} }) });
+
 export const apiGetOnlineAgents = () => apiFetch('agents/online');
 // Presence heartbeat — pinged every ~45s while the app is open so the
-// agents/online endpoint can tell who is actually here right now.
-export const apiPresenceHeartbeat = () => apiFetch('presence/heartbeat', { method: 'POST' });
+// agents/online endpoint can tell who is actually here right now. Optionally
+// carries the live softphone state (VoipContext reports every transition;
+// the periodic beat includes it only while non-idle — see callStateBus).
+export const apiPresenceHeartbeat = (opts?: { voip_state?: string }) =>
+  apiFetch('presence/heartbeat', { method: 'POST', body: JSON.stringify(opts ?? {}) });
 
 // Webhooks
 export const apiGetWebhooks = () => apiFetch('webhooks');
@@ -1165,6 +1437,55 @@ export const apiAutoAssignSegment = (
  *  (scope=<agent_id>). */
 export const apiBulkUnassignSegment = (id: string, scope: 'all' | string = 'all') =>
   apiFetch(`segments/${id}/bulk-unassign`, { method: 'POST', body: JSON.stringify({ scope }) });
+
+// ── Assigner: cross-list assignment overview + mass unassign ──
+export interface AssignmentSummaryList {
+  list_id: string;
+  list_name: string;
+  display_order: number;
+  is_active: boolean;
+  assigned: number;
+  open: number;
+}
+export interface AssignmentSummaryAgent {
+  agent_id: string;
+  full_name: string;
+  assigned_total: number;
+  open_total: number;
+  pendings_total: number;
+  lists: AssignmentSummaryList[];
+}
+export interface AssignmentSummary {
+  agents: AssignmentSummaryAgent[];
+  totals: { agents: number; assigned_total: number; open_total: number; pendings_total: number };
+}
+/** Who holds which prediction-list clients, per agent per list — one request
+ *  instead of probing every list individually. Also carries each agent's count
+ *  of assigned status=pending orders (leads). Admin/manager only. */
+export const apiGetAssignmentSummary = (): Promise<AssignmentSummary> =>
+  apiFetch('assigner/assignment-summary');
+/** Free prediction-list clients from one agent across ALL lists at once
+ *  ('all' = every agent). Optional listIds narrows it to a subset of lists.
+ *  Default frees only NOT-yet-called members; includeDone ALSO clears the
+ *  agent stamp on already-called rows so the list fully detaches from the
+ *  agent's profile (call history and sales credit survive either way).
+ *  includePendings also frees the agent's still-pending assigned leads
+ *  (ignored server-side when listIds narrows the call — pendings are not
+ *  list-scoped). */
+export const apiUnassignAllForAgent = (
+  agentId: 'all' | string,
+  listIds?: string[],
+  opts?: { includePendings?: boolean; includeDone?: boolean },
+): Promise<{ unassigned: number; pendings_unassigned?: number; agent_id: string; per_agent: Record<string, number> }> =>
+  apiFetch('assigner/unassign-all', {
+    method: 'POST',
+    body: JSON.stringify({
+      agent_id: agentId,
+      ...(listIds?.length ? { list_ids: listIds } : {}),
+      ...(opts?.includePendings ? { include_pendings: true } : {}),
+      ...(opts?.includeDone ? { include_done: true } : {}),
+    }),
+  });
 export const apiUpdateSegment = (id: string, body: Record<string, any>) =>
   apiFetch(`segments/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
 export const apiRecomputeSegments = () =>
@@ -1237,3 +1558,200 @@ export interface CooldownClient {
 }
 export const apiGetCooldownClients = (): Promise<{ clients: CooldownClient[]; total: number }> =>
   apiFetch('cooldown-clients');
+
+// ── Affiliates admin (2026-07) ──
+// View = admin/manager; all mutations are admin-only server-side. Managers
+// receive affiliate rows WITHOUT api_key.
+export interface AffiliateStats {
+  sent: number; wait: number; hold: number; paid: number;
+  cancelled: number; trashed: number; returned: number;
+  payout_hold: number; payout_earned: number;
+}
+export interface AffiliateAdmin {
+  id: string;
+  user_id: string | null;
+  code: string;
+  name: string;
+  contact: string | null;
+  api_key?: string;
+  status: 'active' | 'paused' | 'banned';
+  postback_url: string | null;
+  postback_enabled: boolean;
+  postback_events: Record<string, boolean>;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+  stats: AffiliateStats;
+  postbacks: { pending: number; failed: number };
+}
+export const apiGetAffiliates = (): Promise<AffiliateAdmin[]> => apiFetch('affiliates');
+export const apiCreateAffiliate = (body: {
+  name: string; code: string; contact?: string; notes?: string;
+  create_login?: { email: string; password: string };
+}): Promise<AffiliateAdmin> =>
+  apiFetch('affiliates', { method: 'POST', body: JSON.stringify(body) });
+export const apiUpdateAffiliate = (id: string, body: Partial<{
+  name: string; contact: string; notes: string; status: string;
+  postback_url: string; postback_enabled: boolean; postback_events: Record<string, boolean>;
+}>) => apiFetch(`affiliates/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
+export const apiRotateAffiliateKey = (id: string): Promise<{ api_key: string }> =>
+  apiFetch(`affiliates/${id}/rotate-key`, { method: 'POST' });
+export interface AffiliateDayStat {
+  date: string; sent: number; wait: number; hold: number; paid: number;
+  cancelled: number; trashed: number; returned: number;
+}
+export const apiGetAffiliateStats = (id: string, from?: string, to?: string):
+  Promise<{ totals: AffiliateStats; days: AffiliateDayStat[]; from: string; to: string }> => {
+  const qs = new URLSearchParams();
+  if (from) qs.set('from', from);
+  if (to) qs.set('to', to);
+  const s = qs.toString();
+  return apiFetch(`affiliates/${id}/stats${s ? `?${s}` : ''}`);
+};
+export interface OfferAdmin {
+  id: string;
+  product_id: string | null;
+  name: string;
+  geo: string;
+  payout_eur: number;
+  /** Customer price per package for this offer; null = inherit products.price. */
+  price_eur: number | null;
+  is_active: boolean;
+  description: string | null;
+  terms: string | null;
+  created_at: string;
+  updated_at: string;
+  products?: { name: string; price: number } | null;
+}
+export const apiGetOffers = (): Promise<OfferAdmin[]> => apiFetch('offers');
+export const apiCreateOffer = (body: {
+  name: string; product_id?: string | null; geo?: string; payout_eur: number;
+  price_eur?: number | null;
+  description?: string; terms?: string; is_active?: boolean;
+}): Promise<OfferAdmin> => apiFetch('offers', { method: 'POST', body: JSON.stringify(body) });
+export const apiUpdateOffer = (id: string, body: Partial<{
+  name: string; product_id: string | null; geo: string; payout_eur: number;
+  price_eur: number | null;
+  description: string; terms: string; is_active: boolean;
+}>): Promise<OfferAdmin> => apiFetch(`offers/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
+export interface AffiliateOfferRow {
+  id: string;
+  affiliate_id: string;
+  offer_id: string;
+  status: 'approved' | 'paused';
+  payout_override_eur: number | null;
+  created_at: string;
+  offers?: { id: string; name: string; geo: string; payout_eur: number; is_active: boolean } | null;
+}
+export const apiGetAffiliateOffers = (affiliateId: string): Promise<AffiliateOfferRow[]> =>
+  apiFetch(`affiliates/${affiliateId}/offers`);
+export const apiApproveAffiliateOffer = (affiliateId: string, body: {
+  offer_id: string; payout_override_eur?: number | null;
+}) => apiFetch(`affiliates/${affiliateId}/offers`, { method: 'POST', body: JSON.stringify(body) });
+export const apiUpdateAffiliateOffer = (id: string, body: {
+  status?: 'approved' | 'paused'; payout_override_eur?: number | null;
+}) => apiFetch(`affiliate-offers/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
+export const apiDeleteAffiliateOffer = (id: string) =>
+  apiFetch(`affiliate-offers/${id}`, { method: 'DELETE' });
+export interface PostbackLogRow {
+  id: string;
+  affiliate_id: string;
+  affiliate_lead_id: string | null;
+  order_id: string | null;
+  event: string;
+  reason: string | null;
+  status: 'pending' | 'delivered' | 'failed' | 'skipped';
+  attempts: number;
+  next_attempt_at: string;
+  rendered_url: string | null;
+  last_response_code: number | null;
+  last_response_body: string | null;
+  last_error: string | null;
+  created_at: string;
+  delivered_at: string | null;
+  affiliates?: { code: string; name: string } | null;
+  affiliate_leads?: { ext_id: string | null; clickid: string | null } | null;
+}
+export const apiGetPostbackLog = (params: {
+  affiliate_id?: string; status?: string; event?: string; page?: number; limit?: number;
+}): Promise<{ rows: PostbackLogRow[]; total: number; page: number; limit: number }> => {
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined && v !== null && v !== '') qs.set(k, String(v));
+  }
+  const s = qs.toString();
+  return apiFetch(`affiliate-postbacks${s ? `?${s}` : ''}`);
+};
+export const apiRetryPostback = (id: string) =>
+  apiFetch(`affiliate-postbacks/${id}/retry`, { method: 'POST' });
+export const apiProcessPostbacks = (): Promise<{
+  success: boolean; claimed: number; delivered: number; retried: number; failed: number; skipped: number;
+}> => apiFetch('affiliate-postbacks/process-now', { method: 'POST' });
+
+// ── Affiliate portal (self-scoped; 'affiliate' role) ──
+export interface AffiliatePortalMe {
+  id: string;
+  code: string;
+  name: string;
+  contact: string | null;
+  status: 'active' | 'paused' | 'banned';
+  api_key: string;
+  postback_url: string | null;
+  postback_enabled: boolean;
+  postback_events: Record<string, boolean>;
+  created_at: string;
+}
+export const apiGetAffiliateMe = (): Promise<AffiliatePortalMe> => apiFetch('affiliate/me');
+export interface AffiliatePortalOffer {
+  offer_id: string;
+  name: string;
+  geo: string;
+  payout_eur: number;
+  description: string | null;
+  terms: string | null;
+  product_name: string | null;
+}
+export const apiGetAffiliatePortalOffers = (): Promise<AffiliatePortalOffer[]> =>
+  apiFetch('affiliate/offers');
+export const apiGetAffiliatePortalStats = (from?: string, to?: string):
+  Promise<{ totals: AffiliateStats; days: AffiliateDayStat[]; from: string; to: string }> => {
+  const qs = new URLSearchParams();
+  if (from) qs.set('from', from);
+  if (to) qs.set('to', to);
+  const s = qs.toString();
+  return apiFetch(`affiliate/stats${s ? `?${s}` : ''}`);
+};
+export interface AffiliatePortalLead {
+  id: string;
+  ext_id: string | null;
+  clickid: string | null;
+  sub1: string | null; sub2: string | null; sub3: string | null; sub4: string | null; sub5: string | null;
+  offer_name: string | null;
+  payout_eur: number;
+  created_at: string;
+  stage: string;
+  reason: string | null;
+  customer_name: string | null;
+  phone_masked: string | null;
+}
+export const apiGetAffiliatePortalLeads = (params: { page?: number; limit?: number; stage?: string }):
+  Promise<{ rows: AffiliatePortalLead[]; total: number; page: number; limit: number }> => {
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined && v !== null && v !== '') qs.set(k, String(v));
+  }
+  const s = qs.toString();
+  return apiFetch(`affiliate/leads${s ? `?${s}` : ''}`);
+};
+export const apiUpdateAffiliatePostback = (body: {
+  postback_url?: string; postback_enabled?: boolean; postback_events?: Record<string, boolean>;
+}): Promise<{ postback_url: string | null; postback_enabled: boolean; postback_events: Record<string, boolean> }> =>
+  apiFetch('affiliate/postback', { method: 'PATCH', body: JSON.stringify(body) });
+export const apiRotateOwnAffiliateKey = (): Promise<{ api_key: string }> =>
+  apiFetch('affiliate/rotate-key', { method: 'POST' });
+export const apiTestAffiliatePostback = (): Promise<{
+  status: string; rendered_url: string | null; last_response_code: number | null;
+  last_response_body: string | null; last_error: string | null;
+}> => apiFetch('affiliate/postback-test', { method: 'POST' });
+export const apiChangeAffiliatePassword = (newPassword: string): Promise<{ success: boolean }> =>
+  apiFetch('affiliate/change-password', { method: 'POST', body: JSON.stringify({ new_password: newPassword }) });

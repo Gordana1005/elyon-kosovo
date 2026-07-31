@@ -132,7 +132,7 @@ export default function PureProfitExportDialog({ data, range }: { data: Insights
           rows: agents.map((a: any) => ({
             'Agent': a.name,
             'Payout (EUR)': n2(a.payout_earned),
-            'Packages Sold': a.units ?? 0,
+            'Packages Sold': a.packages_sold ?? a.units ?? 0,
           })),
         });
       }

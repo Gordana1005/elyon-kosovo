@@ -64,6 +64,11 @@ bundle or the repo.
 ## 6. Audit trail (tamper‑evident)
 - `audit_log` records sensitive admin actions (user create, bulk assign/unassign, bulk status update,
   segment assign/auto‑assign/unassign/edit) with actor id/email, action, target, and JSON payload.
+- **`assigner.unassign_all`** is the one to check after a mass detach: its payload carries `agent_id`,
+  `list_ids`, `include_done`, the total freed, and the **pre‑wipe per‑agent breakdown** (snapshotted from
+  `assignment_matrix()` *before* the UPDATE). Since a full detach clears the denormalised
+  `assigned_agent_name` stamp from member rows, that audit row — together with `call_logs` — is the
+  record of who had been working which list.
 - **Append‑only by trigger:** `audit_log_block_update` / `_block_delete` raise on any mutation — even the
   service role cannot edit or delete rows. `order_history` is the equivalent immutable trail for orders.
 
@@ -104,7 +109,7 @@ bundle or the repo.
 | Low | **HIBP + session timeouts** are Pro‑plan only | Enable on upgrade (`password_hibp_enabled`, `sessions_*`). |
 | Low | Founding accounts seeded with weak bootstrap password (`12345678`) | **Rotate now** (min length is 8); enrol admin MFA. |
 | Low | **CI doesn't run lint**; lint errors (mostly `any`) | Not a vuln, but `any` hides type bugs. |
-| Info | VOIP SIP secret reaches the browser (required for WebRTC) | Contained: per‑extension secret, fail2ban, 4‑channel cap. Rotate periodically. |
+| Info | VOIP SIP secret reaches the browser (required for WebRTC) | Contained: per‑extension secret, fail2ban, the trunk's concurrent‑channel cap. Rotate periodically. |
 
 The historical RESUME.md "to‑harden" list is now **largely done**: HMAC on webhooks ✅, CORS locked ✅,
 route code‑splitting ✅, React Query defaults ✅. Re‑verify the `notifications` INSERT policy and the

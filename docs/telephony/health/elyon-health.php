@@ -86,7 +86,15 @@ $asterisk = ['running' => $astPid !== null, 'uptime_seconds' => $astUp !== null 
 // ── lines in use (active calls) ─────────────────────────────────────────────
 // `core show channels` footer: "N active channels / M active calls".
 // php-fpm runs as the `asterisk` user (see RUNBOOK), so asterisk -rx works directly.
-$lines = ['active' => null, 'max' => 10, 'channels' => []];
+// The cap is whatever the dialplan actually ENFORCES. Reading OUTMAXCHANS_1
+// from the generated dialplan means the dashboard tracks trunks.maxchans
+// automatically and can never drift from reality again (it read a hardcoded 10
+// for a month, then a hardcoded 25 that was wrong within a day when A1's
+// Admission Control turned out to still be 10). The literal is a last resort.
+$maxLines = 10;
+$gen = @file_get_contents('/etc/asterisk/extensions_additional.conf');
+if ($gen && preg_match('/^\s*OUTMAXCHANS_1\s*=\s*(\d+)/m', $gen, $mm)) $maxLines = (int)$mm[1];
+$lines = ['active' => null, 'max' => $maxLines, 'channels' => []];
 $ch = sh("/usr/sbin/asterisk -rx 'core show channels'");
 if ($ch !== null) {
     if (preg_match('/(\d+)\s+active call/', $ch, $m)) $lines['active'] = (int)$m[1];
@@ -112,10 +120,10 @@ $t0 = microtime(true);
 $fp = @fsockopen('195.149.255.243', 5061, $errno, $errstr, 3);
 if ($fp) { $trunk['reachable'] = true; $trunk['rtt_ms'] = (int)round((microtime(true) - $t0) * 1000); fclose($fp); }
 
-// ── agent extensions registered (1001-1020) ────────────────────────────────
+// ── agent extensions registered (1001-1040) ────────────────────────────────
 $extensions = [];
 $contacts = sh("/usr/sbin/asterisk -rx 'pjsip show contacts'");
-for ($e = 1001; $e <= 1020; $e++) {
+for ($e = 1001; $e <= 1040; $e++) {
     if ($contacts === null) break;
     // A registered webrtc ext appears as "Contact:  100x/..." with Avail.
     $reg = (strpos($contacts, "$e/") !== false) || preg_match("/\b$e\b.*Avail/", $contacts);

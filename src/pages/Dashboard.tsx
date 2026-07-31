@@ -9,6 +9,7 @@ import { apiGetCeoDashboardStats, apiGetDashboardStats, apiGetOrderStats, apiGet
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { DateRangePicker, defaultRange, type DateRange } from '@/components/DateRangePicker';
@@ -18,7 +19,10 @@ import {
   Activity,
   X, MessageSquare, Phone, ArrowRightLeft, FileText,
   DollarSign, AlertTriangle, Trophy, Zap, Shield, ChevronRight,
+  ChevronLeft, Trash2, Banknote, Clock,
 } from 'lucide-react';
+import { MyOrdersSection } from '@/components/dashboard/MyOrdersSection';
+import { formatDate } from '@/i18n/dates';
 import { Link } from 'react-router-dom';
 import {
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -35,7 +39,17 @@ interface DashStats {
   personalMetrics?: DashStats | null;
   isDualRole?: boolean;
   products_sold?: Record<string, number>;
+  /** @deprecated alias of packages_sold (paid units only) */
   units_sold?: number;
+  /** Paid packages only (COD collected) */
+  packages_sold?: number;
+  /** Confirmed/shipped/delivered units awaiting payment */
+  packages_awaiting?: number;
+  /** Units on returned orders */
+  packages_returned?: number;
+  returns_orders?: number;
+  paid_revenue?: number;
+  payout_earned?: number;
 }
 
 function exportCSV(data: DashStats, period: string, label?: string) {
@@ -130,7 +144,7 @@ const chartTooltipStyle = {
   boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
 };
 
-import { formatLev } from '@/lib/currency';
+import { formatEur, formatLev } from '@/lib/currency';
 import { CHART_COLORS, hoverLift } from '@/lib/design-utils';
 import { EmptyState } from '@/components/EmptyState';
 
@@ -141,7 +155,12 @@ export default function Dashboard() {
   const { user } = useAuth();
   const isAdmin = user?.isAdmin;
   const isDualRole = user?.isAdmin && user?.isAgent;
-  const [agentPeriod, setAgentPeriod] = useState<'today' | 'month'>('today');
+  const [agentPeriod, setAgentPeriod] = useState<'today' | 'month' | 'start' | 'custom'>('today');
+  // Day browsing (◀ ▶): UTC day string, matching the backend's UTC window math.
+  const todayUtc = new Date().toISOString().slice(0, 10);
+  const [agentDate, setAgentDate] = useState(todayUtc);
+  // Custom range (period='custom'): defaults to this month so far, fully editable.
+  const [agentRange, setAgentRange] = useState<DateRange>({ from: todayUtc.slice(0, 7) + '-01', to: todayUtc });
   const [agentFilter, setAgentFilter] = useState('all');
   const [chartView, setChartView] = useState<'revenue' | 'orders' | 'leads'>('revenue');
   // Dashboard defaults to today; the range picker drives everything.
@@ -164,14 +183,28 @@ export default function Dashboard() {
   });
 
   const { data: todayStats } = useQuery<DashStats>({
-    queryKey: ['dashboard-stats', 'today', effectiveAgent],
-    queryFn: () => apiGetDashboardStats({ period: 'today', agent_id: effectiveAgent }),
+    queryKey: ['dashboard-stats', 'day', agentDate, effectiveAgent],
+    queryFn: () => apiGetDashboardStats({ period: 'today', date: agentDate, agent_id: effectiveAgent }),
     refetchInterval: 30000,
   });
 
   const { data: monthStats } = useQuery<DashStats>({
     queryKey: ['dashboard-stats', 'month', effectiveAgent],
     queryFn: () => apiGetDashboardStats({ period: 'month', agent_id: effectiveAgent }),
+    refetchInterval: 60000,
+  });
+
+  const { data: customStats } = useQuery<DashStats>({
+    queryKey: ['dashboard-stats', 'custom', agentRange.from, agentRange.to, effectiveAgent],
+    queryFn: () => apiGetDashboardStats({ period: 'custom', from: agentRange.from, to: agentRange.to, agent_id: effectiveAgent }),
+    enabled: !isAdmin && agentPeriod === 'custom' && !!agentRange.from && !!agentRange.to,
+    refetchInterval: 60000,
+  });
+
+  const { data: startStats } = useQuery<DashStats>({
+    queryKey: ['dashboard-stats', 'start', effectiveAgent],
+    queryFn: () => apiGetDashboardStats({ period: 'start', agent_id: effectiveAgent }),
+    enabled: !isAdmin && agentPeriod === 'start',
     refetchInterval: 60000,
   });
 
@@ -230,14 +263,35 @@ export default function Dashboard() {
   // ── Call Agent view: a purpose-built "My Performance" page (their numbers
   // only). Admins/managers fall through to the full operational dashboard. ──
   if (!isAdmin) {
-    const stats = agentPeriod === 'today' ? todayStats : monthStats;
+    const stats =
+      agentPeriod === 'today' ? todayStats
+      : agentPeriod === 'month' ? monthStats
+      : agentPeriod === 'start' ? startStats
+      : customStats;
     const sales = stats?.deals_won || 0;
     const cancels = stats?.statusCounts?.cancelled || 0;
-    const returns = stats?.statusCounts?.returned || 0;
+    const trashed = stats?.statusCounts?.trashed || 0;
+    const returnsOrders = stats?.returns_orders ?? stats?.statusCounts?.returned ?? 0;
+    const packagesReturned = stats?.packages_returned ?? 0;
+    // Day navigator: past days only — ▶ is disabled once we're back at today.
+    const yesterdayUtc = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
+    const dayLabel = agentDate === todayUtc
+      ? t('dashboard.today')
+      : agentDate === yesterdayUtc
+        ? t('dashboard.yesterday')
+        : formatDate(agentDate, 'EEE, MMM d');
+    const shiftDay = (delta: number) => {
+      const d = new Date(agentDate + 'T00:00:00Z');
+      d.setUTCDate(d.getUTCDate() + delta);
+      const next = d.toISOString().slice(0, 10);
+      setAgentDate(next > todayUtc ? todayUtc : next);
+    };
     const calls = stats?.tasks_completed || 0;
     const conversion = calls > 0 ? Math.round((sales / calls) * 100) : 0;
-    const revenue = stats?.total_value || 0;
-    const units = stats?.units_sold || 0;
+    const paidRevenue = stats?.paid_revenue ?? 0;
+    const payoutEarned = stats?.payout_earned ?? 0;
+    const packagesSold = stats?.packages_sold ?? stats?.units_sold ?? 0;
+    const packagesAwaiting = stats?.packages_awaiting ?? 0;
     const productRows = Object.entries(stats?.products_sold || {}).sort((a, b) => b[1] - a[1]);
     const trend = Object.entries(stats?.daily || {})
       .sort(([a], [b]) => a.localeCompare(b))
@@ -245,37 +299,132 @@ export default function Dashboard() {
         date: new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
         sales: v.deals_won, calls: v.calls,
       }));
+    const periodLabel =
+      agentPeriod === 'today'
+        ? (agentDate === todayUtc ? t('dashboard.todaysPerformance') : t('dashboard.dayPerformance', { date: dayLabel }))
+        : agentPeriod === 'month'
+          ? t('dashboard.monthsPerformance')
+          : agentPeriod === 'start'
+            ? t('dashboard.startPerformance')
+            : t('dashboard.dayPerformance', { date: `${formatDate(agentRange.from, 'MMM d')} – ${formatDate(agentRange.to, 'MMM d')}` });
+
+    // My Orders only supports today|month|custom — map start → custom all-time window
+    const ordersPeriod = agentPeriod === 'start' ? 'custom' as const : agentPeriod;
+    const ordersFrom = agentPeriod === 'start' ? '2000-01-01' : agentRange.from;
+    const ordersTo = agentPeriod === 'start' ? todayUtc : agentRange.to;
 
     return (
       <AppLayout title={t('titles.myPerformance')}>
-        {/* Period toggle */}
-        <div className="mb-6 flex items-center justify-between">
-          <p className="text-sm text-muted-foreground">
-            {agentPeriod === 'today' ? t('dashboard.todaysPerformance') : t('dashboard.monthsPerformance')}
-          </p>
-          <Tabs value={agentPeriod} onValueChange={v => setAgentPeriod(v as any)}>
-            <TabsList className="h-8">
-              <TabsTrigger value="today" className="text-xs px-3 h-7">{t('dashboard.today')}</TabsTrigger>
-              <TabsTrigger value="month" className="text-xs px-3 h-7">{t('dashboard.thisMonth')}</TabsTrigger>
-            </TabsList>
-          </Tabs>
+        {/* Period toggle + day navigator + custom range */}
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-2">
+          <p className="text-sm text-muted-foreground">{periodLabel}</p>
+          <div className="flex flex-wrap items-center gap-2">
+            {agentPeriod === 'today' && (
+              <div className="flex items-center gap-1">
+                <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => shiftDay(-1)} aria-label={t('dashboard.prevDay')}>
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <span className="text-xs font-medium min-w-[88px] text-center whitespace-nowrap">{dayLabel}</span>
+                <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => shiftDay(1)} disabled={agentDate === todayUtc} aria-label={t('dashboard.nextDay')}>
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+            )}
+            {agentPeriod === 'custom' && (
+              <div className="flex items-center gap-1">
+                <Input
+                  type="date" value={agentRange.from} max={agentRange.to || todayUtc}
+                  onChange={e => setAgentRange(r => ({ from: e.target.value, to: r.to || e.target.value }))}
+                  className="h-7 w-[140px] text-xs" aria-label={t('dashboard.rangeFrom')}
+                />
+                <span className="text-muted-foreground text-xs">–</span>
+                <Input
+                  type="date" value={agentRange.to} min={agentRange.from || undefined} max={todayUtc}
+                  onChange={e => setAgentRange(r => ({ from: r.from || e.target.value, to: e.target.value }))}
+                  className="h-7 w-[140px] text-xs" aria-label={t('dashboard.rangeTo')}
+                />
+              </div>
+            )}
+            <Tabs value={agentPeriod} onValueChange={v => setAgentPeriod(v as any)}>
+              <TabsList className="h-8">
+                <TabsTrigger value="today" className="text-xs px-3 h-7">{t('dashboard.today')}</TabsTrigger>
+                <TabsTrigger value="month" className="text-xs px-3 h-7">{t('dashboard.thisMonth')}</TabsTrigger>
+                <TabsTrigger value="start" className="text-xs px-3 h-7">{t('dashboard.start')}</TabsTrigger>
+                <TabsTrigger value="custom" className="text-xs px-3 h-7">{t('dashboard.custom')}</TabsTrigger>
+              </TabsList>
+            </Tabs>
+          </div>
         </div>
 
-        {/* Headline cards */}
+        {/* Earnings hero — paid packages & commission only */}
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-4 mb-4">
-          <MetricCard title={t('dashboard.sales')} value={sales} icon={CheckCircle2} color="bg-[hsl(var(--success))]" subtitle={t('dashboard.salesSub')} />
-          <MetricCard title={t('dashboard.cancels')} value={cancels} icon={X} color="bg-destructive" subtitle={t('dashboard.cancelsSub')} />
-          <MetricCard title={t('dashboard.conversion')} value={`${conversion}%`} icon={Target} color="bg-primary" subtitle={t('dashboard.conversionSub')} />
-          <MetricCard title={t('dashboard.revenue')} value={`€${fmtCurrency(revenue)}`} levValue={revenue} icon={DollarSign} color="bg-[hsl(var(--info))]" subtitle={t('dashboard.revenueSub')} />
+          <MetricCard
+            title={t('dashboard.payoutEarned')}
+            value={formatEur(payoutEarned)}
+            levValue={payoutEarned}
+            icon={Banknote}
+            color="bg-emerald-600"
+            subtitle={t('dashboard.payoutEarnedSub')}
+          />
+          <MetricCard
+            title={t('dashboard.packagesSold')}
+            value={packagesSold}
+            icon={Package}
+            color="bg-primary"
+            subtitle={packagesSold > 0 && paidRevenue > 0
+              ? t('dashboard.perPackage', { price: fmtCurrency(paidRevenue / packagesSold) })
+              : t('dashboard.packagesSoldSub')}
+          />
+          <MetricCard
+            title={t('dashboard.paidRevenue')}
+            value={formatEur(paidRevenue)}
+            levValue={paidRevenue}
+            icon={DollarSign}
+            color="bg-[hsl(var(--info))]"
+            subtitle={t('dashboard.paidRevenueSub')}
+          />
+          <MetricCard
+            title={t('dashboard.packagesAwaiting')}
+            value={packagesAwaiting}
+            icon={Clock}
+            color="bg-[hsl(var(--warning))]"
+            subtitle={t('dashboard.packagesAwaitingSub')}
+          />
         </div>
 
-        {/* Secondary cards */}
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4 mb-6">
+        {/* Work / activity cards */}
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-5 mb-6">
+          <MetricCard title={t('dashboard.sales')} value={sales} icon={CheckCircle2} color="bg-[hsl(var(--success))]" subtitle={t('dashboard.salesSub')} />
           <MetricCard title={t('dashboard.callsMade')} value={calls} icon={Phone} color="bg-[hsl(var(--warning))]" />
-          <MetricCard title={t('dashboard.packagesSold')} value={units} icon={Package} color="bg-primary" subtitle={units > 0 ? t('dashboard.perPackage', { price: fmtCurrency(revenue / units) }) : t('dashboard.unitsSub')} />
-          <MetricCard title={t('dashboard.returns')} value={returns} icon={TrendingDown} color="bg-destructive" />
-          <MetricCard title={t('dashboard.tabOrders')} value={stats?.total_orders || 0} icon={FileText} color="bg-muted-foreground" subtitle={t('dashboard.ordersSub')} />
+          <MetricCard
+            title={t('dashboard.returns')}
+            value={returnsOrders}
+            icon={TrendingDown}
+            color="bg-destructive"
+            subtitle={t('dashboard.returnsPackagesSub', { packages: packagesReturned })}
+          />
+          <MetricCard title={t('dashboard.cancels')} value={cancels} icon={X} color="bg-destructive" subtitle={t('dashboard.cancelsSub')} />
+          <MetricCard title={t('dashboard.trashed')} value={trashed} icon={Trash2} color="bg-destructive/80" subtitle={t('dashboard.trashedSub')} />
         </div>
+
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-3 mb-6">
+          <MetricCard title={t('dashboard.conversion')} value={`${conversion}%`} icon={Target} color="bg-primary" subtitle={t('dashboard.conversionSub')} />
+          <MetricCard title={t('dashboard.tabOrders')} value={stats?.total_orders || 0} icon={FileText} color="bg-muted-foreground" subtitle={t('dashboard.ordersSub')} />
+          <Card className="border border-border/60 bg-card shadow-sm flex items-center">
+            <CardContent className="p-5 w-full flex items-center justify-between gap-2">
+              <div>
+                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-[0.5px]">{t('dashboard.myPayoutDetails')}</p>
+                <p className="text-sm text-muted-foreground mt-1">{t('dashboard.myPayoutDetailsDesc')}</p>
+              </div>
+              <Button asChild size="sm" variant="outline" className="shrink-0">
+                <Link to="/insights?tab=agents">{t('dashboard.openAgentsTab')}</Link>
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* My Orders drill-down: Confirmed | Shipped | Paid | Returned */}
+        <MyOrdersSection period={ordersPeriod} date={agentDate} from={ordersFrom} to={ordersTo} />
 
         <div className="grid gap-6 lg:grid-cols-3 mb-6">
           {/* Sales & Calls trend */}

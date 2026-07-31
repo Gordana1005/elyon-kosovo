@@ -5,7 +5,8 @@ import {
   ChevronDown, ChevronUp, Clock, Star, AlertTriangle, Shield, ShoppingBag,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { cn, formatProductWithQuantity } from '@/lib/utils';
+import { cn } from '@/lib/utils';
+import { formatOrderProducts } from '@/lib/monadonSubstitutes';
 import { format } from 'date-fns';
 import { formatDate } from '@/i18n/dates';
 import { formatLev, formatEur } from '@/lib/currency';
@@ -168,9 +169,7 @@ function OrdersHistorySection({ ordersHistory }: { ordersHistory: NonNullable<Cu
 
 function PastOrderRow({ order }: { order: NonNullable<CustomerIntelligence['orders_history']>[number] }) {
   useTranslation(); // re-render status labels on language switch
-  const itemsLabel = order.items.length > 0
-    ? order.items.map(i => formatProductWithQuantity(i.product_name, i.quantity)).join(', ')
-    : (order.product_name_fallback || '—');
+  const itemsLabel = formatOrderProducts(order);
   const isPaid = order.status === 'paid';
   return (
     <div className={cn(

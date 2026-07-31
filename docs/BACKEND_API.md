@@ -1,11 +1,11 @@
 # Backend API — the Edge Function
 
-> One Deno file, **[../supabase/functions/api/index.ts](../supabase/functions/api/index.ts)** (~7,325
+> One Deno file, **[../supabase/functions/api/index.ts](../supabase/functions/api/index.ts)** (~14,900
 > lines), is the entire REST surface. It's dispatched off URL path segments. The frontend never builds
 > URLs by hand — it calls thin wrappers in **[../src/lib/api.ts](../src/lib/api.ts)**. Base URL:
 > `${VITE_SUPABASE_URL}/functions/v1/api`.
 
-Deploy: `npx supabase functions deploy api --project-ref sxymaloycddnoxudxaqp` (export `SUPABASE_ACCESS_TOKEN` first — see [OPERATIONS_RUNBOOK.md](OPERATIONS_RUNBOOK.md)).
+Deploy: `npx supabase functions deploy api --project-ref bmfxhgznttcnnlqloqzp` (export `SUPABASE_ACCESS_TOKEN` first — see [OPERATIONS_RUNBOOK.md](OPERATIONS_RUNBOOK.md)).
 
 ---
 
@@ -79,8 +79,8 @@ Gate legend: 🔓 any authed user · 👤 owner/agent‑scoped · 🛡️ admin/
 | `POST /users/:id/toggle-active` | 🛡️ | Enable/disable login |
 | `DELETE /users/:id` | 🛡️ | Delete user (auth + profile + roles) |
 | `GET /users` · `GET /users/agents` | 🛡️ | List users / agents |
-| `POST /presence/heartbeat` | 🔓 | Bump `profiles.last_seen_at` (every ~45 s) |
-| `GET /agents/online` | 🛡️ | Online agents (2‑min window) + load + today's shift |
+| `POST /presence/heartbeat` | 🔓 | Bump `profiles.last_seen_at` (every ~45 s). Optional body `{voip_state}` (`idle\|dialing\|in_call\|wrapping\|ending`, whitelist‑validated) also writes `profiles.voip_state` + `voip_state_at`. Body is optional — legacy empty‑body beats still work, and an omitted `voip_state` leaves the columns untouched (multi‑tab safety). |
+| `GET /agents/online` | 🛡️ | Online agents (2‑min window) + load + today's shift. Also returns `in_call: boolean` and `voip_state` (forced to `'idle'` unless in call), where **`in_call` = `is_online` AND `voip_state ∈ {dialing,in_call}` AND `voip_state_at` younger than 3 min** (staleness guard so a crashed tab self‑clears). Browser‑self‑reported, *not* PBX‑derived. |
 | `GET /me` | 🔓 | Current user + roles |
 
 ### Orders
@@ -106,7 +106,7 @@ Gate legend: 🔓 any authed user · 👤 owner/agent‑scoped · 🛡️ admin/
 | `GET /ceo-dashboard-stats?period=&from=&to=&agent_id=` | 🛡️ | Revenue/profit/funnel/agent rankings/risk alerts/today snapshot — paginated |
 | `GET /agent-performance?from=&to=&…` | 🛡️ | Per‑agent conversion/shipment/collection/return rates, profit, net contribution |
 | `GET /management-insights?from=&to=` | 🛡️ | The big one: revenue (SOLD basis), AOV, by product/city/delivery/source, returns, cancellations, calls, profit, stock cover — all paginated |
-| `GET /operations-center` | 🛡️ | Today's live ops board (KPIs + online agents + activity) |
+| `GET /operations-center` | 🛡️ | Today's live ops board (KPIs + online agents + activity). Agent rows carry `is_online` and `in_call` — same 2‑min presence / 3‑min call‑staleness rule as `GET /agents/online`. |
 | `GET /recent-activity` | 🔓 | Recent activity feed |
 
 > Metric definitions (SOLD vs PAID, conversion, etc.): [INSIGHTS_ANALYTICS.md](INSIGHTS_ANALYTICS.md).
@@ -152,10 +152,26 @@ Gate legend: 🔓 any authed user · 👤 owner/agent‑scoped · 🛡️ admin/
 `POST /prediction-leads/unassign`, `POST /prediction-leads/:id/take`, `PATCH /prediction-leads/:id`.
 
 ### Segments (rule‑driven lists)
-`GET /segments`, `GET /segments/:id` (paginated members), `POST /segments/:id/assign`,
-`POST /segments/:id/auto-assign` (shuffle + round‑robin across agents, optional `limit`/`fraction`),
-`POST /segments/:id/bulk-unassign`, `PATCH /segments/:id` (edits rules → `recompute_all_segments`),
-`POST /segments/recompute` — all 🛡️.
+`GET /segments`, `GET /segments/:id` (paginated members; filters `?assigned=none|all|<agent_id>` and
+`?completed=yes|no` — the Assigner's expandable per‑agent rows call it with `assigned=<agent_id>` and
+*no* `completed` so already‑called members show too; additionally gated by the `show_segment_members`
+privilege → **403** for managers without it), `POST /segments/:id/assign` (`agent_id: null` = unassign,
+works on done rows, max 5000 phones), `POST /segments/:id/auto-assign` (shuffle + round‑robin across
+agents, optional `limit`/`fraction`), `POST /segments/:id/bulk-unassign` (one list; `scope='all'` or an
+agent id; **no `is_completed` filter — clears done rows too**), `PATCH /segments/:id` (edits rules →
+`recompute_all_segments`), `POST /segments/recompute` — all 🛡️.
+
+### Assigner (cross‑list mass distribution)
+| Method · Path | Gate | Purpose |
+|---|---|---|
+| `GET /assigner/assignment-summary` | 🛡️ | Who holds what, per agent × list: one `assignment_matrix()` + `assigned_pending_counts()` round‑trip, joined to names. Returns `agents[{agent_id, full_name, assigned_total, open_total, pendings_total, lists[{list_id, list_name, assigned, open}]}]` + `totals`. |
+| `POST /assigner/unassign-all` | 🛡️ | Mass unassign. Body `{agent_id:'all'\|<uuid>, list_ids?, include_pendings?, include_done?}`. Rate‑limited `assigner.unassign` 20/min, audited as `assigner.unassign_all` (payload includes `include_done` + the pre‑wipe per‑agent breakdown — the only record of what was released). |
+
+`POST /assigner/unassign-all` semantics — nulls **only** `assigned_agent_id`/`assigned_agent_name`/`assigned_at`:
+
+- **default (no `include_done`)** — frees only `is_completed = false` members; already‑called rows keep their stamp (original 2026‑07‑22 contract, kept for compatibility).
+- **`include_done: true`** — also clears the stamp on done rows, so the `(agent, list)` pair disappears from `assignment_matrix()` and the list fully detaches from the agent's profile. **The Unassign tab always sends this** (operator decision 2026‑07‑28). `is_completed`, `last_call_*`, `in_call_again_until`, `call_logs` and sales credit (`confirmed_by_*`) are never touched.
+- **`include_pendings: true`** — additionally frees the agent's `status='pending'` orders (4 columns, same as `/orders/bulk-unassign`). Strictly `pending`: `take`/`call_again` mean the agent already engaged. Server‑ignored when `list_ids` is present, since pendings are not list‑scoped.
 
 ### Lead distribution
 `GET /lead-distribution-config`, `PATCH /lead-distribution-config` ⚠️, `POST /lead-distribution/auto-assign` ⚠️ — 🛡️.

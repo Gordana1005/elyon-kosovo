@@ -10,9 +10,21 @@ const createUserSchema = z.object({
   email: z.string().trim().email("Invalid email format").max(255),
   password: z.string().min(8, "Password must be at least 8 characters").max(128),
   full_name: z.string().trim().min(1, "Name is required").max(200),
-  roles: z.array(z.enum(["admin", "manager", "agent", "pending_agent", "prediction_agent", "warehouse", "ads_admin"])).min(1).optional(),
+  roles: z.array(z.enum(["admin", "manager", "agent", "pending_agent", "prediction_agent", "warehouse", "ads_admin", "affiliate"])).min(1).optional(),
   role: z.string().optional(),
 });
+
+// Edit an existing user's identity fields. Every field is optional so the
+// caller can change just the name, just the password, etc. Password, when
+// present, must clear the same 8-char policy as creation.
+const updateUserSchema = z.object({
+  email: z.string().trim().email("Invalid email format").max(255).optional(),
+  full_name: z.string().trim().min(1, "Name is required").max(200).optional(),
+  password: z.string().min(8, "Password must be at least 8 characters").max(128).optional(),
+}).refine(
+  (b) => b.email !== undefined || b.full_name !== undefined || b.password !== undefined,
+  { message: "Nothing to update" },
+);
 
 const createOrderItemSchema = z.object({
   product_id: z.string().uuid().nullable().optional(),
@@ -64,8 +76,10 @@ const createOrderSchema = z.object({
   cancellation_reason_notes: z.string().max(1000).optional(),
   // Structured trash reason — stored only when status is 'trashed' (see the
   // insert below). Mirrors the agent-facing picker in ChooseAnswerButton.tsx.
+  // 'not_reachable' doubles as the server auto-trash reason (9 no-answers) and
+  // is now also manually selectable ("Unreachable").
   trash_reason: z.enum([
-    "wrong_number", "wrong_person", "rude", "uncooperative", "other",
+    "wrong_number", "wrong_person", "not_reachable", "rude", "uncooperative", "other",
   ]).optional(),
   trash_reason_notes: z.string().max(1000).optional(),
   items: z.array(createOrderItemSchema).optional(),
@@ -111,8 +125,9 @@ const updateStatusSchema = z.object({
   ]).optional(),
   cancellation_reason_notes: z.string().max(1000).optional(),
   // Structured trash reason — stored only when status is being set to 'trashed'.
+  // 'not_reachable' is both the auto-trash reason and a manual "Unreachable" pick.
   trash_reason: z.enum([
-    "wrong_number", "wrong_person", "rude", "uncooperative", "other",
+    "wrong_number", "wrong_person", "not_reachable", "rude", "uncooperative", "other",
   ]).optional(),
   trash_reason_notes: z.string().max(1000).optional(),
   return_reason: z.enum([
@@ -187,6 +202,21 @@ const createProductSchema = z.object({
   supplier_id: z.string().uuid().nullable().optional().default(null),
 });
 
+// BigArena "Fulfillment Panel" stock export. `free` = "Свободна наличност" (units
+// NOT reserved for orders already being packed) — the client parses and merges
+// shared-barcode rows; the server still re-matches every row itself.
+const bigArenaStockSyncSchema = z.object({
+  rows: z.array(z.object({
+    sku: z.string().max(50).nullable().optional().default(null),
+    barcode: z.string().max(50).nullable().optional().default(null),
+    name: z.string().trim().min(1).max(300),
+    free: z.number().int().min(0).max(1000000),
+  })).min(1, "rows[] required").max(500, "Too many rows (max 500 per upload)"),
+  meta: z.object({
+    filename: z.string().max(160).optional().default("bigarena-stock-upload"),
+  }).optional().default({}),
+});
+
 const createSupplierSchema = z.object({
   name: z.string().trim().min(1, "Supplier name is required").max(200),
   contact_info: z.string().max(500).optional().default(""),
@@ -242,8 +272,9 @@ const callLogSchema = z.object({
   cancellation_reason_notes: z.string().max(1000).optional(),
   // Structured trash reason for an in-call 'trash' outcome (the 'wrong_number'
   // outcome is self-describing and derived server-side; see applyOutcomeToOrder).
+  // 'not_reachable' = the manual "Unreachable" pick (also the auto-trash reason).
   trash_reason: z.enum([
-    "wrong_number", "wrong_person", "rude", "uncooperative", "other",
+    "wrong_number", "wrong_person", "not_reachable", "rude", "uncooperative", "other",
   ]).optional(),
 });
 
@@ -372,6 +403,133 @@ const opencartOrderSchema = z.object({
   source: z.string().max(120).optional().default("naturatherapy.xk"),
   date_added: z.string().max(40).optional().default(""),
   items: z.array(opencartItemSchema).optional().default([]),
+});
+
+// ── Affiliate/CPA intake (public, api-key-authed) ────────────────────────────
+// Field names and error codes mirror AlterCPA Moe so webmasters can point an
+// existing integration at us. Everything is optional at the schema level on
+// purpose: the handler answers with the specific CPA error code the trackers
+// expect (nooffer / nophone / duplicate / …) instead of a generic zod message.
+// Numeric-or-string unions absorb trackers that send numbers for ids/subs.
+const cpaLeadSchema = z.object({
+  key: z.union([z.string(), z.number()]).optional(),
+  offer: z.union([z.string(), z.number()]).optional(),
+  id: z.union([z.string(), z.number()]).optional(),      // their lead id ('auto' → none)
+  ext_id: z.union([z.string(), z.number()]).optional(),  // alias of id
+  phone: z.union([z.string(), z.number()]).optional(),
+  name: z.string().max(200).optional(),
+  email: z.string().max(254).optional(),
+  ip: z.string().max(64).optional(),
+  ua: z.string().max(512).optional(),
+  country: z.string().max(8).optional(),
+  wm: z.union([z.string(), z.number()]).optional(),      // sub-source → sub1 fallback
+  // UTM (AlterCPA short names) — recorded in the provenance note only.
+  us: z.string().max(300).optional(),
+  uc: z.string().max(300).optional(),
+  un: z.string().max(300).optional(),
+  ut: z.string().max(300).optional(),
+  um: z.string().max(300).optional(),
+  sub1: z.union([z.string(), z.number()]).optional(),
+  sub2: z.union([z.string(), z.number()]).optional(),
+  sub3: z.union([z.string(), z.number()]).optional(),
+  sub4: z.union([z.string(), z.number()]).optional(),
+  sub5: z.union([z.string(), z.number()]).optional(),
+  clickid: z.string().max(300).optional(),
+  cuid: z.string().max(300).optional(),
+  fbclid: z.string().max(300).optional(),
+  gclid: z.string().max(300).optional(),
+  ttclid: z.string().max(300).optional(),
+  address: z.string().max(600).optional(),
+  city: z.string().max(200).optional(),
+  postal_code: z.string().max(30).optional(),
+  quantity: z.coerce.number().int().min(1).max(10).optional(),
+}).passthrough();
+
+// CRM order_status → affiliate-visible stage. MUST stay in sync with the SQL
+// twin public.affiliate_stage() (migration 20260801000200) — the DB trigger
+// uses that one to decide when a postback fires; this one renders API replies.
+const CPA_STAGE: Record<string, string> = {
+  pending: "wait", take: "wait", call_again: "wait",
+  confirmed: "hold", shipped: "hold", delivered: "hold",
+  paid: "approve", cancelled: "cancel", trashed: "trash", returned: "return",
+};
+
+// Business errors are HTTP 200 with {status:"error", error:<code>} — the
+// AlterCPA convention affiliate trackers parse. HTTP errors stay for transport
+// problems only (malformed JSON, rate-limited infrastructure abuse, 500s).
+function cpaError(code: string, extra: Record<string, unknown> = {}) {
+  return json({ status: "error", error: code, ...extra });
+}
+
+// Intake phone-dedupe window (hours). 0 disables. Admin-tunable via
+// app_settings, same pattern as the personal-list cap.
+const AFFILIATE_DEDUPE_DEFAULT_HOURS = 24;
+async function getAffiliateDedupeWindowHours(client: any): Promise<number> {
+  try {
+    const { data } = await client
+      .from("app_settings").select("value")
+      .eq("key", "affiliate_dedupe_window_hours").maybeSingle();
+    const n = Number(data?.value);
+    if (Number.isFinite(n) && n >= 0 && n <= 720) return Math.floor(n);
+  } catch (_) { /* fall through to default */ }
+  return AFFILIATE_DEDUPE_DEFAULT_HOURS;
+}
+
+// ── Affiliate admin (authed) schemas ─────────────────────────────────────────
+const createAffiliateSchema = z.object({
+  name: z.string().trim().min(1, "Name is required").max(200),
+  // Short stable slug — lands in orders.external_source ('affiliate:<code>')
+  // and is never renamed once leads exist.
+  code: z.string().trim().toLowerCase().regex(/^[a-z0-9-]{2,30}$/, "Code must be 2-30 chars: a-z, 0-9, dash"),
+  contact: z.string().max(300).optional().default(""),
+  notes: z.string().max(2000).optional().default(""),
+  create_login: z.object({
+    email: z.string().trim().email("Invalid email format").max(255),
+    password: z.string().min(8, "Password must be at least 8 characters").max(128),
+  }).optional(),
+});
+const updateAffiliateSchema = z.object({
+  name: z.string().trim().min(1).max(200).optional(),
+  contact: z.string().max(300).optional(),
+  notes: z.string().max(2000).optional(),
+  status: z.enum(["active", "paused", "banned"]).optional(),
+  postback_url: z.string().max(1000).optional(),
+  postback_enabled: z.boolean().optional(),
+  postback_events: z.record(z.boolean()).optional(),
+  // 'altercpa' = build the advertiser-API query ourselves (numeric statuses,
+  // accept=1, numeric cancel reasons) instead of rendering the partner's
+  // macros. Admin-only: NOT exposed on the affiliate's self-service route.
+  postback_format: z.enum(["generic", "altercpa"]).optional(),
+  altercpa_reason_map: z.record(z.number().int().min(1).max(99)).nullable().optional(),
+});
+const offerCreateSchema = z.object({
+  name: z.string().trim().min(1, "Name is required").max(200),
+  product_id: z.string().uuid().nullable().optional(),
+  geo: z.string().trim().max(10).optional().default("BG"),
+  payout_eur: z.number().min(0).max(100000),
+  // Customer price per package; null/omitted = inherit the product's price.
+  price_eur: z.number().min(0).max(100000).nullable().optional(),
+  description: z.string().max(2000).optional().default(""),
+  terms: z.string().max(2000).optional().default(""),
+  is_active: z.boolean().optional().default(true),
+});
+const offerUpdateSchema = offerCreateSchema.partial();
+const approveAffiliateOfferSchema = z.object({
+  offer_id: z.string().uuid(),
+  payout_override_eur: z.number().min(0).max(100000).nullable().optional(),
+});
+const updateAffiliateOfferSchema = z.object({
+  status: z.enum(["approved", "paused"]).optional(),
+  payout_override_eur: z.number().min(0).max(100000).nullable().optional(),
+});
+// Portal self-service: ONLY the postback trio — never name/code/status/payout.
+const affiliateSelfPostbackSchema = z.object({
+  postback_url: z.string().max(1000).optional(),
+  postback_enabled: z.boolean().optional(),
+  postback_events: z.record(z.boolean()).optional(),
+});
+const affiliatePasswordSchema = z.object({
+  new_password: z.string().min(8, "Password must be at least 8 characters").max(128),
 });
 
 const warehouseItemSchema = z.object({
@@ -658,6 +816,69 @@ function calcAgentBonus(ordersForAgent: any[]): number {
   return Math.round(total * 100) / 100;
 }
 
+// ── Package unit helpers (single source of truth for "packages sold" etc.) ──
+// "Sold" = paid only (COD collected). Awaiting = pipeline not yet paid.
+// Returned packages are counted separately from returned order counts.
+// See elyon-agent-commissions skill + agent earnings plan (2026-07).
+function unitsOf(o: any): number {
+  const its = o?.order_items || [];
+  if (its.length > 0) {
+    return its.reduce((s: number, it: any) => s + Number(it.quantity || 0), 0);
+  }
+  return Number(o?.quantity || 0) || 1;
+}
+
+function packagesSoldOf(orders: any[]): number {
+  if (!orders?.length) return 0;
+  let n = 0;
+  for (const o of orders) {
+    if (o?.status === "paid") n += unitsOf(o);
+  }
+  return n;
+}
+
+function packagesAwaitingOf(orders: any[]): number {
+  if (!orders?.length) return 0;
+  let n = 0;
+  for (const o of orders) {
+    if (["confirmed", "shipped", "delivered"].includes(o?.status)) n += unitsOf(o);
+  }
+  return n;
+}
+
+function packagesReturnedOf(orders: any[]): number {
+  if (!orders?.length) return 0;
+  let n = 0;
+  for (const o of orders) {
+    if (o?.status === "returned") n += unitsOf(o);
+  }
+  return n;
+}
+
+function paidRevenueOf(orders: any[]): number {
+  if (!orders?.length) return 0;
+  let s = 0;
+  for (const o of orders) {
+    if (o?.status === "paid") s += Number(o.price || 0);
+  }
+  return Math.round(s * 100) / 100;
+}
+
+/** Event timestamp for payroll/earnings windows: paid_at, else created_at. */
+function orderPaidEventAt(o: any): string | null {
+  return o?.paid_at || o?.created_at || null;
+}
+
+/** True when the order's payment event falls in [from, to] (ISO strings). */
+function inPaidWindow(o: any, from: string | null, to: string | null): boolean {
+  if (!from && !to) return true;
+  const at = orderPaidEventAt(o);
+  if (!at) return false;
+  if (from && at < from) return false;
+  if (to && at > to) return false;
+  return true;
+}
+
 // ── Sales attribution: ONE owner per order = the first agent who confirmed ──
 // Credit (sale + bonus) belongs to confirmed_by_*, falling back to the assignee
 // only for legacy rows that never recorded a confirmer. A super-admin editing &
@@ -668,6 +889,34 @@ function salesOwnerId(o: any): string | null {
 }
 function salesOwnerName(o: any): string | null {
   return o?.confirmed_by_name ?? o?.assigned_agent_name ?? null;
+}
+// PostgREST translation of salesOwnerId(): a row is owned by `uid` when the
+// confirmer is uid, OR no confirmer was ever recorded and the assignee is uid.
+// The uid is interpolated into an .or() filter string, so callers MUST pass a
+// UUID_RE-validated value (JWT sub or a validated agent_id param) — never raw
+// user input.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function salesOwnerOrFilter(uid: string): string {
+  return `confirmed_by_agent_id.eq.${uid},and(confirmed_by_agent_id.is.null,assigned_agent_id.eq.${uid})`;
+}
+
+// Resolve an optional custom [from,to] date range (both YYYY-MM-DD) into a UTC
+// window for the agent-dashboard "Custom" period. Returns null unless BOTH
+// bounds are valid. `to` is clamped to today (no future); when the window ends
+// today the upper bound is extended to `now` so the current partial day counts.
+// Shared by /api/dashboard-stats and /api/my-orders so they agree.
+function customRangeWindow(
+  fromRaw: string | null, toRaw: string | null, todayStr: string, now: Date,
+): { fromDate: string; toDate: string } | null {
+  const ok = (s: string | null): s is string => !!s && /^\d{4}-\d{2}-\d{2}$/.test(s);
+  if (!ok(fromRaw) || !ok(toRaw)) return null;
+  let from = fromRaw;
+  const to = toRaw > todayStr ? todayStr : toRaw;
+  if (from > to) from = to; // guard against reversed bounds → single day
+  return {
+    fromDate: from + "T00:00:00Z",
+    toDate: to === todayStr ? now.toISOString() : to + "T23:59:59Z",
+  };
 }
 
 // ── TV leaderboard: SEPARATE daily gamification layer ────────────────────────
@@ -1115,7 +1364,7 @@ async function handleRequest(req: Request): Promise<Response> {
         load1: num(h?.load?.["1"]),
         asterisk_up: h?.asterisk?.running === true,
         active_lines: num(h?.lines?.active),
-        max_lines: num(h?.lines?.max) ?? 10,
+        max_lines: num(h?.lines?.max) ?? TRUNK_MAX_LINES_FALLBACK,
         trunk_reachable: h?.trunk?.reachable === true,
         trunk_rtt_ms: num(h?.trunk?.rtt_ms),
         recordings_today: num(h?.recordings_today?.count),
@@ -1569,6 +1818,357 @@ async function handleRequest(req: Request): Promise<Response> {
       return json({ success: true, order_id: orderId, created: wasNew, mode: body.mode });
     }
 
+    // ── PUBLIC AFFILIATE/CPA INTAKE (api-key-authed, no Supabase auth) ──
+    // AlterCPA-Moe-compatible lead submission. Auth = the affiliate's api_key
+    // (body `key`, `?key=`, or `X-Api-Key` header) — no HMAC by design, keys
+    // are per-affiliate, rotatable, and pausable/bannable. The lead lands as a
+    // normal unassigned pending order (source_type='affiliate') plus its
+    // tracking sidecar in affiliate_leads; the 'lead' postback is enqueued
+    // here in TS because the sidecar is written after the order row (the DB
+    // trigger only covers status CHANGES — see migration 20260801000200).
+    if (req.method === "POST" && segments[0] === "cpa" && segments[1] === "lead" && segments.length === 2) {
+      const ip = req.headers.get("x-forwarded-for")?.split(",")[0].trim() || "unknown";
+      if (!checkWebhookRateLimit(`cpa:ip:${ip}`)) return cpaError("traffic");
+
+      let body: z.infer<typeof cpaLeadSchema>;
+      try {
+        body = parseBody(cpaLeadSchema, await req.json());
+      } catch (e: any) {
+        return json({ error: e?.message || "Invalid JSON body" }, 400);
+      }
+      // Trackers send numbers and strings interchangeably — normalize once.
+      const s = (v: unknown, max = 300) => (v == null ? "" : String(v).trim().slice(0, max));
+
+      const key = s(body.key, 200)
+        || (url.searchParams.get("key") || "").trim()
+        || (req.headers.get("x-api-key") || "").trim();
+      if (!key) return cpaError("security");
+      if (!checkWebhookRateLimit(`cpa:key:${key.slice(0, 80)}`)) return cpaError("traffic");
+
+      const { data: aff } = await adminClient
+        .from("affiliates")
+        .select("id, code, name, status")
+        .eq("api_key", key)
+        .maybeSingle();
+      if (!aff) return cpaError("security");
+      if (aff.status === "banned") return cpaError("ban");
+      if (aff.status !== "active") return cpaError("security");
+
+      const offerRef = s(body.offer, 200);
+      if (!offerRef) return cpaError("nooffer");
+      const offerBase = adminClient
+        .from("offers")
+        .select("id, product_id, name, geo, payout_eur, price_eur, is_active");
+      const { data: offer } = await (UUID_RE.test(offerRef)
+        ? offerBase.eq("id", offerRef)
+        : offerBase.eq("name", offerRef)
+      ).maybeSingle();
+      if (!offer || !offer.is_active) return cpaError("offer");
+
+      const { data: approval } = await adminClient
+        .from("affiliate_offers")
+        .select("id, status, payout_override_eur")
+        .eq("affiliate_id", aff.id)
+        .eq("offer_id", offer.id)
+        .maybeSingle();
+      if (!approval || approval.status !== "approved") return cpaError("offer");
+
+      const phone = normalizeBgPhone(s(body.phone, 40));
+      if (!phone) return cpaError("nophone");
+
+      // Their lead id = idempotency key; 'auto' (AlterCPA convention) → none.
+      const extRaw = s(body.ext_id ?? body.id, 190);
+      const extId = extRaw && extRaw.toLowerCase() !== "auto" ? extRaw : null;
+      if (extId) {
+        const { data: dupe } = await adminClient
+          .from("affiliate_leads")
+          .select("id, order_id")
+          .eq("affiliate_id", aff.id)
+          .eq("ext_id", extId)
+          .maybeSingle();
+        if (dupe) {
+          // Echo OUR opaque lead ref, never orders.display_id. ORD-xxxxx comes
+          // from one global sequence shared by every order in the CRM, so two
+          // of them hand a partner an exact order-volume odometer.
+          return cpaError("duplicate", { id: dupe.id, uid: extId });
+        }
+      }
+
+      // Phone dedupe: last-8 match against ALL recent orders regardless of
+      // source (call-center semantics — the customer is already in the
+      // pipeline, whoever sent them). Window is admin-tunable; 0 disables.
+      const windowH = await getAffiliateDedupeWindowHours(adminClient);
+      if (windowH > 0) {
+        const last8 = phone.replace(/\D/g, "").slice(-8);
+        const cutoff = new Date(Date.now() - windowH * 3_600_000).toISOString();
+        const { data: dupeOrder } = await adminClient
+          .from("orders")
+          .select("id")
+          .ilike("customer_phone", `%${last8}`)
+          .gte("created_at", cutoff)
+          // Internal duplicates are OUR bookkeeping and must never affect
+          // intake: the copy is inserted with created_at = now(), so without
+          // this filter pressing Duplicate on an old order silently rejects
+          // that customer's genuine new affiliate lead for the whole window.
+          .is("duplicated_from", null)
+          .limit(1)
+          .maybeSingle();
+        // Deliberately NO id in this reply — the matched order can belong to
+        // any channel (prediction list, walk-in, another affiliate). Telling
+        // the sender which order it was would leak our order book.
+        if (dupeOrder) return cpaError("duplicate", { uid: extId });
+      }
+
+      const qty = body.quantity ?? 1;
+      let product: any = null;
+      if (offer.product_id) {
+        const { data } = await adminClient
+          .from("products").select("id, name, price").eq("id", offer.product_id).maybeSingle();
+        product = data;
+      }
+      // Customer price PER PACKAGE. The offer's own price wins so an affiliate
+      // channel can sell at the price its landing page advertises without
+      // repricing the product for the call centre; NULL inherits the product.
+      const unitPrice = Number(offer.price_eur ?? product?.price ?? 0) || 0;
+      // Affiliate commission — FLAT per paid order, never multiplied by qty:
+      // agents upsell to 2-3 packages and the partner still earns exactly this.
+      const payout = Math.round(Number(approval.payout_override_eur ?? offer.payout_eur ?? 0) * 100) / 100;
+      // Always set the external ref so the partial-unique index
+      // (external_source, external_order_id) backstops ext_id races.
+      const externalOrderId = extId ?? crypto.randomUUID();
+
+      const { data: order, error: orderErr } = await adminClient
+        .from("orders")
+        .insert({
+          product_id: product?.id ?? null,
+          product_name: product?.name ?? offer.name,
+          customer_name: s(body.name, 200) || "—",
+          customer_phone: phone,
+          customer_city: s(body.city, 200),
+          customer_address: s(body.address, 600),
+          postal_code: s(body.postal_code, 30),
+          price: Math.round(unitPrice * qty * 100) / 100,
+          quantity: qty,
+          status: "pending",
+          source_type: "affiliate",
+          external_source: `affiliate:${aff.code}`,
+          external_order_id: externalOrderId,
+          // Keep unassigned so it surfaces in the Assigner for distribution.
+          assigned_agent_id: null,
+          assigned_agent_name: null,
+          assigned_at: null,
+        })
+        .select("id, display_id")
+        .single();
+      if (orderErr || !order) {
+        if ((orderErr as any)?.code === "23505") return cpaError("duplicate", { uid: extId });
+        console.error("cpa/lead: order insert failed:", (orderErr as any)?.code);
+        return cpaError("db");
+      }
+
+      const subs = [s(body.sub1) || s(body.wm), s(body.sub2), s(body.sub3), s(body.sub4), s(body.sub5)];
+      const clickid = s(body.clickid) || s(body.cuid) || s(body.fbclid) || s(body.gclid) || s(body.ttclid);
+      const { data: leadRow, error: leadErr } = await adminClient
+        .from("affiliate_leads")
+        .insert({
+          affiliate_id: aff.id,
+          offer_id: offer.id,
+          order_id: order.id,
+          ext_id: extId,
+          clickid: clickid || null,
+          sub1: subs[0] || null,
+          sub2: subs[1] || null,
+          sub3: subs[2] || null,
+          sub4: subs[3] || null,
+          sub5: subs[4] || null,
+          ip: s(body.ip, 64) || ip,
+          ua: s(body.ua, 512) || (req.headers.get("user-agent") || "").slice(0, 512) || null,
+          country: s(body.country, 8).toUpperCase() || null,
+          payout_eur_snapshot: payout,
+        })
+        .select("id")
+        .single();
+      if (leadErr || !leadRow) {
+        // Never leave an affiliate order without its tracking sidecar — the
+        // portal/stats/postbacks would all be blind to it.
+        await adminClient.from("orders").delete().eq("id", order.id);
+        if ((leadErr as any)?.code === "23505") return cpaError("duplicate", { uid: extId });
+        console.error("cpa/lead: sidecar insert failed:", (leadErr as any)?.code);
+        return cpaError("db");
+      }
+
+      // Line item keeps stock/commission math consistent (opencart precedent).
+      await adminClient.from("order_items").insert({
+        order_id: order.id,
+        product_id: product?.id ?? null,
+        product_name: product?.name ?? offer.name,
+        quantity: qty,
+        price_per_unit: unitPrice,
+        total_price: Math.round(unitPrice * qty * 100) / 100,
+      });
+
+      const utm: Array<[string, string]> = [
+        ["source", s(body.us)], ["campaign", s(body.uc)], ["medium", s(body.um)],
+        ["content", s(body.un)], ["term", s(body.ut)],
+      ];
+      const noteBits = [
+        `Affiliate lead from ${aff.name} (${aff.code})`,
+        `Offer: ${offer.name}${offer.geo ? ` [${offer.geo}]` : ""}`,
+        extId ? `Ext ID: ${extId}` : "",
+        clickid ? `Click ID: ${clickid}` : "",
+        subs.some(Boolean)
+          ? `Subs: ${subs.map((v, i) => (v ? `sub${i + 1}=${v}` : "")).filter(Boolean).join(" ")}`
+          : "",
+        utm.some(([, v]) => v)
+          ? `UTM: ${utm.map(([k, v]) => (v ? `${k}=${v}` : "")).filter(Boolean).join(" ")}`
+          : "",
+        s(body.email, 254) ? `Email: ${s(body.email, 254)}` : "",
+      ].filter(Boolean);
+      await adminClient.from("order_notes").insert({
+        order_id: order.id,
+        text: noteBits.join("\n"),
+        author_id: null,
+        author_name: "System",
+      });
+      await adminClient.from("order_history").insert({
+        order_id: order.id,
+        to_status: "pending",
+        changed_by: null,
+        changed_by_name: `System (affiliate:${aff.code})`,
+      });
+
+      // Enqueue the 'lead' postback (best-effort; delivery honors the
+      // affiliate's postback_enabled/postback_events at drain time).
+      const { error: pbErr } = await adminClient.from("affiliate_postbacks").insert({
+        affiliate_id: aff.id,
+        affiliate_lead_id: leadRow.id,
+        order_id: order.id,
+        event: "lead",
+      });
+      if (pbErr) console.error("cpa/lead: postback enqueue failed:", pbErr.code);
+
+      // Ping every super-admin that an affiliate lead just landed (best-effort;
+      // never blocks intake). Same audience as the order-paid oversight ping.
+      try {
+        const { data: adminRows } = await adminClient
+          .from("user_roles").select("user_id").eq("role", "admin");
+        await notifyUsers(adminClient, (adminRows || []).map((r: any) => r.user_id), {
+          type: "affiliate_lead",
+          title: "New affiliate lead",
+          message: `${order.display_id} from ${aff.name} (${aff.code}) — ${offer.name}. ${s(body.name, 120) || "—"} · ${phone}`,
+          link: "/assigner",
+        });
+      } catch (_) { /* notifications must never fail the intake */ }
+
+      // Deliver the 'lead' event in seconds; the cron sweep is the guarantee.
+      nudgePostbackDrain(adminClient);
+
+      // `id` is our OPAQUE lead ref (affiliate_leads.id — already the row key
+      // the portal shows them), never orders.display_id. AlterCPA stores
+      // whatever we return as the lead's external id, so a UUID is fine.
+      return json({ status: "ok", id: leadRow.id, uid: extId ?? leadRow.id });
+    }
+
+    // Status check: GET /api/cpa/leads?key=…&ids=a,b,c (≤50 ids — your ext_ids
+    // and/or our ORD-xxxxx display ids, mixed freely). Returns the affiliate
+    // stage only: no customer data, no internal statuses, no agent identities.
+    if (req.method === "GET" && segments[0] === "cpa" && segments[1] === "leads" && segments.length === 2) {
+      const ip = req.headers.get("x-forwarded-for")?.split(",")[0].trim() || "unknown";
+      if (!checkWebhookRateLimit(`cpa:ip:${ip}`)) return cpaError("traffic");
+      const key = (url.searchParams.get("key") || "").trim()
+        || (req.headers.get("x-api-key") || "").trim();
+      if (!key) return cpaError("security");
+      if (!checkWebhookRateLimit(`cpa:key:${key.slice(0, 80)}`)) return cpaError("traffic");
+
+      const { data: aff } = await adminClient
+        .from("affiliates").select("id, status").eq("api_key", key).maybeSingle();
+      if (!aff) return cpaError("security");
+      if (aff.status === "banned") return cpaError("ban");
+      if (aff.status !== "active") return cpaError("security");
+
+      const ids = (url.searchParams.get("ids") || "")
+        .split(",").map((v) => v.trim()).filter(Boolean).slice(0, 50);
+      if (!ids.length) return cpaError("noid");
+
+      // Match by their ext_id…
+      const { data: byExt } = await adminClient
+        .from("affiliate_leads")
+        .select("id, ext_id, order_id, created_at")
+        .eq("affiliate_id", aff.id)
+        .in("ext_id", ids);
+      // …and by the opaque lead ref we handed back at intake. Our ORD-xxxxx
+      // display ids are deliberately NOT accepted here: resolving one would
+      // confirm the mapping between our order numbering and their lead, which
+      // is exactly what dropping display_id from the responses prevents.
+      const refIds = ids.filter((v) => UUID_RE.test(v));
+      let byRef: any[] = [];
+      if (refIds.length) {
+        const { data } = await adminClient
+          .from("affiliate_leads")
+          .select("id, ext_id, order_id, created_at")
+          .eq("affiliate_id", aff.id)
+          .in("id", refIds);
+        byRef = data || [];
+      }
+      const leadById = new Map<string, any>();
+      for (const l of [...(byExt || []), ...byRef]) leadById.set(l.id, l);
+      if (!leadById.size) return json({ status: "ok", leads: [] });
+
+      const orderIds = [...leadById.values()].map((l) => l.order_id).filter(Boolean);
+      const { data: leadOrders } = await adminClient
+        .from("orders")
+        .select("id, status, cancellation_reason, return_reason, trash_reason")
+        .in("id", orderIds);
+      const orderById = new Map((leadOrders || []).map((o: any) => [o.id, o]));
+
+      const out = [...leadById.values()].map((l) => {
+        const o = orderById.get(l.order_id);
+        const stage = o ? (CPA_STAGE[o.status] || "wait") : "wait";
+        const reason = o && ["cancel", "trash", "return"].includes(stage)
+          ? (o.cancellation_reason || o.return_reason || o.trash_reason || null)
+          : null;
+        return {
+          id: l.id,                    // our opaque lead ref, never ORD-xxxxx
+          uid: l.ext_id ?? l.id,
+          stage,
+          reason,
+          created_at: l.created_at,
+        };
+      });
+      return json({ status: "ok", leads: out });
+    }
+
+    // Drain worker: POST /api/cpa/postbacks/process — poked every minute by
+    // pg_cron→pg_net (migration 20260801000300) and by the admin "Process now"
+    // button. Gated by POSTBACK_DRAIN_SECRET, fail-closed like WEBHOOK_SECRET.
+    // Loops in batches until the queue has nothing due or ~25s elapsed.
+    if (req.method === "POST" && segments[0] === "cpa" && segments[1] === "postbacks"
+        && segments[2] === "process" && segments.length === 3) {
+      const ip = req.headers.get("x-forwarded-for")?.split(",")[0].trim() || "unknown";
+      if (!checkWebhookRateLimit(`cpa:drain:${ip}`, 30)) return json({ error: "Rate limit exceeded" }, 429);
+      const drainSecret = Deno.env.get("POSTBACK_DRAIN_SECRET");
+      if (!drainSecret) {
+        console.error("POSTBACK_DRAIN_SECRET not set — REJECTING drain request (fail-closed)");
+        return json({ error: "Unauthorized" }, 401);
+      }
+      if ((req.headers.get("x-postback-secret") || "") !== drainSecret) {
+        return json({ error: "Unauthorized" }, 401);
+      }
+
+      const started = Date.now();
+      const totals = { claimed: 0, delivered: 0, retried: 0, failed: 0, skipped: 0 };
+      while (Date.now() - started < 25_000) {
+        const r = await drainAffiliatePostbacks(adminClient, 20);
+        totals.claimed += r.claimed;
+        totals.delivered += r.delivered;
+        totals.retried += r.retried;
+        totals.failed += r.failed;
+        totals.skipped += r.skipped;
+        if (r.claimed === 0) break;
+      }
+      return json({ success: true, ...totals });
+    }
+
     // ── PUBLIC TV LEADERBOARD (token-gated, no Supabase auth) ──
     // Aggregates-only, no PII. Drives the always-on wall screen. The token is
     // validated server-side BEFORE the auth gate so a wall TV needs no login.
@@ -1741,7 +2341,18 @@ async function handleRequest(req: Request): Promise<Response> {
     const isAdsAdmin = roles.includes("ads_admin");
     const isAdminOrManager = isAdmin || isManager;
     const isInboundAgent = roles.includes("inbound_agent");
+    const isAffiliate = roles.includes("affiliate");
     const isDualRole = isAdmin && isAgent;
+
+    // HARD WALL for external identities: a login whose ONLY role is
+    // 'affiliate' is a partner, not staff — it may touch nothing but the
+    // affiliate portal surface (plus GET /me). Without this, generic
+    // authenticated list routes (products, call-scripts, …) would answer an
+    // affiliate login with internal data.
+    const hasInternalRole = roles.some((r: string) => r !== "affiliate");
+    if (isAffiliate && !hasInternalRole && segments[0] !== "affiliate" && path !== "me") {
+      return json({ error: "Forbidden" }, 403);
+    }
 
     // The edge function now ENFORCES the same role_permissions + role_privacy that
     // the Settings UI writes (it used to be frontend-only). Admin-first, fail-safe
@@ -1767,6 +2378,579 @@ async function handleRequest(req: Request): Promise<Response> {
     // ============================================================
     // ROUTING
     // ============================================================
+
+    // ── AFFILIATES ADMIN ─────────────────────────────────────────────
+    // View = admin/manager; ALL mutations = admin-only (operator decision
+    // 2026-07-09: managers are read-only here — keys, payouts and offers are
+    // money/credential surfaces). The public intake lives at /cpa/* above the
+    // auth gate; the affiliate's own portal endpoints arrive in Increment 5.
+
+    // List affiliates + per-affiliate lead/payout rollups + postback health.
+    if (req.method === "GET" && path === "affiliates") {
+      if (!isAdminOrManager) return json({ error: "Forbidden" }, 403);
+      const { data: affs, error } = await adminClient
+        .from("affiliates")
+        .select("id, user_id, code, name, contact, api_key, status, postback_url, postback_enabled, postback_events, postback_format, notes, created_at, updated_at")
+        .order("created_at", { ascending: false });
+      if (error) return json({ error: sanitizeDbError(error) }, 400);
+
+      const { data: leadRows } = await adminClient
+        .from("affiliate_leads")
+        .select("affiliate_id, payout_eur_snapshot, orders(status)");
+      const agg = new Map<string, any>();
+      for (const l of (leadRows || []) as any[]) {
+        const a = agg.get(l.affiliate_id) ||
+          { sent: 0, wait: 0, hold: 0, paid: 0, cancelled: 0, trashed: 0, returned: 0, payout_hold: 0, payout_earned: 0 };
+        a.sent++;
+        const stage = l.orders?.status ? CPA_STAGE[l.orders.status] : undefined;
+        const p = Number(l.payout_eur_snapshot) || 0;
+        if (stage === "wait") a.wait++;
+        else if (stage === "hold") { a.hold++; a.payout_hold += p; }
+        else if (stage === "approve") { a.paid++; a.payout_earned += p; }
+        else if (stage === "cancel") a.cancelled++;
+        else if (stage === "trash") a.trashed++;
+        else if (stage === "return") a.returned++;
+        agg.set(l.affiliate_id, a);
+      }
+      const { data: pbRows } = await adminClient
+        .from("affiliate_postbacks").select("affiliate_id, status").in("status", ["pending", "failed"]);
+      const pbAgg = new Map<string, { pending: number; failed: number }>();
+      for (const r of (pbRows || []) as any[]) {
+        const x = pbAgg.get(r.affiliate_id) || { pending: 0, failed: 0 };
+        if (r.status === "pending") x.pending++;
+        if (r.status === "failed") x.failed++;
+        pbAgg.set(r.affiliate_id, x);
+      }
+      const round2 = (n: number) => Math.round(n * 100) / 100;
+      const out = (affs || []).map((a: any) => {
+        const s = agg.get(a.id) ||
+          { sent: 0, wait: 0, hold: 0, paid: 0, cancelled: 0, trashed: 0, returned: 0, payout_hold: 0, payout_earned: 0 };
+        s.payout_hold = round2(s.payout_hold);
+        s.payout_earned = round2(s.payout_earned);
+        return {
+          ...a,
+          // Managers see the program, never the credentials.
+          api_key: isAdmin ? a.api_key : undefined,
+          stats: s,
+          postbacks: pbAgg.get(a.id) || { pending: 0, failed: 0 },
+        };
+      });
+      return json(out);
+    }
+
+    // Create affiliate (+ optional portal login with the 'affiliate' role).
+    if (req.method === "POST" && path === "affiliates") {
+      if (!isAdmin) return json({ error: "Forbidden — admin only" }, 403);
+      if (!checkUserRateLimit(user.id, "affiliates.create", 10)) return json({ error: "Too many requests" }, 429);
+      let body;
+      try { body = parseBody(createAffiliateSchema, await req.json()); } catch (e: any) { return json({ error: e.message }, 400); }
+      const apiKey = "aff_" + Array.from(crypto.getRandomValues(new Uint8Array(32)))
+        .map((b) => b.toString(16).padStart(2, "0")).join("");
+
+      let linkedUserId: string | null = null;
+      if (body.create_login) {
+        const { data: created, error: cuErr } = await adminClient.auth.admin.createUser({
+          email: body.create_login.email,
+          password: body.create_login.password,
+          email_confirm: true,
+        });
+        if (cuErr || !created?.user) return json({ error: cuErr ? sanitizeDbError(cuErr) : "Could not create login" }, 400);
+        linkedUserId = created.user.id;
+        const { error: roleErr } = await adminClient.from("user_roles")
+          .insert({ user_id: linkedUserId, role: "affiliate" });
+        if (roleErr) {
+          await adminClient.auth.admin.deleteUser(linkedUserId);
+          return json({ error: sanitizeDbError(roleErr) }, 400);
+        }
+        // profiles row is auto-created by handle_new_user(); stamp the display name.
+        await adminClient.from("profiles").update({ full_name: body.name }).eq("user_id", linkedUserId);
+      }
+
+      const { data: aff, error } = await adminClient.from("affiliates").insert({
+        name: body.name,
+        code: body.code,
+        contact: body.contact || null,
+        notes: body.notes || null,
+        api_key: apiKey,
+        user_id: linkedUserId,
+      }).select().single();
+      if (error) {
+        // Don't leave an orphan login if the affiliate row failed (dup code etc.).
+        if (linkedUserId) await adminClient.auth.admin.deleteUser(linkedUserId);
+        return json({ error: sanitizeDbError(error) }, 400);
+      }
+      await audit(adminClient, user.id, user.email, "affiliate.create", {
+        target_type: "affiliate", target_id: aff.id,
+        payload: { code: body.code, with_login: !!body.create_login },
+      });
+      return json(aff);
+    }
+
+    // Update affiliate fields / status / postback config.
+    if (req.method === "PATCH" && segments[0] === "affiliates" && segments.length === 2 && UUID_RE.test(segments[1])) {
+      if (!isAdmin) return json({ error: "Forbidden — admin only" }, 403);
+      if (!checkUserRateLimit(user.id, "affiliates.update", 30)) return json({ error: "Too many requests" }, 429);
+      let body;
+      try { body = parseBody(updateAffiliateSchema, await req.json()); } catch (e: any) { return json({ error: e.message }, 400); }
+      if (body.postback_url && !isSafePostbackUrl(body.postback_url)) {
+        return json({ error: "Postback URL must be a public http(s) address" }, 400);
+      }
+      const update: Record<string, unknown> = {};
+      for (
+        const k of [
+          "name", "contact", "notes", "status", "postback_url", "postback_enabled",
+          "postback_events", "postback_format", "altercpa_reason_map",
+        ] as const
+      ) {
+        if (body[k] !== undefined) update[k] = body[k];
+      }
+      if (!Object.keys(update).length) return json({ error: "Nothing to update" }, 400);
+      const { data: aff, error } = await adminClient.from("affiliates")
+        .update(update).eq("id", segments[1]).select().single();
+      if (error) return json({ error: sanitizeDbError(error) }, 400);
+      await audit(adminClient, user.id, user.email, "affiliate.update", {
+        target_type: "affiliate", target_id: segments[1], payload: { fields: Object.keys(update) },
+      });
+      return json(aff);
+    }
+
+    // Rotate the S2S api key. Returned once; old key dies immediately.
+    if (req.method === "POST" && segments[0] === "affiliates" && segments[2] === "rotate-key" && segments.length === 3) {
+      if (!isAdmin) return json({ error: "Forbidden — admin only" }, 403);
+      if (!checkUserRateLimit(user.id, "affiliates.rotate", 10)) return json({ error: "Too many requests" }, 429);
+      if (!UUID_RE.test(segments[1])) return json({ error: "Invalid id" }, 400);
+      const apiKey = "aff_" + Array.from(crypto.getRandomValues(new Uint8Array(32)))
+        .map((b) => b.toString(16).padStart(2, "0")).join("");
+      const { error } = await adminClient.from("affiliates")
+        .update({ api_key: apiKey }).eq("id", segments[1]);
+      if (error) return json({ error: sanitizeDbError(error) }, 400);
+      await audit(adminClient, user.id, user.email, "affiliate.rotate_key", {
+        target_type: "affiliate", target_id: segments[1],
+      });
+      return json({ api_key: apiKey });
+    }
+
+    // Per-affiliate stats: totals + per-day series in [from, to] (default 30d).
+    if (req.method === "GET" && segments[0] === "affiliates" && segments[2] === "stats" && segments.length === 3) {
+      if (!isAdminOrManager) return json({ error: "Forbidden" }, 403);
+      if (!UUID_RE.test(segments[1])) return json({ error: "Invalid id" }, 400);
+      const to = url.searchParams.get("to") || new Date().toISOString().slice(0, 10);
+      const from = url.searchParams.get("from") ||
+        new Date(Date.now() - 29 * 86_400_000).toISOString().slice(0, 10);
+      const { data: rows, error } = await adminClient
+        .from("affiliate_leads")
+        .select("created_at, payout_eur_snapshot, orders(status)")
+        .eq("affiliate_id", segments[1])
+        .gte("created_at", `${from}T00:00:00Z`)
+        .lte("created_at", `${to}T23:59:59Z`);
+      if (error) return json({ error: sanitizeDbError(error) }, 400);
+      const totals = { sent: 0, wait: 0, hold: 0, paid: 0, cancelled: 0, trashed: 0, returned: 0, payout_hold: 0, payout_earned: 0 };
+      const days = new Map<string, any>();
+      for (const l of (rows || []) as any[]) {
+        const day = String(l.created_at).slice(0, 10);
+        const d = days.get(day) || { date: day, sent: 0, wait: 0, hold: 0, paid: 0, cancelled: 0, trashed: 0, returned: 0 };
+        d.sent++; totals.sent++;
+        const stage = l.orders?.status ? CPA_STAGE[l.orders.status] : undefined;
+        const p = Number(l.payout_eur_snapshot) || 0;
+        if (stage === "wait") { d.wait++; totals.wait++; }
+        else if (stage === "hold") { d.hold++; totals.hold++; totals.payout_hold += p; }
+        else if (stage === "approve") { d.paid++; totals.paid++; totals.payout_earned += p; }
+        else if (stage === "cancel") { d.cancelled++; totals.cancelled++; }
+        else if (stage === "trash") { d.trashed++; totals.trashed++; }
+        else if (stage === "return") { d.returned++; totals.returned++; }
+        days.set(day, d);
+      }
+      totals.payout_hold = Math.round(totals.payout_hold * 100) / 100;
+      totals.payout_earned = Math.round(totals.payout_earned * 100) / 100;
+      return json({ totals, days: [...days.values()].sort((a, b) => a.date.localeCompare(b.date)), from, to });
+    }
+
+    // Approvals for one affiliate (offers embed for display).
+    if (req.method === "GET" && segments[0] === "affiliates" && segments[2] === "offers" && segments.length === 3) {
+      if (!isAdminOrManager) return json({ error: "Forbidden" }, 403);
+      if (!UUID_RE.test(segments[1])) return json({ error: "Invalid id" }, 400);
+      const { data, error } = await adminClient
+        .from("affiliate_offers")
+        .select("id, affiliate_id, offer_id, status, payout_override_eur, created_at, offers(id, name, geo, payout_eur, is_active)")
+        .eq("affiliate_id", segments[1])
+        .order("created_at", { ascending: false });
+      if (error) return json({ error: sanitizeDbError(error) }, 400);
+      return json(data || []);
+    }
+
+    // Approve an offer for an affiliate (upsert; optional payout override).
+    if (req.method === "POST" && segments[0] === "affiliates" && segments[2] === "offers" && segments.length === 3) {
+      if (!isAdmin) return json({ error: "Forbidden — admin only" }, 403);
+      if (!checkUserRateLimit(user.id, "affiliates.approve", 30)) return json({ error: "Too many requests" }, 429);
+      if (!UUID_RE.test(segments[1])) return json({ error: "Invalid id" }, 400);
+      let body;
+      try { body = parseBody(approveAffiliateOfferSchema, await req.json()); } catch (e: any) { return json({ error: e.message }, 400); }
+      const { data, error } = await adminClient.from("affiliate_offers").upsert({
+        affiliate_id: segments[1],
+        offer_id: body.offer_id,
+        status: "approved",
+        payout_override_eur: body.payout_override_eur ?? null,
+      }, { onConflict: "affiliate_id,offer_id" }).select().single();
+      if (error) return json({ error: sanitizeDbError(error) }, 400);
+      await audit(adminClient, user.id, user.email, "affiliate.offer_approve", {
+        target_type: "affiliate", target_id: segments[1], payload: { offer_id: body.offer_id },
+      });
+      return json(data);
+    }
+
+    // Pause / edit override on an approval.
+    if (req.method === "PATCH" && segments[0] === "affiliate-offers" && segments.length === 2 && UUID_RE.test(segments[1])) {
+      if (!isAdmin) return json({ error: "Forbidden — admin only" }, 403);
+      let body;
+      try { body = parseBody(updateAffiliateOfferSchema, await req.json()); } catch (e: any) { return json({ error: e.message }, 400); }
+      const update: Record<string, unknown> = {};
+      if (body.status !== undefined) update.status = body.status;
+      if (body.payout_override_eur !== undefined) update.payout_override_eur = body.payout_override_eur;
+      if (!Object.keys(update).length) return json({ error: "Nothing to update" }, 400);
+      const { data, error } = await adminClient.from("affiliate_offers")
+        .update(update).eq("id", segments[1]).select().single();
+      if (error) return json({ error: sanitizeDbError(error) }, 400);
+      await audit(adminClient, user.id, user.email, "affiliate.offer_update", {
+        target_type: "affiliate_offer", target_id: segments[1], payload: update,
+      });
+      return json(data);
+    }
+
+    // Revoke an approval entirely (affiliate loses the offer).
+    if (req.method === "DELETE" && segments[0] === "affiliate-offers" && segments.length === 2 && UUID_RE.test(segments[1])) {
+      if (!isAdmin) return json({ error: "Forbidden — admin only" }, 403);
+      const { error } = await adminClient.from("affiliate_offers").delete().eq("id", segments[1]);
+      if (error) return json({ error: sanitizeDbError(error) }, 400);
+      await audit(adminClient, user.id, user.email, "affiliate.offer_revoke", {
+        target_type: "affiliate_offer", target_id: segments[1],
+      });
+      return json({ success: true });
+    }
+
+    // Offers catalogue (admin view; product embed for the picker/labels).
+    if (req.method === "GET" && path === "offers") {
+      if (!isAdminOrManager) return json({ error: "Forbidden" }, 403);
+      const { data, error } = await adminClient
+        .from("offers")
+        .select("id, product_id, name, geo, payout_eur, price_eur, is_active, description, terms, created_at, updated_at, products(name, price)")
+        .order("created_at", { ascending: false });
+      if (error) return json({ error: sanitizeDbError(error) }, 400);
+      return json(data || []);
+    }
+
+    // Create / edit offers. No DELETE — retire with is_active=false (leads
+    // keep referencing historical offers).
+    if (req.method === "POST" && path === "offers") {
+      if (!isAdmin) return json({ error: "Forbidden — admin only" }, 403);
+      if (!checkUserRateLimit(user.id, "offers.create", 20)) return json({ error: "Too many requests" }, 429);
+      let body;
+      try { body = parseBody(offerCreateSchema, await req.json()); } catch (e: any) { return json({ error: e.message }, 400); }
+      const { data, error } = await adminClient.from("offers").insert({
+        name: body.name,
+        product_id: body.product_id ?? null,
+        geo: body.geo || "BG",
+        payout_eur: body.payout_eur,
+        price_eur: body.price_eur ?? null,
+        description: body.description || null,
+        terms: body.terms || null,
+        is_active: body.is_active,
+      }).select("*, products(name, price)").single();
+      if (error) return json({ error: sanitizeDbError(error) }, 400);
+      await audit(adminClient, user.id, user.email, "offer.create", {
+        target_type: "offer", target_id: data.id, payload: { name: body.name, payout_eur: body.payout_eur },
+      });
+      return json(data);
+    }
+
+    if (req.method === "PATCH" && segments[0] === "offers" && segments.length === 2 && UUID_RE.test(segments[1])) {
+      if (!isAdmin) return json({ error: "Forbidden — admin only" }, 403);
+      if (!checkUserRateLimit(user.id, "offers.update", 30)) return json({ error: "Too many requests" }, 429);
+      let body;
+      try { body = parseBody(offerUpdateSchema, await req.json()); } catch (e: any) { return json({ error: e.message }, 400); }
+      const update: Record<string, unknown> = {};
+      for (const k of ["name", "product_id", "geo", "payout_eur", "price_eur", "description", "terms", "is_active"] as const) {
+        if (body[k] !== undefined) update[k] = body[k];
+      }
+      if (!Object.keys(update).length) return json({ error: "Nothing to update" }, 400);
+      const { data, error } = await adminClient.from("offers")
+        .update(update).eq("id", segments[1]).select("*, products(name, price)").single();
+      if (error) return json({ error: sanitizeDbError(error) }, 400);
+      await audit(adminClient, user.id, user.email, "offer.update", {
+        target_type: "offer", target_id: segments[1], payload: { fields: Object.keys(update) },
+      });
+      return json(data);
+    }
+
+    // Postback delivery log (paginated, filterable).
+    if (req.method === "GET" && path === "affiliate-postbacks") {
+      if (!isAdminOrManager) return json({ error: "Forbidden" }, 403);
+      const page = Math.max(1, Number(url.searchParams.get("page")) || 1);
+      const limit = Math.min(100, Math.max(1, Number(url.searchParams.get("limit")) || 30));
+      let q = adminClient
+        .from("affiliate_postbacks")
+        // last_response_body is REQUIRED here: partners answer HTTP 200 with
+        // the real verdict in the body, so without it the log shows a green
+        // "delivered" for calls the partner actually rejected.
+        .select("id, affiliate_id, affiliate_lead_id, order_id, event, reason, status, attempts, next_attempt_at, rendered_url, last_response_code, last_response_body, last_error, created_at, delivered_at, affiliates(code, name), affiliate_leads(ext_id, clickid)", { count: "exact" })
+        .order("created_at", { ascending: false })
+        .range((page - 1) * limit, page * limit - 1);
+      const fAff = url.searchParams.get("affiliate_id");
+      const fStatus = url.searchParams.get("status");
+      const fEvent = url.searchParams.get("event");
+      if (fAff && UUID_RE.test(fAff)) q = q.eq("affiliate_id", fAff);
+      if (fStatus && ["pending", "delivered", "failed", "skipped"].includes(fStatus)) q = q.eq("status", fStatus);
+      if (fEvent && ["lead", "hold", "approve", "cancel", "trash", "return", "test"].includes(fEvent)) q = q.eq("event", fEvent);
+      const { data, error, count } = await q;
+      if (error) return json({ error: sanitizeDbError(error) }, 400);
+      return json({ rows: data || [], total: count || 0, page, limit });
+    }
+
+    // Re-queue one postback (any state) and nudge delivery.
+    if (req.method === "POST" && segments[0] === "affiliate-postbacks" && segments[2] === "retry" && segments.length === 3) {
+      if (!isAdmin) return json({ error: "Forbidden — admin only" }, 403);
+      if (!UUID_RE.test(segments[1])) return json({ error: "Invalid id" }, 400);
+      const { error } = await adminClient.from("affiliate_postbacks").update({
+        status: "pending", attempts: 0, next_attempt_at: new Date().toISOString(), last_error: null,
+      }).eq("id", segments[1]);
+      if (error) return json({ error: sanitizeDbError(error) }, 400);
+      await audit(adminClient, user.id, user.email, "postback.retry", {
+        target_type: "affiliate_postback", target_id: segments[1],
+      });
+      nudgePostbackDrain(adminClient);
+      return json({ success: true });
+    }
+
+    // Manual "Process now" — drains inline and returns counters.
+    if (req.method === "POST" && path === "affiliate-postbacks/process-now") {
+      if (!isAdmin) return json({ error: "Forbidden — admin only" }, 403);
+      if (!checkUserRateLimit(user.id, "postbacks.process", 10)) return json({ error: "Too many requests" }, 429);
+      const started = Date.now();
+      const totals = { claimed: 0, delivered: 0, retried: 0, failed: 0, skipped: 0 };
+      while (Date.now() - started < 15_000) {
+        const r = await drainAffiliatePostbacks(adminClient, 20);
+        totals.claimed += r.claimed;
+        totals.delivered += r.delivered;
+        totals.retried += r.retried;
+        totals.failed += r.failed;
+        totals.skipped += r.skipped;
+        if (r.claimed === 0) break;
+      }
+      return json({ success: true, ...totals });
+    }
+
+    // ── AFFILIATE PORTAL (self-scoped) ───────────────────────────────
+    // The webmaster's own view. Gate = the 'affiliate' role + a linked
+    // affiliates row resolved from user.id server-side — NEVER from client
+    // input. Admins may also hit these for support (they see their own linked
+    // row, or 404). Exposes ONLY: own config, approved offers, own lead stages
+    // (customer phone masked to last 4 — operator decision 2026-07-09), and
+    // the postback trio. No agent identities, no internal statuses, no PII.
+    if (segments[0] === "affiliate") {
+      if (!isAffiliate && !isAdmin) return json({ error: "Forbidden" }, 403);
+      if (!checkUserRateLimit(user.id, "affiliate.portal", 60)) return json({ error: "Too many requests" }, 429);
+      const { data: myAff } = await adminClient
+        .from("affiliates")
+        .select("id, code, name, contact, status, api_key, postback_url, postback_enabled, postback_events, created_at")
+        .eq("user_id", user.id)
+        .maybeSingle();
+      if (!myAff) return json({ error: "No affiliate account linked to this login" }, 404);
+
+      // GET /affiliate/me — own config incl. the S2S key (it's their credential).
+      if (req.method === "GET" && path === "affiliate/me") {
+        return json(myAff);
+      }
+
+      // GET /affiliate/offers — approved + active offers with effective payout.
+      if (req.method === "GET" && path === "affiliate/offers") {
+        const { data: approvals, error } = await adminClient
+          .from("affiliate_offers")
+          .select("offer_id, status, payout_override_eur, offers(id, name, geo, payout_eur, description, terms, is_active, products(name))")
+          .eq("affiliate_id", myAff.id)
+          .eq("status", "approved");
+        if (error) return json({ error: sanitizeDbError(error) }, 400);
+        const out = (approvals || [])
+          .filter((a: any) => a.offers?.is_active)
+          .map((a: any) => ({
+            offer_id: a.offer_id,
+            name: a.offers.name,
+            geo: a.offers.geo,
+            payout_eur: Number(a.payout_override_eur ?? a.offers.payout_eur) || 0,
+            description: a.offers.description,
+            terms: a.offers.terms,
+            product_name: a.offers.products?.name ?? null,
+          }));
+        return json(out);
+      }
+
+      // GET /affiliate/stats?from&to — own totals + per-day series (default 30d).
+      if (req.method === "GET" && path === "affiliate/stats") {
+        const to = url.searchParams.get("to") || new Date().toISOString().slice(0, 10);
+        const from = url.searchParams.get("from") ||
+          new Date(Date.now() - 29 * 86_400_000).toISOString().slice(0, 10);
+        const { data: rows, error } = await adminClient
+          .from("affiliate_leads")
+          .select("created_at, payout_eur_snapshot, orders(status)")
+          .eq("affiliate_id", myAff.id)
+          .gte("created_at", `${from}T00:00:00Z`)
+          .lte("created_at", `${to}T23:59:59Z`);
+        if (error) return json({ error: sanitizeDbError(error) }, 400);
+        const totals = { sent: 0, wait: 0, hold: 0, paid: 0, cancelled: 0, trashed: 0, returned: 0, payout_hold: 0, payout_earned: 0 };
+        const days = new Map<string, any>();
+        for (const l of (rows || []) as any[]) {
+          const day = String(l.created_at).slice(0, 10);
+          const d = days.get(day) || { date: day, sent: 0, wait: 0, hold: 0, paid: 0, cancelled: 0, trashed: 0, returned: 0 };
+          d.sent++; totals.sent++;
+          const stage = l.orders?.status ? CPA_STAGE[l.orders.status] : undefined;
+          const p = Number(l.payout_eur_snapshot) || 0;
+          if (stage === "wait") { d.wait++; totals.wait++; }
+          else if (stage === "hold") { d.hold++; totals.hold++; totals.payout_hold += p; }
+          else if (stage === "approve") { d.paid++; totals.paid++; totals.payout_earned += p; }
+          else if (stage === "cancel") { d.cancelled++; totals.cancelled++; }
+          else if (stage === "trash") { d.trashed++; totals.trashed++; }
+          else if (stage === "return") { d.returned++; totals.returned++; }
+          days.set(day, d);
+        }
+        totals.payout_hold = Math.round(totals.payout_hold * 100) / 100;
+        totals.payout_earned = Math.round(totals.payout_earned * 100) / 100;
+        return json({ totals, days: [...days.values()].sort((a, b) => a.date.localeCompare(b.date)), from, to });
+      }
+
+      // GET /affiliate/leads?page&limit&stage — own leads, phone masked.
+      if (req.method === "GET" && path === "affiliate/leads") {
+        const page = Math.max(1, Number(url.searchParams.get("page")) || 1);
+        const limit = Math.min(100, Math.max(1, Number(url.searchParams.get("limit")) || 30));
+        const stageFilter = url.searchParams.get("stage") || "";
+        const STAGE_STATUSES: Record<string, string[]> = {
+          wait: ["pending", "take", "call_again"],
+          hold: ["confirmed", "shipped", "delivered"],
+          approve: ["paid"],
+          cancel: ["cancelled"],
+          trash: ["trashed"],
+          return: ["returned"],
+        };
+        let q = adminClient
+          .from("affiliate_leads")
+          .select("id, ext_id, clickid, sub1, sub2, sub3, sub4, sub5, payout_eur_snapshot, created_at, offers(name), orders!inner(status, customer_name, customer_phone, cancellation_reason, return_reason, trash_reason)", { count: "exact" })
+          .eq("affiliate_id", myAff.id)
+          .order("created_at", { ascending: false })
+          .range((page - 1) * limit, page * limit - 1);
+        if (STAGE_STATUSES[stageFilter]) {
+          q = q.in("orders.status", STAGE_STATUSES[stageFilter]);
+        }
+        const { data, error, count } = await q;
+        if (error) return json({ error: sanitizeDbError(error) }, 400);
+        const rows = (data || []).map((l: any) => {
+          const st = l.orders?.status as string | undefined;
+          const stage = st ? (CPA_STAGE[st] || "wait") : "wait";
+          const phone = String(l.orders?.customer_phone || "");
+          return {
+            id: l.id,
+            ext_id: l.ext_id,
+            clickid: l.clickid,
+            sub1: l.sub1, sub2: l.sub2, sub3: l.sub3, sub4: l.sub4, sub5: l.sub5,
+            offer_name: l.offers?.name ?? null,
+            payout_eur: Number(l.payout_eur_snapshot) || 0,
+            created_at: l.created_at,
+            stage,
+            reason: ["cancel", "trash", "return"].includes(stage)
+              ? (l.orders?.cancellation_reason || l.orders?.return_reason || l.orders?.trash_reason || null)
+              : null,
+            customer_name: l.orders?.customer_name ?? null,
+            phone_masked: phone ? `••••${phone.replace(/\D/g, "").slice(-4)}` : null,
+          };
+        });
+        return json({ rows, total: count || 0, page, limit });
+      }
+
+      // PATCH /affiliate/postback — self-service postback config only.
+      if (req.method === "PATCH" && path === "affiliate/postback") {
+        if (!checkUserRateLimit(user.id, "affiliate.postback", 10)) return json({ error: "Too many requests" }, 429);
+        let body;
+        try { body = parseBody(affiliateSelfPostbackSchema, await req.json()); } catch (e: any) { return json({ error: e.message }, 400); }
+        if (body.postback_url && !isSafePostbackUrl(body.postback_url)) {
+          return json({ error: "Postback URL must be a public http(s) address" }, 400);
+        }
+        const update: Record<string, unknown> = {};
+        if (body.postback_url !== undefined) update.postback_url = body.postback_url || null;
+        if (body.postback_enabled !== undefined) update.postback_enabled = body.postback_enabled;
+        if (body.postback_events !== undefined) update.postback_events = body.postback_events;
+        if (!Object.keys(update).length) return json({ error: "Nothing to update" }, 400);
+        const { data, error } = await adminClient.from("affiliates")
+          .update(update).eq("id", myAff.id)
+          .select("postback_url, postback_enabled, postback_events").single();
+        if (error) return json({ error: sanitizeDbError(error) }, 400);
+        await audit(adminClient, user.id, user.email, "affiliate.self_postback_update", {
+          target_type: "affiliate", target_id: myAff.id, payload: { fields: Object.keys(update) },
+        });
+        return json(data);
+      }
+
+      // POST /affiliate/rotate-key — self-service key rotation.
+      if (req.method === "POST" && path === "affiliate/rotate-key") {
+        if (!checkUserRateLimit(user.id, "affiliate.rotate", 5)) return json({ error: "Too many requests" }, 429);
+        const apiKey = "aff_" + Array.from(crypto.getRandomValues(new Uint8Array(32)))
+          .map((b) => b.toString(16).padStart(2, "0")).join("");
+        const { error } = await adminClient.from("affiliates")
+          .update({ api_key: apiKey }).eq("id", myAff.id);
+        if (error) return json({ error: sanitizeDbError(error) }, 400);
+        await audit(adminClient, user.id, user.email, "affiliate.self_rotate_key", {
+          target_type: "affiliate", target_id: myAff.id,
+        });
+        return json({ api_key: apiKey });
+      }
+
+      // POST /affiliate/postback-test — fire a 'test' event at their URL now
+      // (bypasses postback_enabled so they can test BEFORE going live).
+      if (req.method === "POST" && path === "affiliate/postback-test") {
+        if (!checkUserRateLimit(user.id, "affiliate.pbtest", 10)) return json({ error: "Too many requests" }, 429);
+        if (!myAff.postback_url) return json({ error: "Set a postback URL first" }, 400);
+        // Attach the newest lead for realistic macros; synthetic values otherwise.
+        const { data: lastLead } = await adminClient
+          .from("affiliate_leads").select("id, order_id")
+          .eq("affiliate_id", myAff.id)
+          .order("created_at", { ascending: false })
+          .limit(1).maybeSingle();
+        const { data: row, error: insErr } = await adminClient
+          .from("affiliate_postbacks")
+          .insert({
+            affiliate_id: myAff.id,
+            affiliate_lead_id: lastLead?.id ?? null,
+            order_id: lastLead?.order_id ?? null,
+            event: "test",
+          })
+          .select("id").single();
+        if (insErr || !row) return json({ error: insErr ? sanitizeDbError(insErr) : "Could not enqueue test" }, 400);
+        // Drain until our row settles (it may not be in the first claim batch).
+        for (let i = 0; i < 3; i++) {
+          await drainAffiliatePostbacks(adminClient, 20);
+          const { data: check } = await adminClient
+            .from("affiliate_postbacks")
+            .select("status").eq("id", row.id).maybeSingle();
+          if (check && check.status !== "pending") break;
+        }
+        const { data: result } = await adminClient
+          .from("affiliate_postbacks")
+          .select("status, rendered_url, last_response_code, last_response_body, last_error")
+          .eq("id", row.id).maybeSingle();
+        return json(result || { status: "pending" });
+      }
+
+      // POST /affiliate/change-password — self-service password change for the
+      // logged-in affiliate. Updates their own auth user; no CRM access widens.
+      if (req.method === "POST" && path === "affiliate/change-password") {
+        if (!checkUserRateLimit(user.id, "affiliate.password", 5)) return json({ error: "Too many requests" }, 429);
+        let body;
+        try { body = parseBody(affiliatePasswordSchema, await req.json()); } catch (e: any) { return json({ error: e.message }, 400); }
+        const { error } = await adminClient.auth.admin.updateUserById(user.id, { password: body.new_password });
+        if (error) return json({ error: sanitizeDbError(error) }, 400);
+        await audit(adminClient, user.id, user.email, "affiliate.change_password", {
+          target_type: "affiliate", target_id: myAff.id,
+        });
+        return json({ success: true });
+      }
+
+      return json({ error: "Not found" }, 404);
+    }
 
     // ── TV LEADERBOARD ADMIN (roster / bonus rules / access tokens) ──
     // Admin/manager only. The public board is the separate token-gated
@@ -1845,7 +3029,9 @@ async function handleRequest(req: Request): Promise<Response> {
     // secret (never anyone else's). Auto-assigns the lowest free pool extension
     // on first use. This replaces the shared, hardcoded extension/secret that
     // used to ship in the JS bundle, and lets every account register as its own
-    // line (concurrent calls are still capped at 4 by the A1 trunk).
+    // line. SIP extensions are cheap and plentiful; what is capped is the number
+    // of SIMULTANEOUS calls, by the A1 trunk's channel limit (see VOIP Health →
+    // Lines & Trunk for the live value — never hardcode it here).
     if (req.method === "GET" && path === "voip/credentials") {
       let { data: mine } = await adminClient
         .from("telephony_extensions")
@@ -2058,6 +3244,22 @@ async function handleRequest(req: Request): Promise<Response> {
       } catch (_e) { return []; }
     };
 
+    // PostgREST caps a single response at db-max-rows (1000 on Supabase), so a
+    // plain .limit(5000)/.limit(20000) SILENTLY returns 1000 rows — at ~1,000
+    // calls/day that quietly under-reported every VOIP figure on this page.
+    // Page with .range() instead. Same workaround as scripts/backfill-recordings.mjs.
+    // maxRows is a runaway guard, not a business limit.
+    const fetchAllRows = async (build: (from: number, to: number) => any, maxRows = 60000): Promise<any[]> => {
+      const out: any[] = [];
+      for (let off = 0; off < maxRows; off += 1000) {
+        const { data, error } = await build(off, off + 999);
+        if (error || !data?.length) break;
+        out.push(...data);
+        if (data.length < 1000) break;
+      }
+      return out;
+    };
+
     // GET /api/voip/health — live PBX pull + today's DB-derived call/recording/
     // quality stats + computed incidents[] (drives the page AND the alert banner).
     if (req.method === "GET" && path === "voip/health") {
@@ -2065,18 +3267,20 @@ async function handleRequest(req: Request): Promise<Response> {
       const dayStart = new Date(); dayStart.setHours(0, 0, 0, 0);
       const sinceIso = dayStart.toISOString();
 
-      const [pbx, recs, logsRes, qualRes, lastSnapRes] = await Promise.all([
+      const [pbx, recs, logsRes, qualRes, lastSnapRes, cycle] = await Promise.all([
         fetchPbxHealth(),
         fetchRecordingsList(),
-        adminClient.from("call_logs")
+        fetchAllRows((f, t) => adminClient.from("call_logs")
           .select("id,customer_phone,started_at,connected_at,ended_at,connection_state,total_seconds,outcome")
-          .gte("created_at", sinceIso).limit(5000),
-        adminClient.from("call_quality")
-          .select("one_way_audio,packet_loss_pct,hangup_cause").gte("captured_at", sinceIso).limit(5000),
+          .gte("created_at", sinceIso).order("created_at", { ascending: false }).range(f, t)),
+        fetchAllRows((f, t) => adminClient.from("call_quality")
+          .select("one_way_audio,packet_loss_pct,hangup_cause")
+          .gte("captured_at", sinceIso).order("captured_at", { ascending: false }).range(f, t)),
         adminClient.from("pbx_health_snapshots").select("captured_at").order("captured_at", { ascending: false }).limit(1).maybeSingle(),
+        computeVoipCycle(adminClient),
       ]);
-      const logs = logsRes.data || [];
-      const quals = qualRes.data || [];
+      const logs = logsRes || [];
+      const quals = qualRes || [];
 
       const answered = logs.filter((l: any) => l.connection_state === "answered" || l.connected_at);
       const outboundSeconds = logs.reduce((s: number, l: any) => s + (l.total_seconds || 0), 0);
@@ -2106,6 +3310,24 @@ async function handleRequest(req: Request): Promise<Response> {
       if (!isNaN(banned) && banned >= 10) incidents.push({ level: "warning", code: "attacks", message: `${banned} IPs currently banned (fail2ban)` });
       if (answeredCount >= 10 && coveragePct < 80) incidents.push({ level: "warning", code: "low_coverage", message: `Only ${coveragePct}% of answered calls recorded today` });
       if (oneWayToday > 0) incidents.push({ level: "warning", code: "one_way_audio", message: `${oneWayToday} call(s) with one-way audio today` });
+      // A1 minutes bundle. Blowing through the allowance unnoticed is the leading
+      // theory for the 2026-07-02 / 07-08 outbound bars, so this warns early
+      // rather than after the carrier cuts us off.
+      if (cycle && cycle.included_minutes > 0) {
+        if (cycle.status === "critical") {
+          incidents.push({
+            level: "critical", code: "minutes_quota_critical",
+            message: cycle.projected_pct >= 100 && cycle.pct_used < 100
+              ? `A1 minutes: ${cycle.used_minutes}/${cycle.included_minutes} used — projected ${cycle.projected_minutes} by cycle end (over by ${cycle.projected_over_by})`
+              : `A1 minutes: ${cycle.used_minutes}/${cycle.included_minutes} used (${cycle.pct_used}%) this billing cycle`,
+          });
+        } else if (cycle.status === "warn") {
+          incidents.push({
+            level: "warning", code: "minutes_quota_warn",
+            message: `A1 minutes: ${cycle.used_minutes}/${cycle.included_minutes} used (${cycle.pct_used}%) this billing cycle`,
+          });
+        }
+      }
 
       return json({
         pbx,
@@ -2130,11 +3352,12 @@ async function handleRequest(req: Request): Promise<Response> {
       const range = url.searchParams.get("range") || "24h";
       const hours = range === "30d" ? 720 : range === "7d" ? 168 : 24;
       const since = new Date(Date.now() - hours * 3600 * 1000).toISOString();
-      const { data } = await adminClient
+      // 30d = 14,400 snapshots at one per 3 min — well past the 1000-row cap.
+      const data = await fetchAllRows((f, t) => adminClient
         .from("pbx_health_snapshots")
-        .select("captured_at,disk_pct,mem_pct,load1,active_lines,trunk_reachable,recordings_today,banned_ips,rec_bytes")
-        .gte("captured_at", since).order("captured_at", { ascending: true }).limit(5000);
-      return json({ snapshots: data || [] });
+        .select("captured_at,disk_pct,mem_pct,load1,active_lines,max_lines,trunk_reachable,recordings_today,banned_ips,rec_bytes")
+        .gte("captured_at", since).order("captured_at", { ascending: true }).range(f, t));
+      return json({ snapshots: data });
     }
 
     // GET /api/voip/recording-coverage?range=7d — the GAP LIST: answered calls
@@ -2145,13 +3368,12 @@ async function handleRequest(req: Request): Promise<Response> {
       const range = url.searchParams.get("range") || "7d";
       const days = range === "30d" ? 30 : range === "24h" ? 1 : 7;
       const since = new Date(Date.now() - days * 24 * 3600 * 1000).toISOString();
-      const [recs, logsRes] = await Promise.all([
+      const [recs, logs] = await Promise.all([
         fetchRecordingsList(),
-        adminClient.from("call_logs")
+        fetchAllRows((f, t) => adminClient.from("call_logs")
           .select("id,agent_id,customer_phone,started_at,connected_at,ended_at,connection_state,outcome")
-          .gte("created_at", since).order("created_at", { ascending: false }).limit(5000),
+          .gte("created_at", since).order("created_at", { ascending: false }).range(f, t)),
       ]);
-      const logs = logsRes.data || [];
       const byPhone: Record<string, any[]> = {};
       for (const r of recs) {
         const p = String(r.dialed || "").replace(/\D/g, "").slice(-8);
@@ -2184,19 +3406,26 @@ async function handleRequest(req: Request): Promise<Response> {
     }
 
     // GET /api/voip/minutes?range=7d&group=agent|day — outbound minutes from our
-    // own call telemetry (the authoritative A1 figure comes from A1's portal).
+    // own call telemetry. NOT invoice-grade: A1 bills answered time per-second
+    // after the first 60s, and mobile destinations may sit outside the bundle.
+    // `cycle` always covers the CURRENT billing cycle regardless of `range`
+    // (range only drives the charts) so the quota gauge can't be misread.
     if (req.method === "GET" && path === "voip/minutes") {
       if (!isAdmin) return json({ error: "Forbidden" }, 403);
       const range = url.searchParams.get("range") || "7d";
       const group = url.searchParams.get("group") || "day";
       const days = range === "30d" ? 30 : range === "24h" ? 1 : 7;
       const since = new Date(Date.now() - days * 24 * 3600 * 1000).toISOString();
-      const { data: logs } = await adminClient.from("call_logs")
-        .select("agent_id,total_seconds,talk_seconds,started_at,connected_at")
-        .gte("created_at", since).limit(20000);
-      const rows = logs || [];
+
+      const [cycle, rows] = await Promise.all([
+        computeVoipCycle(adminClient),
+        fetchAllRows((f, t) => adminClient.from("call_logs")
+          .select("agent_id,total_seconds,talk_seconds,started_at,connected_at")
+          .gte("created_at", since).order("created_at", { ascending: false }).range(f, t)),
+      ]);
       const totalSeconds = rows.reduce((s: number, l: any) => s + (l.total_seconds || 0), 0);
       const talkSeconds = rows.reduce((s: number, l: any) => s + (l.talk_seconds || 0), 0);
+
       const buckets: Record<string, number> = {};
       if (group === "agent") {
         for (const l of rows) { const k = l.agent_id || "unknown"; buckets[k] = (buckets[k] || 0) + (l.total_seconds || 0); }
@@ -2204,11 +3433,11 @@ async function handleRequest(req: Request): Promise<Response> {
         const amap: Record<string, string> = {};
         if (ids.length) { const { data } = await adminClient.from("profiles").select("user_id,full_name").in("user_id", ids); for (const a of data || []) amap[a.user_id] = a.full_name; }
         const series = Object.entries(buckets).map(([k, v]) => ({ key: amap[k] || k, minutes: Math.round(v / 60) })).sort((a, b) => b.minutes - a.minutes);
-        return json({ total_minutes: Math.round(totalSeconds / 60), talk_minutes: Math.round(talkSeconds / 60), group, series });
+        return json({ total_minutes: Math.round(totalSeconds / 60), talk_minutes: Math.round(talkSeconds / 60), group, series, cycle });
       }
       for (const l of rows) { const d = (l.started_at || l.connected_at || "").slice(0, 10) || "unknown"; buckets[d] = (buckets[d] || 0) + (l.total_seconds || 0); }
       const series = Object.entries(buckets).map(([k, v]) => ({ key: k, minutes: Math.round(v / 60) })).sort((a, b) => a.key.localeCompare(b.key));
-      return json({ total_minutes: Math.round(totalSeconds / 60), talk_minutes: Math.round(talkSeconds / 60), group: "day", series });
+      return json({ total_minutes: Math.round(totalSeconds / 60), talk_minutes: Math.round(talkSeconds / 60), group: "day", series, cycle });
     }
 
     // ===== Per-agent caller-ID (superadmin) — default +35924234100 for everyone;
@@ -2445,7 +3674,7 @@ async function handleRequest(req: Request): Promise<Response> {
       if (rolesToAssign.length === 0) {
         return json({ error: "At least one role is required" }, 400);
       }
-      const validRoles = ["admin", "manager", "agent", "pending_agent", "prediction_agent", "warehouse", "ads_admin"];
+      const validRoles = ["admin", "manager", "agent", "pending_agent", "prediction_agent", "warehouse", "ads_admin", "affiliate"];
       if (rolesToAssign.some((r: string) => !validRoles.includes(r))) {
         return json({ error: `Roles must be one of: ${validRoles.join(", ")}` }, 400);
       }
@@ -2479,6 +3708,70 @@ async function handleRequest(req: Request): Promise<Response> {
       return json({ success: true, user_id: newUser.user.id });
     }
 
+    // PATCH /api/users/:id (admin only - edit name / email / password)
+    if (req.method === "PATCH" && segments[0] === "users" && segments.length === 2) {
+      // Identity edits (email/password) are Superadmin-only; managers can't reset logins.
+      if (!isAdmin) return json({ error: "Forbidden" }, 403);
+      if (!checkUserRateLimit(user.id, "users.update", 20)) return json({ error: "Rate limit exceeded — try again in a minute" }, 429);
+      const userId = segments[1];
+      let body;
+      try { body = parseBody(updateUserSchema, await req.json()); } catch (e: any) { return json({ error: e.message }, 400); }
+
+      // Make sure the target exists (and capture the old email for the audit trail).
+      const { data: target } = await adminClient
+        .from("profiles")
+        .select("full_name, email")
+        .eq("user_id", userId)
+        .single();
+      if (!target) return json({ error: "User not found" }, 404);
+
+      // 1) auth.users — email and/or password
+      const authPatch: Record<string, unknown> = {};
+      if (body.email !== undefined) { authPatch.email = body.email; authPatch.email_confirm = true; }
+      if (body.password !== undefined) authPatch.password = body.password;
+      if (Object.keys(authPatch).length > 0) {
+        const { error: authErr } = await adminClient.auth.admin.updateUserById(userId, authPatch);
+        if (authErr) return json({ error: sanitizeDbError(authErr) }, 400);
+      }
+
+      // 2) profiles — keep display name / email in sync with auth
+      const profPatch: Record<string, unknown> = {};
+      if (body.full_name !== undefined) profPatch.full_name = body.full_name;
+      if (body.email !== undefined) profPatch.email = body.email;
+      if (Object.keys(profPatch).length > 0) {
+        const { error: profErr } = await adminClient.from("profiles").update(profPatch).eq("user_id", userId);
+        if (profErr) return json({ error: sanitizeDbError(profErr) }, 400);
+      }
+
+      // 3) Denormalized copies of the display name: segment member rows are live
+      //    work queues (always resync); orders only while OPEN — closed orders
+      //    keep the historical name they were worked under.
+      if (body.full_name !== undefined && body.full_name !== target.full_name) {
+        await adminClient
+          .from("prediction_segment_members")
+          .update({ assigned_agent_name: body.full_name })
+          .eq("assigned_agent_id", userId);
+        await adminClient
+          .from("orders")
+          .update({ assigned_agent_name: body.full_name })
+          .eq("assigned_agent_id", userId)
+          .in("status", ["pending", "take", "call_again"]);
+      }
+
+      await audit(adminClient, user.id, user.email, "user.update", {
+        target_type: "user",
+        target_id: userId,
+        target_name: body.full_name || target.full_name || target.email || null,
+        // Never log the password itself — just note whether it was changed.
+        payload: {
+          full_name: body.full_name,
+          email: body.email,
+          password_changed: body.password !== undefined,
+        },
+      });
+      return json({ success: true });
+    }
+
     // PUT /api/users/:id/roles (admin only - set roles array)
     if (req.method === "PUT" && segments[0] === "users" && segments[2] === "roles") {
       if (!isAdminOrManager) return json({ error: "Forbidden" }, 403);
@@ -2489,7 +3782,7 @@ async function handleRequest(req: Request): Promise<Response> {
       if (!newRoles || !Array.isArray(newRoles) || newRoles.length === 0) {
         return json({ error: "At least one role is required" }, 400);
       }
-      const validRoles = ["admin", "manager", "agent", "pending_agent", "prediction_agent", "warehouse", "ads_admin"];
+      const validRoles = ["admin", "manager", "agent", "pending_agent", "prediction_agent", "warehouse", "ads_admin", "affiliate"];
       if (newRoles.some((r: string) => !validRoles.includes(r))) {
         return json({ error: `Roles must be one of: ${validRoles.join(", ")}` }, 400);
       }
@@ -2525,8 +3818,12 @@ async function handleRequest(req: Request): Promise<Response> {
     }
 
     // PATCH /api/users/:id/role (legacy - admin only)
+    // ADMIN ONLY: this endpoint can set 'admin' and replaces ALL of a user's
+    // roles with one. A manager must never reach it (they'd self-promote a
+    // created account to admin). Managers assign their permitted agent roles
+    // through PUT /users/:id/roles, which enforces its own allowlist.
     if (req.method === "PATCH" && segments[0] === "users" && segments[2] === "role") {
-      if (!isAdminOrManager) return json({ error: "Forbidden" }, 403);
+      if (!isAdmin) return json({ error: "Forbidden — admin only" }, 403);
       const userId = segments[1];
       const body = await req.json();
       const { role: newRole } = body;
@@ -2547,13 +3844,18 @@ async function handleRequest(req: Request): Promise<Response> {
       return json({ success: true });
     }
 
-    // POST /api/users/:id/toggle-active (admin only)
+    // POST /api/users/:id/toggle-active (admin, or manager on a non-privileged target)
     if (req.method === "POST" && segments[0] === "users" && segments[2] === "toggle-active") {
       if (!isAdminOrManager) return json({ error: "Forbidden" }, 403);
       const userId = segments[1];
       // Prevent admin from suspending themselves
       if (userId === user.id) {
         return json({ error: "Cannot suspend yourself" }, 400);
+      }
+      // A manager may manage AGENT accounts but must never suspend an admin or
+      // another manager. Only admins can act on privileged targets.
+      if (!isAdmin && await targetHasPrivilegedRole(adminClient, userId)) {
+        return json({ error: "Forbidden — only an admin can manage this account" }, 403);
       }
       const { data: profile } = await adminClient
         .from("profiles")
@@ -2575,7 +3877,7 @@ async function handleRequest(req: Request): Promise<Response> {
       return json({ success: true, is_active: !profile.is_active });
     }
 
-    // DELETE /api/users/:id (admin only)
+    // DELETE /api/users/:id (admin, or manager on a non-privileged target)
     if (req.method === "DELETE" && segments[0] === "users" && segments.length === 2) {
       if (!isAdminOrManager) return json({ error: "Forbidden" }, 403);
       if (!checkUserRateLimit(user.id, "users.delete", 10)) return json({ error: "Rate limit exceeded — try again in a minute" }, 429);
@@ -2583,6 +3885,11 @@ async function handleRequest(req: Request): Promise<Response> {
       // Prevent admin from deleting themselves
       if (userId === user.id) {
         return json({ error: "Cannot delete yourself" }, 400);
+      }
+      // A manager may remove AGENT accounts but must never delete an admin or
+      // another manager. Only admins can act on privileged targets.
+      if (!isAdmin && await targetHasPrivilegedRole(adminClient, userId)) {
+        return json({ error: "Forbidden — only an admin can manage this account" }, 403);
       }
       // Capture name before deletion so the audit row is human-readable.
       const { data: deletedProfile } = await adminClient
@@ -3093,6 +4400,9 @@ async function handleRequest(req: Request): Promise<Response> {
         const nowIso = new Date().toISOString();
         query = query.or(`next_call_after.is.null,next_call_after.lte.${nowIso}`);
       }
+      // Duplicated orders are admin/manager-only, forever — regardless of
+      // their current status. (RLS also enforces this for agent clients.)
+      if (!isAdminOrManager) query = query.is("duplicated_from", null);
 
       const { data: orders, count, error } = await query;
       if (error) return json({ error: sanitizeDbError(error) }, 400);
@@ -3126,14 +4436,24 @@ async function handleRequest(req: Request): Promise<Response> {
     // GET /api/orders/unassigned-pending (admin only - for assigner)
     if (req.method === "GET" && path === "orders/unassigned-pending") {
       if (!canViewModule("assigner")) return json({ error: "Forbidden" }, 403);
-      const { data: orders, error } = await adminClient
-        .from("orders")
-        .select("*")
-        .eq("status", "pending")
-        .is("assigned_agent_id", null)
-        .order("created_at", { ascending: false });
-      if (error) return json({ error: sanitizeDbError(error) }, 400);
-      return json(orders || []);
+      // Paginated: PostgREST silently caps an unpaginated select at 1000 rows,
+      // which would understate the Pendings tab + its count. Columns narrowed
+      // to what the assigner renders (UnassignedOrder interface).
+      const all: any[] = [];
+      for (let from = 0; ; from += 1000) {
+        const { data, error } = await adminClient
+          .from("orders")
+          .select("id, display_id, customer_name, customer_phone, product_name, source_type, created_at")
+          .eq("status", "pending")
+          .is("assigned_agent_id", null)
+          .order("created_at", { ascending: false })
+          .range(from, from + 999);
+        if (error) return json({ error: sanitizeDbError(error) }, 400);
+        if (!data || data.length === 0) break;
+        all.push(...data);
+        if (data.length < 1000) break;
+      }
+      return json(all);
     }
 
     // GET /api/orders/assigned (admin only - all assigned orders for assigner)
@@ -3228,11 +4548,22 @@ async function handleRequest(req: Request): Promise<Response> {
 
     // POST /api/presence/heartbeat — any authenticated user pings this every
     // ~45s while the app is open. Bumps profiles.last_seen_at so agents/online
-    // can tell who is actually here right now.
+    // can tell who is actually here right now. Optional body { voip_state }
+    // also records the softphone state (VoipContext posts every transition;
+    // the 45s beat carries it only while non-idle so a second idle tab never
+    // clobbers the calling tab's state).
     if (req.method === "POST" && path === "presence/heartbeat") {
+      let hb: any = {};
+      try { hb = await req.json(); } catch { /* legacy empty-body beats */ }
+      const VOIP_STATES = ["idle", "dialing", "in_call", "wrapping", "ending"];
+      const patch: Record<string, unknown> = { last_seen_at: new Date().toISOString() };
+      if (typeof hb?.voip_state === "string" && VOIP_STATES.includes(hb.voip_state)) {
+        patch.voip_state = hb.voip_state;
+        patch.voip_state_at = new Date().toISOString();
+      }
       await adminClient
         .from("profiles")
-        .update({ last_seen_at: new Date().toISOString() })
+        .update(patch)
         .eq("user_id", user.id);
       return json({ ok: true });
     }
@@ -3243,11 +4574,14 @@ async function handleRequest(req: Request): Promise<Response> {
 
       // An agent is "online" if they pinged the heartbeat in the last 2 min.
       const ONLINE_WINDOW_MS = 2 * 60 * 1000;
+      // Browser-reported call state goes stale after ~4 missed 45s beats —
+      // a crashed tab must not show "in call" forever.
+      const CALL_STALE_MS = 3 * 60 * 1000;
 
       // Get active users with agent or admin role
       const { data: allUsers } = await adminClient
         .from("profiles")
-        .select("user_id, full_name, email, last_seen_at")
+        .select("user_id, full_name, email, last_seen_at, voip_state, voip_state_at")
         .eq("is_active", true);
 
       const userIds = (allUsers || []).map((u: any) => u.user_id);
@@ -3267,17 +4601,21 @@ async function handleRequest(req: Request): Promise<Response> {
         return roles.includes("agent") || roles.includes("pending_agent") || roles.includes("prediction_agent") || roles.includes("admin");
       });
 
-      // Get assigned active order counts per agent
+      // Per-agent workload in ONE aggregate RPC: open orders (pending|take|
+      // call_again — same semantics as the old inline tally, which was an
+      // unbounded select at risk of the 1000-row cap) + prediction-member
+      // loads for the assigner agents panel.
       const agentIds = agents.map((a: any) => a.user_id);
-      const { data: orderCounts } = await adminClient
-        .from("orders")
-        .select("assigned_agent_id")
-        .in("assigned_agent_id", agentIds.length > 0 ? agentIds : ["__none__"])
-        .in("status", ["pending", "take", "call_again"]);
-
-      const countMap: Record<string, number> = {};
-      for (const o of orderCounts || []) {
-        countMap[o.assigned_agent_id] = (countMap[o.assigned_agent_id] || 0) + 1;
+      type Workload = { orders_open: number; members_assigned: number; members_open: number; members_parked: number };
+      const workload: Record<string, Workload> = {};
+      const { data: loads } = await adminClient.rpc("agent_workloads");
+      for (const r of loads || []) {
+        workload[r.agent_id] = {
+          orders_open: r.orders_open || 0,
+          members_assigned: r.members_assigned || 0,
+          members_open: r.members_open || 0,
+          members_parked: r.members_parked || 0,
+        };
       }
 
       // Check TODAY's shifts only. The previous query forgot to filter on
@@ -3300,15 +4638,26 @@ async function handleRequest(req: Request): Promise<Response> {
       const result = agents.map((a: any) => {
         const lastSeen = a.last_seen_at ? new Date(a.last_seen_at).getTime() : 0;
         const isOnline = lastSeen > 0 && (nowMs - lastSeen) < ONLINE_WINDOW_MS;
+        const stateAt = a.voip_state_at ? new Date(a.voip_state_at).getTime() : 0;
+        const inCall = isOnline &&
+          (a.voip_state === "dialing" || a.voip_state === "in_call") &&
+          stateAt > 0 && (nowMs - stateAt) < CALL_STALE_MS;
+        const w = workload[a.user_id];
         return {
           user_id: a.user_id,
           full_name: a.full_name,
           email: a.email,
           roles: roleMap[a.user_id] || [],
-          active_leads: countMap[a.user_id] || 0,
+          active_leads: w?.orders_open ?? 0, // kept for backward compat (= orders_open)
+          orders_open: w?.orders_open ?? 0,
+          members_assigned: w?.members_assigned ?? 0,
+          members_open: w?.members_open ?? 0,
+          members_parked: w?.members_parked ?? 0,
           shift: shiftMap[a.user_id] || null,
           last_seen_at: a.last_seen_at || null,
           is_online: isOnline,
+          in_call: inCall,
+          voip_state: inCall ? a.voip_state : "idle",
         };
       });
 
@@ -3806,6 +5155,160 @@ async function handleRequest(req: Request): Promise<Response> {
       });
     }
 
+    // GET /api/orders/:id/calls — lazy "Calls" panel on /orders expanded rows.
+    // Order-id based (NOT phone based): the caller's copy of the phone may be
+    // privacy-masked, so the server resolves the real number. The order lookup
+    // uses the SAME client scope as GET /api/orders, so it doubles as the
+    // access check (RLS -> 404 for rows the viewer can't see). Returns ALL
+    // calls to the customer's number (order/lead/standalone), last-8 matched.
+    // Deliberately DB-only — no live PBX list — so expanding a row stays cheap.
+    if (req.method === "GET" && segments[0] === "orders" && segments.length === 3 && segments[2] === "calls") {
+      if (!canHearRecordings && !canHearOwnRecordings) return json({ error: "Forbidden" }, 403);
+      const orderId = segments[1];
+      const oClient = isAdminOrManager ? adminClient : supabase;
+      const { data: ord, error: oErr } = await oClient
+        .from("orders")
+        .select("id, customer_phone")
+        .eq("id", orderId)
+        .single();
+      if (oErr || !ord) return json({ error: "Order not found" }, 404);
+
+      const digits = String(ord.customer_phone || "").replace(/\D/g, "");
+      const last8 = digits.length >= 8 ? digits.slice(-8) : "";
+      if (!last8) return json({ calls: [] });
+
+      const { data: logs, error: cErr } = await adminClient
+        .from("call_logs")
+        .select("id, agent_id, context_type, context_id, outcome, created_at, started_at, connected_at, talk_seconds, total_seconds, recording_file, listened_at, listened_by")
+        .ilike("customer_phone", `%${last8}%`)
+        .order("created_at", { ascending: false })
+        .limit(25);
+      if (cErr) return json({ error: sanitizeDbError(cErr) }, 400);
+      const calls = logs || [];
+
+      // Pick up recordings the hangup webhook anchored in call_recordings but
+      // not (yet) onto call_logs.recording_file. Two DB-only passes, no PBX call:
+      //  (1) direct call_log_id link (the webhook did link it, just didn't stamp
+      //      recording_file), then
+      //  (2) match by dialed_last8 + time-overlap — this is the common case: the
+      //      recording IS in call_recordings but its call_log_id is NULL (the
+      //      webhook captured the file but never linked the row), which is why
+      //      Call History (live PBX matcher) shows Play here and the DB doesn't.
+      if (calls.some((c: any) => !c.recording_file)) {
+        const missingIds = calls.filter((c: any) => !c.recording_file).map((c: any) => c.id);
+        const { data: recs } = await adminClient
+          .from("call_recordings")
+          .select("uniqueid, ext, file, call_log_id, started_at, ended_at")
+          .eq("dialed_last8", last8);
+        const recRows = recs || [];
+        // (1) direct link
+        const byLog = new Map(recRows.filter((r: any) => r.call_log_id).map((r: any) => [r.call_log_id, r.file]));
+        for (const c of calls) if (!c.recording_file && byLog.has(c.id)) c.recording_file = byLog.get(c.id);
+        // (2) overlap match for whatever is still unlinked
+        const stillMissing = calls.filter((c: any) => !c.recording_file && missingIds.includes(c.id));
+        if (stillMissing.length) {
+          const linkedFiles = new Set(calls.filter((c: any) => c.recording_file).map((c: any) => c.recording_file));
+          const candidates: RecLite[] = recRows
+            .filter((r: any) => r.file && !linkedFiles.has(r.file))
+            .map((r: any) => ({
+              file: r.file,
+              dialed: last8,
+              ext: r.ext,
+              uniqueid: r.uniqueid,
+              start: r.started_at ? Math.floor(new Date(r.started_at).getTime() / 1000) : undefined,
+              mtime: r.ended_at ? Math.floor(new Date(r.ended_at).getTime() / 1000) : undefined,
+            }));
+          if (candidates.length) {
+            const exts = [...new Set(candidates.map((r) => r.ext).filter(Boolean))] as string[];
+            const extToAgent: Record<string, string> = {};
+            if (exts.length) {
+              const { data: te } = await adminClient.from("telephony_extensions").select("extension,user_id").in("extension", exts);
+              for (const x of te || []) if (x.extension && x.user_id) extToAgent[x.extension] = x.user_id;
+            }
+            const matched = matchRecordingsToCalls(candidates, stillMissing as CallLite[], extToAgent);
+            for (const c of stillMissing) { const rec = matched.get(c.id); if (rec?.file) c.recording_file = rec.file; }
+          }
+        }
+      }
+
+      // (3) Real-time parity with Call History: for any row STILL unlinked whose
+      // recording could plausibly still be on the PBX (within the ~30-day purge
+      // window), fall back to the LIVE recording list — the same best-effort,
+      // short-timeout pattern Call History uses. This only fires in the brief
+      // window before the hangup webhook has written call_recordings; once that
+      // (or a backfill) lands it's a no-op. On ANY PBX error we silently keep the
+      // DB results, so this can never slow down or break the panel.
+      const PBX_RETENTION_MS = 30 * 24 * 3600 * 1000;
+      const liveNeed = calls.filter((c: any) => !c.recording_file
+        && (Date.now() - new Date(c.created_at).getTime()) < PBX_RETENTION_MS
+        && (c.connected_at || (c.talk_seconds ?? 0) > 0));
+      if (liveNeed.length) {
+        try {
+          const recExp = Math.floor(Date.now() / 1000) + 120;
+          const recSig = await recSign("list", recExp);
+          const ctrl = new AbortController();
+          const tm = setTimeout(() => ctrl.abort(), 5000);
+          let pbx: any[] = [];
+          try {
+            const rr = await fetch(`${REC_HOST}?mode=list&exp=${recExp}&sig=${recSig}`, { signal: ctrl.signal });
+            if (rr.ok) pbx = await rr.json();
+          } finally { clearTimeout(tm); }
+          if (Array.isArray(pbx) && pbx.length) {
+            const linkedFiles = new Set(calls.filter((c: any) => c.recording_file).map((c: any) => c.recording_file));
+            const cands: RecLite[] = pbx
+              .filter((r: any) => (r.size || 0) > 2000 && r.file && !linkedFiles.has(r.file)
+                && String(r.dialed || "").replace(/\D/g, "").slice(-8) === last8)
+              .map((r: any) => ({ file: r.file, dialed: r.dialed, ext: r.ext, uniqueid: r.uniqueid, mtime: r.mtime, start: r.start }));
+            if (cands.length) {
+              const exts = [...new Set(cands.map((r) => r.ext).filter(Boolean))] as string[];
+              const extToAgent: Record<string, string> = {};
+              if (exts.length) {
+                const { data: te } = await adminClient.from("telephony_extensions").select("extension,user_id").in("extension", exts);
+                for (const x of te || []) if (x.extension && x.user_id) extToAgent[x.extension] = x.user_id;
+              }
+              const matched = matchRecordingsToCalls(cands, liveNeed as CallLite[], extToAgent);
+              for (const c of liveNeed) { const rec = matched.get(c.id); if (rec?.file) c.recording_file = rec.file; }
+            }
+          }
+        } catch (_e) { /* best-effort: keep DB results on any PBX error/timeout */ }
+      }
+
+      const nameIds = [...new Set(calls.flatMap((c: any) => [c.agent_id, c.listened_by]).filter(Boolean))];
+      const nameMap: Record<string, string> = {};
+      if (nameIds.length) {
+        const { data: profs } = await adminClient.from("profiles").select("user_id, full_name").in("user_id", nameIds);
+        for (const p of profs || []) nameMap[p.user_id] = p.full_name;
+      }
+
+      // Per-row recording scoping: hear-all keeps every file; own-only keeps
+      // only its own. recording_locked = a file exists but THIS viewer may not
+      // play it (so the UI can say "restricted", not falsely "expired").
+      // The raw customer_phone is intentionally NOT returned (PII masking).
+      return json({
+        calls: calls.map((c: any) => {
+          const own = c.agent_id === user.id;
+          const allowed = canHearRecordings || (canHearOwnRecordings && own);
+          return {
+            id: c.id,
+            agent_id: c.agent_id,
+            agent_name: nameMap[c.agent_id] || null,
+            context_type: c.context_type,
+            is_this_order: c.context_type === "order" && c.context_id === orderId,
+            outcome: c.outcome,
+            created_at: c.created_at,
+            started_at: c.started_at,
+            connected_at: c.connected_at,
+            talk_seconds: c.talk_seconds,
+            total_seconds: c.total_seconds,
+            recording_file: allowed ? c.recording_file : null,
+            recording_locked: !!c.recording_file && !allowed,
+            listened_at: c.listened_at,
+            listened_by_name: c.listened_by ? (nameMap[c.listened_by] || null) : null,
+          };
+        }),
+      });
+    }
+
     // PATCH /api/orders/:id/customer (update editable fields)
     if (req.method === "PATCH" && segments[0] === "orders" && segments[2] === "customer") {
       if (!canMutateOrders) return json({ error: "Forbidden" }, 403);
@@ -3890,13 +5393,32 @@ async function handleRequest(req: Request): Promise<Response> {
         .single();
       if (!order) return json({ error: "Order not found" }, 404);
 
+      // Ownership guard (mirrors the orders UPDATE RLS: assigned_agent_id =
+      // auth.uid()). This handler writes via adminClient, which bypasses RLS,
+      // so without this an agent could PATCH ANY order by id — confirming a
+      // colleague's lead to steal the per-package commission, or sabotaging it.
+      // Admins/managers act on any order; warehouse drives fulfilment across
+      // orders; a plain agent may only touch their own or an unassigned one.
+      if (!isAdminOrManager && !isWarehouse
+        && order.assigned_agent_id && order.assigned_agent_id !== user.id) {
+        return json({ error: "Forbidden — this order is assigned to another agent" }, 403);
+      }
+
       // Permission check for non-admins
       const agentAllowed = ["pending", "take", "call_again", "confirmed"];
       const warehouseAllowed = ["confirmed", "shipped", "delivered", "paid"];
+      // Dispositioning a still-OPEN order (a lead the agent is calling):
+      // cancelled/trashed are allowed only while the order sits in the call
+      // flow. A confirmed or shipped order stays untouchable for agents — the
+      // original point of the allowlist (no sabotaging recorded sales). The
+      // ownership guard above already limits agents to their own orders.
+      const openStatuses = ["pending", "take", "call_again"];
+      const isOpenDisposition =
+        ["cancelled", "trashed"].includes(newStatus) && openStatuses.includes(order.status);
       if (!isAdminOrManager) {
         if (isWarehouse && warehouseAllowed.includes(newStatus)) {
           // Warehouse users can set confirmed/shipped
-        } else if (!agentAllowed.includes(newStatus)) {
+        } else if (!agentAllowed.includes(newStatus) && !isOpenDisposition) {
           return json({ error: `You can only set status to: ${agentAllowed.join(", ")}` }, 403);
         }
       }
@@ -3914,7 +5436,12 @@ async function handleRequest(req: Request): Promise<Response> {
         ["returned", "paid", "cancelled"].includes(newStatus);
 
       const requiresComplete = ["confirmed", "shipped", "returned", "paid", "cancelled"];
-      if (!isPostShipmentAdminEdit && !isAdmin && requiresComplete.includes(newStatus)) {
+      // Cancelling a still-open order is a refusal record, not a shipment —
+      // demanding a full address there would make sparse webhook leads
+      // uncancellable. The create-order cancel path (prediction flow) already
+      // records cancellations with just name+phone, so this keeps parity.
+      const isOpenCancel = newStatus === "cancelled" && openStatuses.includes(order.status);
+      if (!isPostShipmentAdminEdit && !isAdmin && !isOpenCancel && requiresComplete.includes(newStatus)) {
         const hasName = !!order.customer_name?.trim();
         const hasPhone = !!order.customer_phone?.trim();
         const hasCity = !!order.customer_city?.trim() || !!order.courier_office_city?.trim();
@@ -4112,7 +5639,103 @@ async function handleRequest(req: Request): Promise<Response> {
         await adminClient.from("inbound_leads").update({ status: inboundStatus }).eq("id", order.inbound_lead_id);
       }
 
+      // Affiliate postbacks: the DB trigger just enqueued any stage change —
+      // nudge the drain so the affiliate's tracker hears it in seconds
+      // (the every-minute cron remains the delivery guarantee).
+      if (order.source_type === "affiliate") nudgePostbackDrain(adminClient);
+
       return json({ success: true });
+    }
+
+    // POST /api/orders/:id/duplicate — admin/manager only. Creates a copy of
+    // the source order with the next sequential ORD number (display_id trigger),
+    // status 'duplicated', and a permanent link to the source. Duplicates are
+    // hidden from agents everywhere (RLS + listing filters).
+    if (req.method === "POST" && segments[0] === "orders" && segments.length === 3 && segments[2] === "duplicate") {
+      if (!isAdminOrManager) return json({ error: "Forbidden" }, 403);
+      if (!checkUserRateLimit(user.id, "orders.duplicate", 20)) return json({ error: "Too many requests" }, 429);
+      const sourceId = segments[1];
+
+      const { data: src } = await adminClient.from("orders").select("*").eq("id", sourceId).single();
+      if (!src) return json({ error: "Order not found" }, 404);
+
+      // Explicit allowlist copy — never spread the source row, so lifecycle
+      // timestamps/reasons, assignment, sales attribution and lead/affiliate
+      // links can never leak into the copy (copying source_type 'affiliate'
+      // would enqueue a CPA postback via trg_affiliate_postback_insert).
+      const { data: dup, error: dupErr } = await adminClient
+        .from("orders")
+        .insert({
+          product_id: src.product_id,
+          product_name: src.product_name,
+          customer_name: src.customer_name,
+          customer_phone: src.customer_phone,
+          customer_city: src.customer_city,
+          customer_address: src.customer_address,
+          postal_code: src.postal_code,
+          street: src.street ?? "",
+          street_number: src.street_number ?? "",
+          quarter: src.quarter ?? "",
+          apartment: src.apartment ?? "",
+          floor: src.floor ?? "",
+          block: src.block ?? "",
+          entry: src.entry ?? "",
+          delivery_instructions: src.delivery_instructions ?? "",
+          gift_note: src.gift_note ?? "",
+          delivery_type: src.delivery_type ?? "home",
+          home_courier: src.home_courier ?? null,
+          courier_office_code: src.courier_office_code ?? "",
+          courier_office_name: src.courier_office_name ?? "",
+          courier_office_city: src.courier_office_city ?? "",
+          birthday: src.birthday,
+          ship_after_date: src.ship_after_date ?? null,
+          price: src.price,
+          quantity: src.quantity,
+          status: "duplicated",
+          source_type: "manual",
+          duplicated_from: src.id,
+          duplicated_from_display: src.display_id,
+        })
+        .select()
+        .single();
+      if (dupErr) return json({ error: sanitizeDbError(dupErr) }, 400);
+
+      const { data: srcItems } = await adminClient
+        .from("order_items")
+        .select("product_id, product_name, quantity, price_per_unit, total_price")
+        .eq("order_id", sourceId);
+      if (srcItems && srcItems.length) {
+        await adminClient.from("order_items").insert(
+          srcItems.map((i: any) => ({ order_id: dup.id, ...i })),
+        );
+      }
+
+      const { data: dupActorProfile } = await adminClient.from("profiles").select("full_name").eq("user_id", user.id).single();
+      const dupActorName = dupActorProfile?.full_name || user.email;
+
+      // History + note go on the NEW order only — anything written on the
+      // source order is readable by its assigned agent via RLS and would
+      // leak the duplicate's existence.
+      await adminClient.from("order_history").insert({
+        order_id: dup.id,
+        to_status: "duplicated",
+        changed_by: user.id,
+        changed_by_name: dupActorName,
+      });
+      await adminClient.from("order_notes").insert({
+        order_id: dup.id,
+        text: `Duplicated from ${src.display_id}`,
+        author_id: user.id,
+        author_name: "System",
+      });
+
+      await audit(adminClient, user.id, user.email, "order.duplicate", {
+        target_type: "order",
+        target_id: dup.id,
+        payload: { source_order_id: src.id, source_display_id: src.display_id, new_display_id: dup.display_id },
+      });
+
+      return json(dup);
     }
 
     // POST /api/orders/:id/attribution — privileged admin-only manual correction
@@ -4461,10 +6084,12 @@ async function handleRequest(req: Request): Promise<Response> {
       return json(note);
     }
 
-    // GET /api/dashboard-stats?period=today|yesterday|month&agent_id=xxx
+    // GET /api/dashboard-stats?period=today|yesterday|month|custom&date=YYYY-MM-DD&from=&to=&agent_id=xxx
     if (req.method === "GET" && path === "dashboard-stats") {
       const period = url.searchParams.get("period") || "today";
-      const agentFilter = url.searchParams.get("agent_id");
+      // agent_id feeds a PostgREST .or() filter → UUID-validate before use.
+      const agentFilterRaw = url.searchParams.get("agent_id");
+      const agentFilter = agentFilterRaw && UUID_RE.test(agentFilterRaw) ? agentFilterRaw : null;
 
       const now = new Date();
       const todayStr = now.toISOString().substring(0, 10);
@@ -4473,13 +6098,36 @@ async function handleRequest(req: Request): Promise<Response> {
       const yesterdayStr = yesterday.toISOString().substring(0, 10);
       const monthStart = todayStr.substring(0, 7) + "-01";
 
+      // Optional single-day override (agent dashboard ◀ ▶ day browsing).
+      // Past days only — a future date clamps to today. Ignored for month.
+      const dateRaw = url.searchParams.get("date");
+      const dayParam = dateRaw && /^\d{4}-\d{2}-\d{2}$/.test(dateRaw)
+        ? (dateRaw > todayStr ? todayStr : dateRaw)
+        : null;
+      // Optional custom from–to range (agent dashboard "Custom" period).
+      const customWin = period === "custom"
+        ? customRangeWindow(url.searchParams.get("from"), url.searchParams.get("to"), todayStr, now)
+        : null;
+
+      // period=start: from agent's profiles.created_at (first day in CRM) → now.
+      // Resolved per-agent inside computeMetrics when effectiveAgentId is set;
+      // for admin team-wide, falls back to a far-past floor.
       let fromDate: string, toDate: string;
       if (period === "yesterday") {
         fromDate = yesterdayStr + "T00:00:00Z";
         toDate = yesterdayStr + "T23:59:59Z";
+      } else if (customWin) {
+        fromDate = customWin.fromDate;
+        toDate = customWin.toDate;
       } else if (period === "month") {
         fromDate = monthStart + "T00:00:00Z";
         toDate = now.toISOString();
+      } else if (period === "start") {
+        fromDate = "2000-01-01T00:00:00Z"; // overridden per-agent below
+        toDate = now.toISOString();
+      } else if (dayParam && dayParam !== todayStr) {
+        fromDate = dayParam + "T00:00:00Z";
+        toDate = dayParam + "T23:59:59Z";
       } else {
         fromDate = todayStr + "T00:00:00Z";
         toDate = now.toISOString();
@@ -4499,40 +6147,69 @@ async function handleRequest(req: Request): Promise<Response> {
         return all;
       };
 
+      const DASH_ORDER_SELECT =
+        "id, status, price, quantity, created_at, paid_at, confirmed_at, returned_at, assigned_agent_id, confirmed_by_agent_id, order_items(product_name, quantity, price_per_unit, total_price, product_id)";
+
       // Helper to compute metrics for a given agent filter
       async function computeMetrics(effectiveAgentId: string | null) {
-        const orders = await paginate<any>(() => {
-          let q = adminClient.from("orders").select("id, status, price, created_at, assigned_agent_id").gte("created_at", fromDate).lte("created_at", toDate)
-            .or("source_type.is.null,source_type.neq.monadon_legacy"); // exclude Monadon legacy (another company's revenue)
-          if (effectiveAgentId) q = q.eq("assigned_agent_id", effectiveAgentId);
+        let winFrom = fromDate;
+        let winTo = toDate;
+        if (period === "start" && effectiveAgentId) {
+          const { data: prof } = await adminClient
+            .from("profiles")
+            .select("created_at")
+            .eq("user_id", effectiveAgentId)
+            .maybeSingle();
+          if (prof?.created_at) winFrom = prof.created_at;
+        }
+
+        // Merge activity window (created_at) + earnings window (paid_at) so
+        // COD paid this period on older orders still count toward packages/payout.
+        const byId = new Map<string, any>();
+        const activityOrders = await paginate<any>(() => {
+          let q = adminClient.from("orders").select(DASH_ORDER_SELECT)
+            .gte("created_at", winFrom).lte("created_at", winTo)
+            .or("source_type.is.null,source_type.neq.monadon_legacy");
+          if (effectiveAgentId) q = q.or(salesOwnerOrFilter(effectiveAgentId));
           return q;
         });
+        for (const o of activityOrders) byId.set(o.id, o);
+
+        const paidWindowOrders = await paginate<any>(() => {
+          let q = adminClient.from("orders").select(DASH_ORDER_SELECT)
+            .eq("status", "paid")
+            .gte("paid_at", winFrom).lte("paid_at", winTo)
+            .or("source_type.is.null,source_type.neq.monadon_legacy");
+          if (effectiveAgentId) q = q.or(salesOwnerOrFilter(effectiveAgentId));
+          return q;
+        });
+        for (const o of paidWindowOrders) byId.set(o.id, o);
+
+        const orders = Array.from(byId.values());
         const leads = await paginate<any>(() => {
-          let q = adminClient.from("prediction_leads").select("id, status, created_at, assigned_agent_id, product").gte("created_at", fromDate).lte("created_at", toDate);
+          let q = adminClient.from("prediction_leads").select("id, status, created_at, assigned_agent_id, product").gte("created_at", winFrom).lte("created_at", winTo);
           if (effectiveAgentId) q = q.eq("assigned_agent_id", effectiveAgentId);
           return q;
         });
         const calls = await paginate<any>(() => {
-          let q = adminClient.from("call_logs").select("id, agent_id, created_at").gte("created_at", fromDate).lte("created_at", toDate);
+          let q = adminClient.from("call_logs").select("id, agent_id, created_at").gte("created_at", winFrom).lte("created_at", winTo);
           if (effectiveAgentId) q = q.eq("agent_id", effectiveAgentId);
           return q;
         });
 
         const lead_count = leads.length;
-        // deals_won: orders only
+        // deals_won / pipeline sales: confirmed…paid (work activity, not cash)
         const deals_won = orders.filter((o: any) => ["confirmed", "shipped", "delivered", "paid"].includes(o.status)).length;
         const deals_lost = orders.filter((o: any) => ["returned", "cancelled", "trashed"].includes(o.status)).length;
         const total_value = orders.filter((o: any) => ["confirmed", "shipped", "delivered", "paid"].includes(o.status)).reduce((sum: number, o: any) => sum + Number(o.price || 0), 0);
         const tasks_completed = calls.length;
-        // total_orders: orders only
         const total_orders = orders.length;
 
-        // Source breakdown
-        const orders_from_standard = orders.filter((o: any) => ["confirmed", "shipped", "delivered", "paid"].includes(o.status)).length;
+        const orders_from_standard = deals_won;
         const orders_from_leads = 0;
 
         const dailyBreakdown: Record<string, { leads: number; deals_won: number; deals_lost: number; orders: number; calls: number }> = {};
-        for (const o of orders) {
+        for (const o of activityOrders) {
           const day = o.created_at.substring(0, 10);
           if (!dailyBreakdown[day]) dailyBreakdown[day] = { leads: 0, deals_won: 0, deals_lost: 0, orders: 0, calls: 0 };
           dailyBreakdown[day].orders++;
@@ -4551,37 +6228,63 @@ async function handleRequest(req: Request): Promise<Response> {
         }
 
         const statusCounts: Record<string, number> = {};
-        for (const o of orders) {
+        for (const o of activityOrders) {
           statusCounts[o.status] = (statusCounts[o.status] || 0) + 1;
         }
 
-        // Products sold: line items on this agent's WON orders. order_items
-        // carries a denormalised product_name + quantity, so no join needed.
-        // Legacy imported orders have no items and simply contribute nothing.
-        const wonIds = orders
-          .filter((o: any) => ["confirmed", "shipped", "delivered", "paid"].includes(o.status))
-          .map((o: any) => o.id);
+        // Earnings: paid orders whose paid_at falls in window (COD collected).
+        const earningsOrders = orders.filter((o: any) =>
+          o.status === "paid" && inPaidWindow(o, winFrom, winTo)
+        );
+        // Pipeline currently awaiting cash (confirmed/shipped/delivered) — from activity set
+        const awaitingOrders = activityOrders.filter((o: any) =>
+          ["confirmed", "shipped", "delivered"].includes(o.status)
+        );
+        const returnedOrders = activityOrders.filter((o: any) => o.status === "returned");
+
+        const packages_sold = packagesSoldOf(earningsOrders);
+        const packages_awaiting = packagesAwaitingOf(awaitingOrders);
+        const packages_returned = packagesReturnedOf(returnedOrders);
+        const returns_orders = returnedOrders.length;
+        const paid_revenue = paidRevenueOf(earningsOrders);
+        // Super-admins earn nothing — but pure-agent dashboards only call this for agents.
+        // When admin inspects an agent, still compute bonus (recipient is the agent).
+        const payout_earned = calcAgentBonus(earningsOrders);
+
+        // Products on PAID packages only (align with packages_sold)
         const products_sold: Record<string, number> = {};
-        let units_sold = 0;
-        for (let i = 0; i < wonIds.length; i += 200) {
-          const chunk = wonIds.slice(i, i + 200);
-          const items = await paginate<any>(() =>
-            adminClient.from("order_items").select("product_name, quantity, order_id").in("order_id", chunk));
-          for (const it of items) {
-            const qty = Number(it.quantity || 0);
-            units_sold += qty;
-            const name = ((it.product_name as string) || "").trim() || "—";
-            products_sold[name] = (products_sold[name] || 0) + qty;
+        for (const o of earningsOrders) {
+          const items = o.order_items || [];
+          if (items.length > 0) {
+            for (const it of items) {
+              const qty = Number(it.quantity || 0);
+              const name = ((it.product_name as string) || "").trim() || "—";
+              products_sold[name] = (products_sold[name] || 0) + qty;
+            }
+          } else {
+            // Legacy: no line items — count order.quantity under product placeholder
+            const qty = Number(o.quantity || 0) || 1;
+            products_sold["—"] = (products_sold["—"] || 0) + qty;
           }
         }
 
-        return { lead_count, deals_won, deals_lost, total_value, tasks_completed, total_orders, daily: dailyBreakdown, statusCounts, orders_from_standard, orders_from_leads, products_sold, units_sold };
+        // units_sold deprecated alias → packages_sold (paid only) so old FE still works
+        const units_sold = packages_sold;
+
+        return {
+          lead_count, deals_won, deals_lost, total_value, tasks_completed, total_orders,
+          daily: dailyBreakdown, statusCounts, orders_from_standard, orders_from_leads,
+          products_sold, units_sold,
+          packages_sold, packages_awaiting, packages_returned, returns_orders,
+          paid_revenue, payout_earned,
+          from: winFrom, to: winTo,
+        };
       }
 
       if (!isAdminOrManager) {
         // Pure agent: personal stats only
         const metrics = await computeMetrics(user.id);
-        return json({ ...metrics, period, from: fromDate, to: toDate });
+        return json({ ...metrics, period, from: metrics.from || fromDate, to: metrics.to || toDate });
       }
 
       // Admin or dual-role: compute admin-level metrics (with optional agent filter)
@@ -4599,6 +6302,127 @@ async function handleRequest(req: Request): Promise<Response> {
         personalMetrics,
         isDualRole,
         period, from: fromDate, to: toDate,
+      });
+    }
+
+    // GET /api/my-orders?tab=confirmed|shipped|paid|returned&period=today|month|custom&date=YYYY-MM-DD&from=&to=&page=&limit=&agent_id=
+    // Agent-dashboard "My Orders" drill-down worklists (client name/phone/product
+    // + Call button). STRUCTURAL PRIVACY BOUNDARY: only these four detail tabs
+    // are servable — the status filter is derived from `tab`, so cancelled and
+    // trashed client details are unreachable here by construction. That matters
+    // because agent roles are UNREDACTED in role_privacy: masking would not hide
+    // anything from them, the boundary has to be structural. Cancel/trash COUNTS
+    // stay in dashboard-stats.
+    // Ownership = salesOwnerId (confirmer ?? assignee), enforced server-side on
+    // adminClient — orders RLS only covers the assignee leg, so it cannot be
+    // relied on for the confirmer scope.
+    if (req.method === "GET" && path === "my-orders") {
+      if (!isAgent && !isAdminOrManager) return json({ error: "Forbidden" }, 403);
+      if (!checkUserRateLimit(user.id, "my-orders", 60)) {
+        return json({ error: "Rate limit exceeded — slow down" }, 429);
+      }
+
+      const TAB_EVENT_COL: Record<string, string> = {
+        confirmed: "confirmed_at",
+        shipped: "shipped_at",
+        paid: "paid_at",
+        returned: "returned_at",
+      };
+      const tab = url.searchParams.get("tab") || "confirmed";
+      const eventCol = TAB_EVENT_COL[tab];
+      if (!eventCol) return json({ error: "Invalid tab" }, 400);
+
+      const periodRaw = url.searchParams.get("period");
+      const period = periodRaw === "month" ? "month" : periodRaw === "custom" ? "custom" : "today";
+      const page = Math.max(1, parseInt(url.searchParams.get("page") || "1") || 1);
+      const limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get("limit") || "20") || 20));
+
+      // Agents are hard-locked to themselves; admins/managers may inspect an
+      // agent (managers still get role_privacy masking via redactCustomerList).
+      // The id is interpolated into a PostgREST .or() string → UUID-validate.
+      const agentParam = url.searchParams.get("agent_id");
+      let targetId = user.id;
+      if (agentParam && isAdminOrManager) {
+        if (!UUID_RE.test(agentParam)) return json({ error: "Invalid agent_id" }, 400);
+        targetId = agentParam;
+      }
+
+      // Same UTC window math as dashboard-stats — deliberately NOT Sofia-
+      // midnight, so the dashboard tiles and these lists agree. Day browsing
+      // is past-only: a future date clamps to today.
+      const now = new Date();
+      const todayStr = now.toISOString().substring(0, 10);
+      const dateRaw = url.searchParams.get("date");
+      const dayParam = dateRaw && /^\d{4}-\d{2}-\d{2}$/.test(dateRaw)
+        ? (dateRaw > todayStr ? todayStr : dateRaw)
+        : null;
+      const customWin = period === "custom"
+        ? customRangeWindow(url.searchParams.get("from"), url.searchParams.get("to"), todayStr, now)
+        : null;
+      let fromDate: string, toDate: string;
+      if (customWin) {
+        fromDate = customWin.fromDate;
+        toDate = customWin.toDate;
+      } else if (period === "month") {
+        fromDate = todayStr.substring(0, 7) + "-01T00:00:00Z";
+        toDate = now.toISOString();
+      } else if (dayParam && dayParam !== todayStr) {
+        fromDate = dayParam + "T00:00:00Z";
+        toDate = dayParam + "T23:59:59Z";
+      } else {
+        fromDate = todayStr + "T00:00:00Z";
+        toDate = now.toISOString();
+      }
+
+      const ownerOr = salesOwnerOrFilter(targetId);
+      const legacyOr = "source_type.is.null,source_type.neq.monadon_legacy";
+      // No address columns on purpose — the worklist doesn't need them.
+      const SELECT_COLS = "id, display_id, status, price, quantity, product_name, customer_name, customer_phone, created_at, confirmed_at, shipped_at, paid_at, returned_at, return_reason, order_items(product_name, quantity, price_per_unit, total_price)";
+
+      // Tab semantics: current status == tab (+ event-date window), so the tabs
+      // are disjoint — a confirmed order that ships moves to the Shipped tab.
+      let q = adminClient.from("orders")
+        .select(SELECT_COLS, { count: "exact" })
+        .eq("status", tab) // tab IS the status — see boundary note above
+        .or(ownerOr)
+        .or(legacyOr);
+      // Duplicates are admin/manager-only (they're never owner-attributed to
+      // agents anyway — belt-and-braces).
+      if (!isAdminOrManager) q = q.is("duplicated_from", null);
+      if (tab === "shipped") {
+        // Shipped = UNWINDOWED payment-chase list (every still-unpaid delivery),
+        // most-overdue first.
+        q = q.order("shipped_at", { ascending: true, nullsFirst: false });
+      } else {
+        q = q.gte(eventCol, fromDate).lte(eventCol, toDate).order(eventCol, { ascending: false });
+      }
+      q = q.range((page - 1) * limit, page * limit - 1);
+
+      const countFor = (status: string) => {
+        let c = adminClient.from("orders")
+          .select("id", { count: "exact", head: true })
+          .eq("status", status).or(ownerOr).or(legacyOr);
+        if (status !== "shipped") c = c.gte(TAB_EVENT_COL[status], fromDate).lte(TAB_EVENT_COL[status], toDate);
+        return c;
+      };
+
+      const [listRes, cRes, sRes, pRes, rRes] = await Promise.all([
+        q, countFor("confirmed"), countFor("shipped"), countFor("paid"), countFor("returned"),
+      ]);
+      if (listRes.error) return json({ error: sanitizeDbError(listRes.error) }, 400);
+
+      return json({
+        orders: redactCustomerList(listRes.data || [], piiFlags),
+        total: listRes.count || 0,
+        page,
+        limit,
+        counts: {
+          confirmed: cRes.count || 0,
+          shipped: sRes.count || 0,
+          paid: pRes.count || 0,
+          returned: rRes.count || 0,
+        },
+        tab, period, from: fromDate, to: toDate,
       });
     }
 
@@ -4837,6 +6661,8 @@ async function handleRequest(req: Request): Promise<Response> {
           .range(offset, offset + 999);
         if (from) query = query.gte("created_at", from);
         if (to) query = query.lte("created_at", to);
+        // Agents never see duplicated orders — keep their status counts clean.
+        if (!isAdminOrManager) query = query.is("duplicated_from", null);
         const { data, error } = await query;
         if (error) return json({ error: sanitizeDbError(error) }, 400);
         if (!data || data.length === 0) break;
@@ -4954,6 +6780,110 @@ async function handleRequest(req: Request): Promise<Response> {
         .single();
       if (error) return json({ error: sanitizeDbError(error) }, 400);
       return json(data);
+    }
+
+    // POST /api/products/bigarena-stock-sync
+    // Upload of the BigArena "Fulfillment Panel" stock export. The client parses the
+    // file and previews the diff; we re-match every row against the catalogue here
+    // (never trusting a client-supplied product id) and overwrite stock_quantity.
+    // Products missing from the CRM are REPORTED, never created — operator decision.
+    if (req.method === "POST" && path === "products/bigarena-stock-sync") {
+      if (!isAdminOrManager && !isWarehouse) return json({ error: "Forbidden" }, 403);
+      if (!checkUserRateLimit(user.id, "products.bigarena-stock-sync", 5)) {
+        return json({ error: "Rate limit exceeded — try again in a minute" }, 429);
+      }
+
+      let body;
+      try { body = parseBody(bigArenaStockSyncSchema, await req.json()); } catch (e: any) { return json({ error: e.message }, 400); }
+      const filename = (body.meta?.filename || "bigarena-stock-upload").slice(0, 160);
+
+      // Load the catalogue once and build the same three indexes the client uses.
+      const { data: products, error: prodErr } = await adminClient
+        .from("products")
+        .select("id, sku, barcode, name, stock_quantity")
+        .limit(5000);
+      if (prodErr) return json({ error: sanitizeDbError(prodErr) }, 400);
+
+      const normalizeName = (s: any) => String(s || "").toLowerCase().replace(/\s+/g, " ").trim();
+      const bySku = new Map<string, any>();
+      const byBarcode = new Map<string, any>();
+      const byName = new Map<string, any>();
+      for (const p of (products || [])) {
+        if (p.sku) bySku.set(String(p.sku).trim(), p);
+        if (p.barcode) byBarcode.set(String(p.barcode).trim(), p);
+        const n = normalizeName(p.name);
+        if (n && !byName.has(n)) byName.set(n, p);
+      }
+
+      let updated = 0;
+      let unchanged = 0;
+      const notInCrm: any[] = [];
+      const bigChanges: any[] = [];
+      const details: any[] = [];
+      const seenProductIds = new Set<string>();
+
+      for (const row of body.rows) {
+        const sku = row.sku ? String(row.sku).trim() : "";
+        const barcode = row.barcode ? String(row.barcode).trim() : "";
+        const product =
+          (sku && bySku.get(sku)) ||
+          (barcode && byBarcode.get(barcode)) ||
+          byName.get(normalizeName(row.name)) ||
+          null;
+
+        if (!product) {
+          notInCrm.push({ sku: row.sku || null, name: row.name, free: row.free });
+          continue;
+        }
+        // Two file rows resolving to the same product would fight each other — the
+        // client already merges shared-barcode rows, so this is a corrupt file.
+        if (seenProductIds.has(product.id)) {
+          details.push({ sku: row.sku, name: row.name, reason: "duplicate_match_skipped" });
+          continue;
+        }
+        seenProductIds.add(product.id);
+
+        const previous = Number(product.stock_quantity || 0);
+        if (previous === row.free) { unchanged++; continue; }
+
+        const { error: updErr } = await adminClient
+          .from("products")
+          .update({ stock_quantity: row.free })
+          .eq("id", product.id);
+        if (updErr) {
+          details.push({ sku: row.sku, name: row.name, reason: sanitizeDbError(updErr) });
+          continue;
+        }
+
+        await adminClient.from("inventory_logs").insert({
+          product_id: product.id,
+          change_amount: row.free - previous,
+          previous_stock: previous,
+          new_stock: row.free,
+          reason: "bigarena_import",
+          movement_type: "bigarena_sync",
+          user_id: user.id,
+          notes: `BigArena stock sync — ${filename}`,
+        });
+
+        // Flag drastic drops so the report surfaces them even though the operator
+        // already saw the delta in the preview.
+        if (previous - row.free > 500 && row.free < previous * 0.1) {
+          bigChanges.push({ name: product.name, previous_stock: previous, new_stock: row.free });
+        }
+        updated++;
+      }
+
+      await audit(adminClient, user.id, user.email, "products.bigarena_stock_sync", {
+        filename,
+        rows: body.rows.length,
+        updated,
+        unchanged,
+        not_in_crm: notInCrm.length,
+        big_changes: bigChanges.length,
+      });
+
+      return json({ success: true, updated, unchanged, notInCrm, bigChanges, details });
     }
 
     // GET /api/products/:id/inventory-logs
@@ -5453,7 +7383,7 @@ async function handleRequest(req: Request): Promise<Response> {
       return json(data);
     }
 
-    // GET /api/agent-performance (admin only) — full business metrics
+    // GET /api/agent-performance — full business metrics (admin: all; agents: self only)
     if (req.method === "GET" && path === "agent-performance") {
       // Allow regular agents (including pending/prediction) to see their *own* performance + payout.
       // Admins/managers can see everyone.
@@ -5461,6 +7391,9 @@ async function handleRequest(req: Request): Promise<Response> {
 
       const from = url.searchParams.get("from");
       const to = url.searchParams.get("to");
+      // Earnings metrics (packages_sold, payout) window by paid_at by default.
+      // date_basis=created_at keeps the legacy activity-window behaviour for all metrics.
+      const dateBasis = url.searchParams.get("date_basis") === "created_at" ? "created_at" : "paid_at";
       const search = url.searchParams.get("search")?.toLowerCase();
       const sourceFilter = url.searchParams.get("source");
       const statusFilter = url.searchParams.get("status");
@@ -5475,6 +7408,19 @@ async function handleRequest(req: Request): Promise<Response> {
         // (search and agentFilter from query are ignored for personal view)
       }
 
+      // Paginate past PostgREST's 1000-row default so high-volume agents don't undercount.
+      const paginateOrders = async (makeQuery: () => any, pageSize = 1000): Promise<any[]> => {
+        const all: any[] = [];
+        for (let fromIdx = 0; ; fromIdx += pageSize) {
+          const { data, error } = await makeQuery().range(fromIdx, fromIdx + pageSize - 1);
+          if (error) throw error;
+          if (!data || data.length === 0) break;
+          all.push(...data);
+          if (data.length < pageSize) break;
+        }
+        return all;
+      };
+
       // Fetch orders first (we need them to know which users actually have sales activity).
       // "trashed" is fetched so we can show a per-agent junk/wrong-number count; it is
       // separated out below so it never inflates leads, packages, payout or any rate.
@@ -5483,13 +7429,48 @@ async function handleRequest(req: Request): Promise<Response> {
       // Whether cancelled counts as a *lead* / rate denominator is decided per-agent
       // below via includeCancelled — exactly how trashed is always kept out of leads.
       const statusesToFetch = ["take", "call_again", "confirmed", "shipped", "delivered", "returned", "paid", "trashed", "cancelled"];
-      let ordersQuery = adminClient.from("orders").select("id, status, assigned_agent_id, confirmed_by_agent_id, price, quantity, product_id, created_at, source_type, prediction_list_id, order_items(price_per_unit, quantity, total_price, product_id)").in("status", statusesToFetch)
-        .or("source_type.is.null,source_type.neq.monadon_legacy"); // exclude Monadon legacy (another company's revenue / no agent payout)
-      if (from) ordersQuery = ordersQuery.gte("created_at", from);
-      if (to) ordersQuery = ordersQuery.lte("created_at", to);
-      if (sourceFilter) ordersQuery = ordersQuery.eq("source_type", sourceFilter);
-      if (statusFilter) ordersQuery = ordersQuery.eq("status", statusFilter);
-      const { data: allOrders } = await ordersQuery;
+      const ORDER_PERF_SELECT = "id, status, assigned_agent_id, confirmed_by_agent_id, price, quantity, product_id, created_at, paid_at, confirmed_at, returned_at, shipped_at, source_type, prediction_list_id, order_items(price_per_unit, quantity, total_price, product_id)";
+
+      const baseOrdersFilter = (q: any) => {
+        let qq = q.in("status", statusesToFetch)
+          .or("source_type.is.null,source_type.neq.monadon_legacy");
+        if (sourceFilter) qq = qq.eq("source_type", sourceFilter);
+        if (statusFilter) qq = qq.eq("status", statusFilter);
+        return qq;
+      };
+
+      // Two windows merged by id when a date range is set:
+      //   (1) created_at in range → activity / pipeline / cancels
+      //   (2) paid_at in range → COD collected this period (may have been created earlier)
+      // Without a range, fetch everything in the status set.
+      let allOrders: any[] = [];
+      if (from || to) {
+        const byId = new Map<string, any>();
+        const createdRows = await paginateOrders(() => {
+          let q = baseOrdersFilter(adminClient.from("orders").select(ORDER_PERF_SELECT));
+          if (from) q = q.gte("created_at", from);
+          if (to) q = q.lte("created_at", to);
+          return q;
+        });
+        for (const o of createdRows) byId.set(o.id, o);
+
+        // Earnings window: paid orders whose payment event falls in range
+        // (covers COD that was confirmed last month but paid this month).
+        const paidRows = await paginateOrders(() => {
+          let q = adminClient.from("orders").select(ORDER_PERF_SELECT)
+            .eq("status", "paid")
+            .or("source_type.is.null,source_type.neq.monadon_legacy");
+          if (sourceFilter) q = q.eq("source_type", sourceFilter);
+          if (from) q = q.gte("paid_at", from);
+          if (to) q = q.lte("paid_at", to);
+          return q;
+        });
+        for (const o of paidRows) byId.set(o.id, o);
+        allOrders = Array.from(byId.values());
+      } else {
+        allOrders = await paginateOrders(() =>
+          baseOrdersFilter(adminClient.from("orders").select(ORDER_PERF_SELECT)));
+      }
 
       // Build per-agent metrics + collect everyone who has any attribution
       // (assigned_agent_id OR confirmed_by_agent_id). This is the key for showing
@@ -5573,17 +7554,8 @@ async function handleRequest(req: Request): Promise<Response> {
         .in("role", ["pending_agent", "prediction_agent"]);
       const specialAgentIds = new Set((specialRoleRows || []).map((r: any) => r.user_id));
 
-      // unitsOf helper (local to this handler)
-      const unitsOf = (o: any) => {
-        const its = o.order_items || [];
-        return its.length
-          ? its.reduce((s: number, it: any) => s + Number(it.quantity || 0), 0)
-          : Number(o.quantity || 0) || 1;
-      };
-
-      // Per-package commission lives in the shared module-level calcAgentBonus()
-      // (see top of file + elyon-agent-commissions skill). Earns on EVERY paid
-      // order, per package, credited to the confirming agent — no source/role gate.
+      // Module-level unitsOf / packagesSoldOf / calcAgentBonus — do not reintroduce
+      // a local units helper. packages_sold = PAID units only (COD collected).
 
       // Determine which agents to include: those with activity OR all if showZero
       const activeAgentIds = new Set(Object.keys(agentOrderMap));
@@ -5617,7 +7589,12 @@ async function handleRequest(req: Request): Promise<Response> {
         const leadsAssigned = agentOrders.length;
         const confirmedOrders = agentOrders.filter((o: any) => ["confirmed", "shipped", "delivered", "returned", "paid"].includes(o.status));
         const shippedOrders = agentOrders.filter((o: any) => ["shipped", "delivered", "returned", "paid"].includes(o.status));
-        const paidOrders = agentOrders.filter((o: any) => o.status === "paid");
+        // Earnings subset: when date_basis=paid_at, only paid orders whose payment
+        // event falls in the request window. Activity metrics still use agentOrders.
+        const earningsOrders = dateBasis === "paid_at" && (from || to)
+          ? agentOrders.filter((o: any) => o.status === "paid" && inPaidWindow(o, from, to))
+          : agentOrders.filter((o: any) => o.status === "paid");
+        const paidOrders = earningsOrders;
         const returnedOrders = agentOrders.filter((o: any) => o.status === "returned");
 
         // Financial: use locked order price
@@ -5625,7 +7602,7 @@ async function handleRequest(req: Request): Promise<Response> {
           .filter((o: any) => ["shipped", "paid"].includes(o.status))
           .reduce((s: number, o: any) => s + Number(o.price || 0), 0);
 
-        const paidRevenue = paidOrders.reduce((s: number, o: any) => s + Number(o.price || 0), 0);
+        const paidRevenue = paidRevenueOf(paidOrders);
 
         const outstandingRevenue = agentOrders
           .filter((o: any) => o.status === "shipped")
@@ -5683,14 +7660,15 @@ async function handleRequest(req: Request): Promise<Response> {
         // Super-admins (admin/manager, not agents) are never on commission.
         const isSpecial = specialAgentIds.has(agent.user_id);
         const isAgentRole = traditionalAgentUserIds.has(agent.user_id) && !superAdminUserIds.has(agent.user_id);
-        const payoutEarned = isAgentRole ? calcAgentBonus(agentOrders) : 0;
+        const payoutEarned = isAgentRole ? calcAgentBonus(paidOrders) : 0;
+        const packagesSold = packagesSoldOf(paidOrders);
+        const packagesAwaiting = packagesAwaitingOf(agentOrders);
+        const packagesReturned = packagesReturnedOf(agentOrders);
 
-        // Average revenue per package over SOLD orders (confirmed/shipped/delivered/paid),
-        // mirroring the Insights aggregate's "Avg/Pkg" (sold revenue ÷ sold packages).
-        const soldOrders = agentOrders.filter((o: any) => ["confirmed", "shipped", "delivered", "paid"].includes(o.status));
-        const soldRevenue = soldOrders.reduce((s: number, o: any) => s + Number(o.price || 0), 0);
-        const soldUnits = soldOrders.reduce((s: number, o: any) => s + unitsOf(o), 0);
-        const avgPerPackage = soldUnits > 0 ? Math.round((soldRevenue / soldUnits) * 100) / 100 : 0;
+        // Avg/pkg on paid packages (aligns with payout basis — not pipeline SOLD).
+        const avgPerPackage = packagesSold > 0
+          ? Math.round((paidRevenue / packagesSold) * 100) / 100
+          : 0;
 
         return {
           user_id: agent.user_id,
@@ -5701,6 +7679,7 @@ async function handleRequest(req: Request): Promise<Response> {
           total_shipped: shippedCount,
           total_paid: paidCount,
           total_returned: returnedOrders.length,
+          packages_returned: packagesReturned,
           total_cancelled: cancelledOrders.length,
           total_trashed: trashedOrders.length,
           conversion_rate: conversionRate,
@@ -5716,17 +7695,531 @@ async function handleRequest(req: Request): Promise<Response> {
           avg_order_value: avgOrderValue,
           revenue_per_lead: revenuePerLead,
           profit_per_lead: profitPerLead,
-          // New payout fields (only meaningful for pending/prediction agents)
           is_special_agent: isSpecial,
-          packages_sold: agentOrders.reduce((s: number, o: any) => s + unitsOf(o), 0),
+          // packages_sold = paid units ONLY (COD collected). Not pipeline.
+          packages_sold: packagesSold,
+          packages_awaiting: packagesAwaiting,
           avg_per_package: avgPerPackage,
           payout_earned: payoutEarned,
+          date_basis: dateBasis,
         };
       });
 
       results.sort((a: any, b: any) => b.paid_revenue - a.paid_revenue);
 
       return json(results);
+    }
+
+    // ============================================================
+    // AGENT PAYOUTS (commission settlements)
+    // ============================================================
+    // Ledger: agent_payouts + agent_payout_items. Never delete — void only.
+    // Unpaid = paid packages not yet on a status=paid settlement.
+
+    if (segments[0] === "agent-payouts") {
+      // Sanity ceiling for hand-typed amounts — a slipped keystroke must not
+      // write a six-figure commission into the ledger.
+      const PAYOUT_AMOUNT_MAX = 100000;
+
+      // Period bounds are timestamptz. The UI sends plain dates, so widen them
+      // to cover the whole day rather than snapping both ends to midnight.
+      const payoutBound = (v: unknown, edge: "start" | "end"): string | null => {
+        const s = String(v ?? "").trim();
+        if (!s) return null;
+        if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return `${s}T${edge === "start" ? "00:00:00" : "23:59:59"}Z`;
+        const parsed = new Date(s);
+        return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+      };
+
+      const payoutPaginate = async (makeQuery: () => any, pageSize = 1000): Promise<any[]> => {
+        const all: any[] = [];
+        for (let fromIdx = 0; ; fromIdx += pageSize) {
+          const { data, error } = await makeQuery().range(fromIdx, fromIdx + pageSize - 1);
+          if (error) throw error;
+          if (!data || data.length === 0) break;
+          all.push(...data);
+          if (data.length < pageSize) break;
+        }
+        return all;
+      };
+
+      const loadSettledOrderIds = async (agentUserId?: string | null): Promise<Set<string>> => {
+        let pq = adminClient.from("agent_payouts").select("id").eq("status", "paid");
+        if (agentUserId) pq = pq.eq("agent_user_id", agentUserId);
+        const payouts = await payoutPaginate(() => pq);
+        const payoutIds = payouts.map((p: any) => p.id);
+        if (payoutIds.length === 0) return new Set();
+        const orderIds = new Set<string>();
+        for (let i = 0; i < payoutIds.length; i += 200) {
+          const chunk = payoutIds.slice(i, i + 200);
+          const items = await payoutPaginate(() =>
+            adminClient.from("agent_payout_items").select("order_id").in("payout_id", chunk),
+          );
+          for (const it of items) orderIds.add(it.order_id);
+        }
+        return orderIds;
+      };
+
+      const loadPaidOrdersForAgent = async (
+        agentUserId: string,
+        from: string | null,
+        to: string | null,
+      ): Promise<any[]> => {
+        // Fetch all paid orders owned by agent, then apply paid_at window in JS
+        // (handles null paid_at → created_at fallback via inPaidWindow).
+        const rows = await payoutPaginate(() =>
+          adminClient
+            .from("orders")
+            .select("id, display_id, status, price, quantity, paid_at, created_at, confirmed_by_agent_id, assigned_agent_id, order_items(price_per_unit, quantity, product_id)")
+            .eq("status", "paid")
+            .or("source_type.is.null,source_type.neq.monadon_legacy")
+            .or(salesOwnerOrFilter(agentUserId)),
+        );
+        return rows.filter((o: any) => salesOwnerId(o) === agentUserId && inPaidWindow(o, from, to));
+      };
+
+      // GET /api/agent-payouts/summary
+      if (req.method === "GET" && segments[1] === "summary" && segments.length === 2) {
+        const from = url.searchParams.get("from");
+        const to = url.searchParams.get("to");
+        let agentId = url.searchParams.get("agent_id");
+        if (!isAdminOrManager) agentId = user.id;
+        if (agentId && !UUID_RE.test(agentId)) return json({ error: "Invalid agent_id" }, 400);
+
+        const { data: agentRoles } = await adminClient
+          .from("user_roles")
+          .select("user_id")
+          .in("role", ["agent", "pending_agent", "prediction_agent"]);
+        const agentIds = new Set((agentRoles || []).map((r: any) => r.user_id));
+        const { data: superRoles } = await adminClient
+          .from("user_roles")
+          .select("user_id")
+          .in("role", ["admin", "manager"]);
+        const superIds = new Set((superRoles || []).map((r: any) => r.user_id));
+
+        let profilesQ = adminClient.from("profiles").select("user_id, full_name, email").eq("is_active", true);
+        if (agentId) profilesQ = profilesQ.eq("user_id", agentId);
+        const { data: profiles } = await profilesQ;
+        const agentProfiles = (profiles || []).filter(
+          (p: any) => agentIds.has(p.user_id) && !superIds.has(p.user_id),
+        );
+
+        const settledAll = await loadSettledOrderIds(agentId || null);
+        // Settled amounts per agent
+        let settlementsQ = adminClient
+          .from("agent_payouts")
+          .select("agent_user_id, amount_eur, paid_on, status")
+          .eq("status", "paid");
+        if (agentId) settlementsQ = settlementsQ.eq("agent_user_id", agentId);
+        const settlements = await payoutPaginate(() => settlementsQ);
+        const settledSum: Record<string, number> = {};
+        const lastPaid: Record<string, string> = {};
+        for (const s of settlements) {
+          settledSum[s.agent_user_id] = (settledSum[s.agent_user_id] || 0) + Number(s.amount_eur || 0);
+          const d = s.paid_on;
+          if (!lastPaid[s.agent_user_id] || d > lastPaid[s.agent_user_id]) lastPaid[s.agent_user_id] = d;
+        }
+
+        const results = [];
+        for (const p of agentProfiles) {
+          const paidOrders = await loadPaidOrdersForAgent(p.user_id, from, to);
+          const owned = paidOrders.filter((o: any) => salesOwnerId(o) === p.user_id);
+          const unsettled = owned.filter((o: any) => !settledAll.has(o.id));
+          // Awaiting packages from current pipeline (not date-windowed tightly)
+          const awaitingRows = await payoutPaginate(() =>
+            adminClient
+              .from("orders")
+              .select("id, status, quantity, order_items(quantity)")
+              .in("status", ["confirmed", "shipped", "delivered"])
+              .or("source_type.is.null,source_type.neq.monadon_legacy")
+              .or(salesOwnerOrFilter(p.user_id)),
+          );
+          const returnedRows = await payoutPaginate(() => {
+            let q = adminClient
+              .from("orders")
+              .select("id, status, quantity, returned_at, created_at, order_items(quantity)")
+              .eq("status", "returned")
+              .or("source_type.is.null,source_type.neq.monadon_legacy")
+              .or(salesOwnerOrFilter(p.user_id));
+            if (from) q = q.gte("returned_at", from);
+            if (to) q = q.lte("returned_at", to);
+            return q;
+          });
+
+          const payoutEarned = calcAgentBonus(owned);
+          const payoutUnpaid = calcAgentBonus(unsettled);
+          results.push({
+            agent_user_id: p.user_id,
+            full_name: p.full_name,
+            email: p.email,
+            packages_sold: packagesSoldOf(owned),
+            packages_awaiting: packagesAwaitingOf(awaitingRows),
+            packages_returned: packagesReturnedOf(returnedRows),
+            payout_earned: payoutEarned,
+            payout_settled: Math.round((settledSum[p.user_id] || 0) * 100) / 100,
+            payout_unpaid: payoutUnpaid,
+            last_paid_on: lastPaid[p.user_id] || null,
+            unsettled_orders: unsettled.length,
+          });
+        }
+        results.sort((a: any, b: any) => b.payout_unpaid - a.payout_unpaid);
+        return json(results);
+      }
+
+      // GET /api/agent-payouts/preview?agent_id=&from=&to=
+      if (req.method === "GET" && segments[1] === "preview" && segments.length === 2) {
+        if (!isAdminOrManager) return json({ error: "Forbidden" }, 403);
+        const agentId = url.searchParams.get("agent_id");
+        if (!agentId || !UUID_RE.test(agentId)) return json({ error: "agent_id required" }, 400);
+        const from = url.searchParams.get("from");
+        const to = url.searchParams.get("to");
+
+        const { data: prof } = await adminClient
+          .from("profiles")
+          .select("user_id, full_name")
+          .eq("user_id", agentId)
+          .maybeSingle();
+        if (!prof) return json({ error: "Agent not found" }, 404);
+
+        const settled = await loadSettledOrderIds(agentId);
+        const paidOrders = (await loadPaidOrdersForAgent(agentId, from, to))
+          .filter((o: any) => salesOwnerId(o) === agentId && !settled.has(o.id));
+
+        const items = paidOrders.map((o: any) => ({
+          order_id: o.id,
+          display_id: o.display_id || null,
+          package_units: unitsOf(o),
+          bonus_eur: Math.round(orderPackageBonus(o) * 100) / 100,
+          paid_at: o.paid_at || null,
+          price: Number(o.price || 0),
+        }));
+        const amount = calcAgentBonus(paidOrders);
+        const packages = packagesSoldOf(paidOrders);
+        return json({
+          agent_user_id: agentId,
+          full_name: prof.full_name,
+          period_from: from || null,
+          period_to: to || null,
+          packages_count: packages,
+          amount_eur: amount,
+          order_count: items.length,
+          items,
+        });
+      }
+
+      // GET /api/agent-payouts  (list settlements)
+      if (req.method === "GET" && segments.length === 1) {
+        let agentId = url.searchParams.get("agent_id");
+        const status = url.searchParams.get("status"); // paid | voided | all
+        if (!isAdminOrManager) agentId = user.id;
+
+        let q = adminClient
+          .from("agent_payouts")
+          .select("id, agent_user_id, period_from, period_to, packages_count, amount_eur, computed_amount_eur, amount_source, override_reason, paid_on, paid_by, method, notes, status, voided_at, void_reason, created_at, updated_at")
+          .order("paid_on", { ascending: false })
+          .order("created_at", { ascending: false });
+        if (agentId) {
+          if (!UUID_RE.test(agentId)) return json({ error: "Invalid agent_id" }, 400);
+          q = q.eq("agent_user_id", agentId);
+        }
+        if (status && status !== "all") q = q.eq("status", status);
+        const rows = await payoutPaginate(() => q);
+
+        const ids = [...new Set(rows.map((r: any) => r.agent_user_id))];
+        const nameMap: Record<string, string> = {};
+        if (ids.length) {
+          const { data: profs } = await adminClient.from("profiles").select("user_id, full_name").in("user_id", ids);
+          for (const p of profs || []) nameMap[p.user_id] = p.full_name;
+        }
+        return json(rows.map((r: any) => ({ ...r, agent_name: nameMap[r.agent_user_id] || null })));
+      }
+
+      // GET /api/agent-payouts/:id  or  /api/agent-payouts/:id/report
+      if (req.method === "GET" && segments.length >= 2 && UUID_RE.test(segments[1])) {
+        const id = segments[1];
+        const { data: payout, error } = await adminClient
+          .from("agent_payouts")
+          .select("*")
+          .eq("id", id)
+          .maybeSingle();
+        if (error || !payout) return json({ error: "Not found" }, 404);
+        if (!isAdminOrManager && payout.agent_user_id !== user.id) {
+          return json({ error: "Forbidden" }, 403);
+        }
+
+        const { data: items } = await adminClient
+          .from("agent_payout_items")
+          .select("order_id, package_units, bonus_eur")
+          .eq("payout_id", id);
+        const orderIds = (items || []).map((i: any) => i.order_id);
+        let orderMeta: Record<string, any> = {};
+        if (orderIds.length) {
+          for (let i = 0; i < orderIds.length; i += 200) {
+            const chunk = orderIds.slice(i, i + 200);
+            const { data: ords } = await adminClient
+              .from("orders")
+              .select("id, display_id, price, paid_at, customer_name")
+              .in("id", chunk);
+            for (const o of ords || []) orderMeta[o.id] = o;
+          }
+        }
+        const { data: prof } = await adminClient
+          .from("profiles")
+          .select("full_name, email")
+          .eq("user_id", payout.agent_user_id)
+          .maybeSingle();
+
+        const detailItems = (items || []).map((it: any) => ({
+          order_id: it.order_id,
+          display_id: orderMeta[it.order_id]?.display_id || null,
+          package_units: it.package_units,
+          bonus_eur: Number(it.bonus_eur),
+          paid_at: orderMeta[it.order_id]?.paid_at || null,
+          price: orderMeta[it.order_id]?.price != null ? Number(orderMeta[it.order_id].price) : null,
+          customer_name: orderMeta[it.order_id]?.customer_name || null,
+        }));
+
+        const payload = {
+          ...payout,
+          agent_name: prof?.full_name || null,
+          agent_email: prof?.email || null,
+          items: detailItems,
+        };
+
+        if (segments[2] === "report") {
+          return json({
+            report_title: "Elyon CRM — Agent Commission Report",
+            generated_at: new Date().toISOString(),
+            currency_note: "EUR primary; BGN = EUR × 1.95583",
+            settlement: payload,
+          });
+        }
+        return json(payload);
+      }
+
+      // POST /api/agent-payouts  — mark agent paid (create settlement)
+      if (req.method === "POST" && segments.length === 1) {
+        if (!isAdminOrManager) return json({ error: "Forbidden" }, 403);
+        const body = await req.json();
+        const agentId = body.agent_id;
+        if (!agentId || !UUID_RE.test(agentId)) return json({ error: "agent_id required" }, 400);
+        const from = body.from || null;
+        const to = body.to || null;
+        const method = body.method ? String(body.method).slice(0, 40) : null;
+        const notes = body.notes ? String(body.notes).slice(0, 2000) : null;
+        const paidOn = body.paid_on && /^\d{4}-\d{2}-\d{2}$/.test(body.paid_on)
+          ? body.paid_on
+          : new Date().toISOString().slice(0, 10);
+
+        const settled = await loadSettledOrderIds(agentId);
+        const paidOrders = (await loadPaidOrdersForAgent(agentId, from, to))
+          .filter((o: any) => salesOwnerId(o) === agentId && !settled.has(o.id));
+        if (paidOrders.length === 0) {
+          return json({ error: "No unsettled paid packages in this period" }, 400);
+        }
+
+        // The engine amount is always recorded. The operator may hand over a
+        // different sum (agents on a % deal, agreed corrections) — that becomes
+        // amount_eur and flags the settlement as a manual override.
+        const computedAmount = calcAgentBonus(paidOrders);
+        let amount = computedAmount;
+        let amountSource = "formula";
+        if (body.amount_eur !== undefined && body.amount_eur !== null && String(body.amount_eur).trim() !== "") {
+          const n = Number(body.amount_eur);
+          if (!Number.isFinite(n) || n < 0 || n > PAYOUT_AMOUNT_MAX) {
+            return json({ error: `amount_eur must be between 0 and ${PAYOUT_AMOUNT_MAX}` }, 400);
+          }
+          amount = Math.round(n * 100) / 100;
+          if (amount !== computedAmount) amountSource = "manual";
+        }
+        const overrideReason = body.override_reason ? String(body.override_reason).slice(0, 500) : null;
+        const packages = packagesSoldOf(paidOrders);
+        const periodFrom = from || paidOrders.reduce((min: string, o: any) => {
+          const at = orderPaidEventAt(o) || o.created_at;
+          return !min || at < min ? at : min;
+        }, "");
+        const periodTo = to || paidOrders.reduce((max: string, o: any) => {
+          const at = orderPaidEventAt(o) || o.created_at;
+          return !max || at > max ? at : max;
+        }, "");
+
+        const { data: payout, error: pErr } = await adminClient
+          .from("agent_payouts")
+          .insert({
+            agent_user_id: agentId,
+            period_from: periodFrom,
+            period_to: periodTo,
+            packages_count: packages,
+            amount_eur: amount,
+            computed_amount_eur: computedAmount,
+            amount_source: amountSource,
+            override_reason: overrideReason,
+            paid_on: paidOn,
+            paid_by: user.id,
+            method,
+            notes,
+            status: "paid",
+          })
+          .select()
+          .single();
+        if (pErr || !payout) return json({ error: sanitizeDbError(pErr) || "Failed to create payout" }, 400);
+
+        const itemRows = paidOrders.map((o: any) => ({
+          payout_id: payout.id,
+          order_id: o.id,
+          package_units: unitsOf(o),
+          bonus_eur: Math.round(orderPackageBonus(o) * 100) / 100,
+        }));
+        const { error: iErr } = await adminClient.from("agent_payout_items").insert(itemRows);
+        if (iErr) {
+          // Roll back header if items fail (e.g. double-pay race)
+          await adminClient.from("agent_payouts").delete().eq("id", payout.id);
+          return json({ error: sanitizeDbError(iErr) || "Failed to attach payout items" }, 400);
+        }
+
+        await audit(adminClient, user.id, user.email || null, "agent_payout.create", {
+          target_type: "agent_payout",
+          target_id: payout.id,
+          target_name: agentId,
+          payload: {
+            amount_eur: amount,
+            computed_amount_eur: computedAmount,
+            amount_source: amountSource,
+            override_reason: overrideReason,
+            packages_count: packages,
+            order_count: itemRows.length,
+            from,
+            to,
+          },
+        });
+
+        return json({ ...payout, items: itemRows }, 201);
+      }
+
+      // PATCH /api/agent-payouts/:id — correct a settlement after the fact.
+      // Only the paperwork is editable (amount, period, paid-on, method, notes);
+      // the order line items are never touched, so the double-pay guard and the
+      // unpaid balance stay intact whatever the operator types here.
+      if (req.method === "PATCH" && segments.length === 2 && UUID_RE.test(segments[1])) {
+        if (!isAdminOrManager) return json({ error: "Forbidden" }, 403);
+        const id = segments[1];
+        const body = await req.json().catch(() => ({}));
+
+        const { data: existing } = await adminClient
+          .from("agent_payouts")
+          .select("*")
+          .eq("id", id)
+          .maybeSingle();
+        if (!existing) return json({ error: "Not found" }, 404);
+
+        const patch: Record<string, unknown> = {};
+
+        if (body.amount_eur !== undefined && body.amount_eur !== null && String(body.amount_eur).trim() !== "") {
+          const n = Number(body.amount_eur);
+          if (!Number.isFinite(n) || n < 0 || n > PAYOUT_AMOUNT_MAX) {
+            return json({ error: `amount_eur must be between 0 and ${PAYOUT_AMOUNT_MAX}` }, 400);
+          }
+          const rounded = Math.round(n * 100) / 100;
+          patch.amount_eur = rounded;
+          // Fall back to 'formula' if the operator restores the engine number.
+          const baseline = existing.computed_amount_eur != null
+            ? Number(existing.computed_amount_eur)
+            : Number(existing.amount_eur);
+          patch.amount_source = rounded === baseline ? "formula" : "manual";
+        }
+
+        if (body.paid_on !== undefined) {
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(String(body.paid_on))) {
+            return json({ error: "paid_on must be YYYY-MM-DD" }, 400);
+          }
+          patch.paid_on = body.paid_on;
+        }
+
+        if (body.period_from !== undefined) {
+          const v = payoutBound(body.period_from, "start");
+          if (!v) return json({ error: "Invalid period_from" }, 400);
+          patch.period_from = v;
+        }
+        if (body.period_to !== undefined) {
+          const v = payoutBound(body.period_to, "end");
+          if (!v) return json({ error: "Invalid period_to" }, 400);
+          patch.period_to = v;
+        }
+        const finalFrom = String(patch.period_from ?? existing.period_from);
+        const finalTo = String(patch.period_to ?? existing.period_to);
+        if (finalFrom > finalTo) return json({ error: "period_from must be before period_to" }, 400);
+
+        if (body.method !== undefined) {
+          patch.method = body.method ? String(body.method).slice(0, 40) : null;
+        }
+        if (body.notes !== undefined) {
+          patch.notes = body.notes ? String(body.notes).slice(0, 2000) : null;
+        }
+        if (body.override_reason !== undefined) {
+          patch.override_reason = body.override_reason ? String(body.override_reason).slice(0, 500) : null;
+        }
+
+        if (Object.keys(patch).length === 0) return json({ error: "Nothing to update" }, 400);
+        patch.updated_at = new Date().toISOString();
+        patch.updated_by = user.id;
+
+        const { data: updated, error } = await adminClient
+          .from("agent_payouts")
+          .update(patch)
+          .eq("id", id)
+          .select()
+          .single();
+        if (error) return json({ error: sanitizeDbError(error) }, 400);
+
+        const changed: Record<string, unknown> = {};
+        for (const k of Object.keys(patch)) {
+          if (k === "updated_at" || k === "updated_by") continue;
+          if (String(existing[k] ?? "") !== String(patch[k] ?? "")) {
+            changed[k] = { from: existing[k] ?? null, to: patch[k] ?? null };
+          }
+        }
+        await audit(adminClient, user.id, user.email || null, "agent_payout.update", {
+          target_type: "agent_payout",
+          target_id: id,
+          target_name: existing.agent_user_id,
+          payload: { changed },
+        });
+
+        return json(updated);
+      }
+
+      // POST /api/agent-payouts/:id/void
+      if (req.method === "POST" && segments.length === 3 && UUID_RE.test(segments[1]) && segments[2] === "void") {
+        if (!isAdminOrManager) return json({ error: "Forbidden" }, 403);
+        const id = segments[1];
+        const body = await req.json().catch(() => ({}));
+        const { data: payout } = await adminClient.from("agent_payouts").select("*").eq("id", id).maybeSingle();
+        if (!payout) return json({ error: "Not found" }, 404);
+        if (payout.status === "voided") return json({ error: "Already voided" }, 400);
+
+        const { data: updated, error } = await adminClient
+          .from("agent_payouts")
+          .update({
+            status: "voided",
+            voided_at: new Date().toISOString(),
+            voided_by: user.id,
+            void_reason: body.reason ? String(body.reason).slice(0, 1000) : null,
+          })
+          .eq("id", id)
+          .select()
+          .single();
+        if (error) return json({ error: sanitizeDbError(error) }, 400);
+
+        await audit(adminClient, user.id, user.email || null, "agent_payout.void", {
+          target_type: "agent_payout",
+          target_id: id,
+          target_name: payout.agent_user_id,
+          payload: { amount_eur: payout.amount_eur, reason: body.reason || null },
+        });
+        return json(updated);
+      }
+
+      return json({ error: "Not found" }, 404);
     }
 
     // ============================================================
@@ -5865,15 +8358,30 @@ async function handleRequest(req: Request): Promise<Response> {
       // shows order_warning from the response.
       let order_warning: string | null = null;
       if (context_type === "order" && context_id) {
-        const result = await applyOutcomeToOrder(adminClient, {
-          orderId: context_id,
-          outcome,
-          agentId: user.id,
-          cancellationReason: cancellation_reason,
-          cancellationReasonNotes: cancellation_reason_notes,
-          trashReason: trash_reason,
-        });
-        if (!result.ok) order_warning = result.error || "Order status was not changed.";
+        // Ownership guard — same rule as PATCH /orders/:id/status. This path
+        // also mutates the order via adminClient (RLS-bypassing), so a plain
+        // agent must not drive an order assigned to someone else (commission
+        // theft / sabotage). The call itself is still logged below; only the
+        // order side-effect is withheld, surfaced as order_warning.
+        let mayMutate = isAdminOrManager || isWarehouse;
+        if (!mayMutate) {
+          const { data: o } = await adminClient
+            .from("orders").select("assigned_agent_id").eq("id", context_id).maybeSingle();
+          mayMutate = !o || !o.assigned_agent_id || o.assigned_agent_id === user.id;
+        }
+        if (!mayMutate) {
+          order_warning = "Order is assigned to another agent — status not changed.";
+        } else {
+          const result = await applyOutcomeToOrder(adminClient, {
+            orderId: context_id,
+            outcome,
+            agentId: user.id,
+            cancellationReason: cancellation_reason,
+            cancellationReasonNotes: cancellation_reason_notes,
+            trashReason: trash_reason,
+          });
+          if (!result.ok) order_warning = result.error || "Order status was not changed.";
+        }
       }
 
       const loggedNotes = order_warning
@@ -5982,36 +8490,48 @@ async function handleRequest(req: Request): Promise<Response> {
         }
       }
 
-      // ── No-answer → 1-day hold + 5-consecutive auto-trash ──────────────
+      // ── No-answer → humane paced retries + 9-consecutive auto-trash ─────
       // Every real no-answer call lands here, so this is the single source of
       // truth for the "doesn't pick up" lifecycle (both the call strip and the
       // manual "Didn't Answer" button log a no_answer call). We count the
-      // trailing consecutive no-answers for this phone:
-      //   < 5  → park the customer for ~1 day (prediction member hold + parked
-      //          pending order) so they sit in Call Again, then resurface.
-      //   ≥ 5  → unreachable → move to Trash (reason "not reachable"). Trash,
-      //          NOT cancel, so cancel insights stay clean. One trashed order:
-      //          reuse a workable order if one exists, else create a single one.
+      // trailing consecutive no-answers for this phone, and separately how many
+      // no-answers already happened TODAY (Europe/Sofia), to pace the calls:
+      //   • max 2 calls/day, spaced ~3–4h apart, kept on the SAME agent;
+      //   • after the 2nd no-answer today the client resurfaces at ~09:00 Sofia
+      //     the next morning (not again today — don't anger the customer);
+      //   • across ~4–5 calling days this reaches 9 no-answers → Unreachable:
+      //     move to Trash (reason "not_reachable"). Trash, NOT cancel, so cancel
+      //     insights stay clean. One trashed order: reuse a workable order if one
+      //     exists, else create a single one.
       // No stub orders are created for the no-answer/call-again cycle itself.
+      // These knobs are hardcoded for now; they can later move to app_settings
+      // (like the Personal-List cap) to be tuned without a deploy.
+      const UNREACHABLE_TRASH_STREAK = 9;                     // consecutive no-answers → auto-trash
+      const MAX_CALLS_PER_DAY = 2;                            // per client, per Sofia day
+      const INTRA_DAY_COOLDOWN_MS = 3.5 * 60 * 60 * 1000;     // ~3–4h between the 2 daily attempts
+      const NEXT_DAY_RESUME_HOUR = 9;                         // Sofia local hour to resurface next morning
       const isNoAnswer = outcome === "no_answer" || connection_state === "no_answer";
       if (isNoAnswer && customer_phone) {
         const digits = customer_phone.replace(/\D/g, "");
         const last8 = digits.length >= 8 ? digits.slice(-8) : digits;
         if (last8) {
+          // Fetch enough history to both count the trailing streak (up to 9) and
+          // count today's no-answers — comfortably above the 9-streak window.
           const { data: recentLogs } = await adminClient
             .from("call_logs")
             .select("outcome, connection_state, created_at")
             .ilike("customer_phone", `%${last8}%`)
             .order("created_at", { ascending: false })
-            .limit(12);
+            .limit(20);
+          const logIsNoAnswer = (lg: any) => lg.outcome === "no_answer" || lg.connection_state === "no_answer";
           let streak = 0;
           for (const lg of recentLogs || []) {
-            if (lg.outcome === "no_answer" || lg.connection_state === "no_answer") streak++;
+            if (logIsNoAnswer(lg)) streak++;
             else break;
           }
 
-          if (streak >= 5) {
-            const NOTE = "Auto-trash: not reachable — 5 consecutive no-answers (doesn't pick up the phone)";
+          if (streak >= UNREACHABLE_TRASH_STREAK) {
+            const NOTE = `Auto-trash: unreachable — ${UNREACHABLE_TRASH_STREAK} consecutive no-answers (doesn't pick up the phone)`;
             const { data: workable } = await adminClient
               .from("orders")
               .select("id, notes")
@@ -6044,25 +8564,42 @@ async function handleRequest(req: Request): Promise<Response> {
                 notes: NOTE,
               });
             }
-            // Drop them from every calling queue.
+            // Drop them from every calling queue. last_call_at is stamped too —
+            // an outcome without a date rendered as "never" in member tables.
             await adminClient
               .from("prediction_segment_members")
-              .update({ is_completed: true, last_call_outcome: "trash", in_call_again_until: null, call_again_since: null })
+              .update({ is_completed: true, last_call_outcome: "trash", last_call_at: new Date().toISOString(), in_call_again_until: null, call_again_since: null })
               .ilike("customer_phone", `%${last8}%`);
           } else {
-            // Short cooldown between auto-dial attempts (~3h): the client is
-            // skipped in the calling bucket for a few hours, then resurfaces.
-            // The 3-day Call-Again window is tracked separately by
-            // call_again_since (anchored to the FIRST no-answer via the
-            // is-null second update below — never reset while it keeps ringing).
-            const cooldownUntil = new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString();
+            // Not unreachable yet — pace the retries. The current call is already
+            // logged above, so recentLogs includes it: count today's no-answers
+            // (Europe/Sofia day). Once the daily cap is hit, push to tomorrow
+            // morning; otherwise a short 3–4h intra-day gap.
+            const { startISO: sofiaTodayStart, day: sofiaToday } = sofiaDayStart();
+            const sofiaTodayStartMs = new Date(sofiaTodayStart).getTime();
+            const noAnswersToday = (recentLogs || []).filter(
+              (lg) => logIsNoAnswer(lg) && lg.created_at && new Date(lg.created_at).getTime() >= sofiaTodayStartMs,
+            ).length;
+            let cooldownUntil: string;
+            if (noAnswersToday >= MAX_CALLS_PER_DAY) {
+              // ~09:00 Sofia the next calling day (same agent — assignment kept).
+              const [ty, tm, td] = sofiaToday.split("-").map(Number);
+              const tomorrow = new Date(Date.UTC(ty, tm - 1, td + 1)).toISOString().slice(0, 10);
+              cooldownUntil = new Date(
+                new Date(sofiaMidnight(tomorrow)).getTime() + NEXT_DAY_RESUME_HOUR * 3600 * 1000,
+              ).toISOString();
+            } else {
+              cooldownUntil = new Date(Date.now() + INTRA_DAY_COOLDOWN_MS).toISOString();
+            }
             const nowIso = new Date().toISOString();
-            // Prediction member: short cooldown + mark as awaiting follow-up.
+            // Prediction member: cooldown + mark as awaiting follow-up.
             await adminClient
               .from("prediction_segment_members")
               .update({ in_call_again_until: cooldownUntil, last_call_at: nowIso, last_call_outcome: "no_answer" })
               .ilike("customer_phone", `%${last8}%`)
               .eq("is_completed", false);
+            // call_again_since = the FIRST no-answer that opened the window
+            // (anchored, never reset while it keeps ringing).
             await adminClient
               .from("prediction_segment_members")
               .update({ call_again_since: nowIso })
@@ -6070,7 +8607,7 @@ async function handleRequest(req: Request): Promise<Response> {
               .eq("is_completed", false)
               .is("call_again_since", null);
             // Mark the EXISTING workable order as Call Again (never create a 2nd
-            // order) so the operator sees it was already called, + short cooldown.
+            // order) so the operator sees it was already called, + the cooldown.
             await adminClient
               .from("orders")
               .update({ status: "call_again", next_call_after: cooldownUntil })
@@ -6404,8 +8941,8 @@ async function handleRequest(req: Request): Promise<Response> {
         logs = data || []; count = c || 0;
       }
 
-      // Enrich with agent names, customer info
-      const agentIds = [...new Set((logs || []).map((l: any) => l.agent_id))];
+      // Enrich with agent names, customer info (+ listened_by reviewer names)
+      const agentIds = [...new Set((logs || []).flatMap((l: any) => [l.agent_id, l.listened_by]).filter(Boolean))];
       let agentMap: Record<string, string> = {};
       if (agentIds.length > 0) {
         const { data: profiles } = await adminClient.from("profiles").select("user_id, full_name").in("user_id", agentIds);
@@ -6459,6 +8996,7 @@ async function handleRequest(req: Request): Promise<Response> {
         return {
           ...l,
           agent_name: agentMap[l.agent_id] || "Unknown",
+          listened_by_name: l.listened_by ? (agentMap[l.listened_by] || null) : null,
           customer_name: isOrder ? (ctx?.customer_name || "Unknown")
             : isLead ? (ctx?.name || "Unknown")
             : (l.customer_phone || "—"),
@@ -6693,6 +9231,22 @@ async function handleRequest(req: Request): Promise<Response> {
         .limit(20);
       if (error) return json({ error: sanitizeDbError(error) }, 400);
       return json(data);
+    }
+
+    // POST /api/call-logs/:id/listened — team-wide "reviewed" mark, set by the
+    // client after >=10s of real playback. Hear-all roles only (the mark means
+    // "a reviewer checked this call"); own-only agents don't set it.
+    // Idempotent, first-listener-wins: never overwrites an existing mark.
+    if (req.method === "POST" && segments[0] === "call-logs" && segments.length === 3 && segments[2] === "listened") {
+      if (!canHearRecordings) return json({ error: "Forbidden" }, 403);
+      const callId = segments[1];
+      const { error } = await adminClient
+        .from("call_logs")
+        .update({ listened_at: new Date().toISOString(), listened_by: user.id })
+        .eq("id", callId)
+        .is("listened_at", null);
+      if (error) return json({ error: sanitizeDbError(error) }, 400);
+      return json({ ok: true });
     }
 
     // ============================================================
@@ -7125,6 +9679,10 @@ async function handleRequest(req: Request): Promise<Response> {
       for (const row of data || []) out[row.key] = row.value;
       // Ensure known defaults are always present even before first write.
       if (out.personal_list_max_holds === undefined) out.personal_list_max_holds = PERSONAL_LIST_CAP_DEFAULT;
+      if (out.unpaid_chase_days === undefined) out.unpaid_chase_days = UNPAID_CHASE_DAYS_DEFAULT;
+      if (out.unpaid_chase_stop_days === undefined) out.unpaid_chase_stop_days = UNPAID_CHASE_STOP_DAYS_DEFAULT;
+      if (out.promo_of_the_day === undefined) out.promo_of_the_day = PROMO_OF_THE_DAY_DEFAULT;
+      out.voip_minutes_bundle = { ...VOIP_MINUTES_BUNDLE_DEFAULT, ...(out.voip_minutes_bundle || {}) };
       return json(out);
     }
 
@@ -7144,7 +9702,189 @@ async function handleRequest(req: Request): Promise<Response> {
           .upsert({ key: "personal_list_max_holds", value: n, updated_by: user.id, updated_at: new Date().toISOString() }, { onConflict: "key" });
         if (error) return json({ error: sanitizeDbError(error) }, 400);
       }
+
+      // Unpaid-delivery chase window (read by notify_unpaid_shipped_orders()).
+      // `stop` must stay >= `days` or the band collapses and NOTHING is ever
+      // chased — so when only one of the pair is patched, validate the incoming
+      // value against the stored value of the other.
+      if (body.unpaid_chase_days !== undefined || body.unpaid_chase_stop_days !== undefined) {
+        const { data: cur } = await adminClient
+          .from("app_settings").select("key, value")
+          .in("key", ["unpaid_chase_days", "unpaid_chase_stop_days"]);
+        const stored: Record<string, number> = {};
+        for (const row of cur || []) stored[row.key] = Number(row.value);
+
+        const patch: { key: string; value: number }[] = [];
+        const days = body.unpaid_chase_days !== undefined
+          ? Math.floor(Number(body.unpaid_chase_days))
+          : (stored.unpaid_chase_days ?? UNPAID_CHASE_DAYS_DEFAULT);
+        const stop = body.unpaid_chase_stop_days !== undefined
+          ? Math.floor(Number(body.unpaid_chase_stop_days))
+          : (stored.unpaid_chase_stop_days ?? UNPAID_CHASE_STOP_DAYS_DEFAULT);
+
+        if (!Number.isFinite(days) || days < 1 || days > 30) {
+          return json({ error: "unpaid_chase_days must be between 1 and 30" }, 400);
+        }
+        if (!Number.isFinite(stop) || stop < days || stop > 999) {
+          return json({ error: "unpaid_chase_stop_days must be between unpaid_chase_days and 999" }, 400);
+        }
+        if (body.unpaid_chase_days !== undefined) patch.push({ key: "unpaid_chase_days", value: days });
+        if (body.unpaid_chase_stop_days !== undefined) patch.push({ key: "unpaid_chase_stop_days", value: stop });
+
+        for (const p of patch) {
+          const { error } = await adminClient
+            .from("app_settings")
+            .upsert({ ...p, updated_by: user.id, updated_at: new Date().toISOString() }, { onConflict: "key" });
+          if (error) return json({ error: sanitizeDbError(error) }, 400);
+        }
+      }
+
+      // A1 minutes bundle. Commercial terms, so they change on A1's schedule, not
+      // ours — hence a tunable knob rather than a constant. Stored as one jsonb
+      // blob because the fields only make sense together.
+      if (body.voip_minutes_bundle !== undefined) {
+        const b = body.voip_minutes_bundle;
+        if (!b || typeof b !== "object" || Array.isArray(b)) {
+          return json({ error: "voip_minutes_bundle must be an object" }, 400);
+        }
+        const included = Math.floor(Number(b.included_minutes));
+        if (!Number.isFinite(included) || included < 0 || included > 1_000_000) {
+          return json({ error: "included_minutes must be between 0 and 1000000" }, 400);
+        }
+        // 28, not 31: a cycle starting on the 29th-31st would skip February.
+        const billingDay = Math.floor(Number(b.billing_day));
+        if (!Number.isFinite(billingDay) || billingDay < 1 || billingDay > 28) {
+          return json({ error: "billing_day must be between 1 and 28" }, 400);
+        }
+        const metric = b.metric === "total" ? "total" : "talk";
+        const warn = Math.floor(Number(b.warn_pct));
+        const critical = Math.floor(Number(b.critical_pct));
+        if (!Number.isFinite(critical) || critical < 2 || critical > 100) {
+          return json({ error: "critical_pct must be between 2 and 100" }, 400);
+        }
+        if (!Number.isFinite(warn) || warn < 1 || warn >= critical) {
+          return json({ error: "warn_pct must be between 1 and critical_pct" }, 400);
+        }
+        const value = { included_minutes: included, billing_day: billingDay, metric, warn_pct: warn, critical_pct: critical };
+        const { error } = await adminClient
+          .from("app_settings")
+          .upsert({ key: "voip_minutes_bundle", value, updated_by: user.id, updated_at: new Date().toISOString() }, { onConflict: "key" });
+        if (error) return json({ error: sanitizeDbError(error) }, 400);
+      }
+
+      // Product of the Day — the promo banner agents see on /calls. Purely
+      // motivational: it is NEVER read by any payout/commission math (see
+      // elyon-agent-commissions), so the only thing at stake is what the banner
+      // says. Stored as one jsonb blob under `promo_of_the_day`.
+      if (body.promo_of_the_day !== undefined) {
+        const p = body.promo_of_the_day;
+        if (!p || typeof p !== "object" || Array.isArray(p)) {
+          return json({ error: "promo_of_the_day must be an object" }, 400);
+        }
+        const enabled = !!p.enabled;
+        const productId = p.product_id == null ? null : String(p.product_id);
+        if (productId !== null && !UUID_RE.test(productId)) {
+          return json({ error: "promo_of_the_day.product_id must be a product UUID" }, 400);
+        }
+        const num = (v: unknown) => {
+          const n = Number(v);
+          return Number.isFinite(n) && n > 0 && n <= 1000 ? Math.round(n * 100) / 100 : null;
+        };
+        const price = num(p.price_eur);
+        const bonus = num(p.bonus_eur);
+        // Only a switched-ON promo must be fully specified — a draft can be saved
+        // with holes as long as it stays off (nothing renders for the agents).
+        if (enabled && (!productId || price === null || bonus === null)) {
+          return json({ error: "An enabled promo needs a product, a price and a bonus (0 < value <= 1000)" }, 400);
+        }
+        const expires = p.expires_on == null || p.expires_on === "" ? null : String(p.expires_on);
+        if (expires !== null && !/^\d{4}-\d{2}-\d{2}$/.test(expires)) {
+          return json({ error: "promo_of_the_day.expires_on must be YYYY-MM-DD or empty" }, 400);
+        }
+        // Optional hand-written wording, per language. Unknown language codes are
+        // dropped; empty strings are dropped so the built-in translated default
+        // takes over again the moment the operator clears a field.
+        const LANGS = ["bg", "en", "sq"];
+        const customText: Record<string, { short?: string; full?: string }> = {};
+        if (p.custom_text && typeof p.custom_text === "object" && !Array.isArray(p.custom_text)) {
+          for (const lang of LANGS) {
+            const entry = (p.custom_text as any)[lang];
+            if (!entry || typeof entry !== "object") continue;
+            const short = String(entry.short ?? "").trim().slice(0, 300);
+            const full = String(entry.full ?? "").trim().slice(0, 600);
+            if (short || full) customText[lang] = { ...(short ? { short } : {}), ...(full ? { full } : {}) };
+          }
+        }
+
+        const value = {
+          enabled,
+          product_id: productId,
+          product_name: String(p.product_name ?? "").slice(0, 200),
+          price_eur: price,
+          bonus_eur: bonus,
+          expires_on: expires,
+          note: String(p.note ?? "").slice(0, 300),
+          custom_text: customText,
+        };
+        const { error } = await adminClient
+          .from("app_settings")
+          .upsert({ key: "promo_of_the_day", value, updated_by: user.id, updated_at: new Date().toISOString() }, { onConflict: "key" });
+        if (error) return json({ error: sanitizeDbError(error) }, 400);
+      }
       return json({ success: true });
+    }
+
+    // GET /api/promo-of-the-day — the resolved promo for the CALLER, plus the
+    // caller's OWN qualifying-order count for today. Display-only: nothing here
+    // is written anywhere or fed into a payout. Returns {active:false} alone
+    // when there is nothing to show, so the banner simply renders nothing.
+    if (req.method === "GET" && path === "promo-of-the-day") {
+      const { data: row } = await adminClient
+        .from("app_settings").select("value").eq("key", "promo_of_the_day").maybeSingle();
+      const p: any = row?.value || PROMO_OF_THE_DAY_DEFAULT;
+      const { day, startISO, endISO } = sofiaDayRange();
+      const price = Number(p?.price_eur);
+      const bonus = Number(p?.bonus_eur);
+      const active = !!p?.enabled
+        && typeof p?.product_id === "string" && UUID_RE.test(p.product_id)
+        && Number.isFinite(price) && Number.isFinite(bonus)
+        && (!p?.expires_on || day <= String(p.expires_on));
+      if (!active) return json({ active: false });
+
+      // The caller's own orders for the Sofia day. Ownership = salesOwnerId
+      // (confirmer, or the assignee on legacy rows) so "my sale" means the same
+      // thing here as on every other surface.
+      const { data: orders } = await adminClient
+        .from("orders")
+        .select("id, status, order_items(product_id, price_per_unit)")
+        .or(salesOwnerOrFilter(user.id))
+        .gte("created_at", startISO)
+        .lt("created_at", endISO);
+
+      // Up-sell rule: the promo product at or above the promo price, PLUS at
+      // least one line of a different product. One bonus per order, however
+      // many promo units are on it. Dead orders never count.
+      const DEAD = new Set(["cancelled", "trashed", "duplicated"]);
+      let count = 0;
+      for (const o of orders || []) {
+        if (DEAD.has(String((o as any).status))) continue;
+        const items = (o as any).order_items || [];
+        const hasPromo = items.some((it: any) => it.product_id === p.product_id && Number(it.price_per_unit) >= price);
+        const hasOther = items.some((it: any) => it.product_id && it.product_id !== p.product_id);
+        if (hasPromo && hasOther) count++;
+      }
+
+      return json({
+        active: true,
+        product_name: String(p.product_name || ""),
+        price_eur: price,
+        bonus_eur: bonus,
+        note: String(p.note || ""),
+        // Sent whole — the browser knows the agent's language, the server doesn't.
+        custom_text: (p.custom_text && typeof p.custom_text === "object") ? p.custom_text : {},
+        my_orders_today: count,
+        my_bonus_today: Math.round(count * bonus * 100) / 100,
+      });
     }
 
     // ============================================================
@@ -7363,12 +10103,21 @@ async function handleRequest(req: Request): Promise<Response> {
       const { data: shifts, error } = await query;
       if (error) return json({ error: sanitizeDbError(error) }, 400);
 
-      // Get all assignments
+      // Get all assignments (paginated — a plain read caps at 1000 rows, which
+      // would drop assignments and render shifts as falsely "Unassigned" once the
+      // table grows past a month or two of data).
       const shiftIds = (shifts || []).map((s: any) => s.id);
       let assignments: any[] = [];
       if (shiftIds.length > 0) {
-        const { data: a } = await adminClient.from("shift_assignments").select("shift_id, user_id").in("shift_id", shiftIds);
-        assignments = a || [];
+        for (let from = 0; ; from += 1000) {
+          const { data: a } = await adminClient
+            .from("shift_assignments").select("shift_id, user_id")
+            .in("shift_id", shiftIds)
+            .range(from, from + 999);
+          if (!a || a.length === 0) break;
+          assignments.push(...a);
+          if (a.length < 1000) break;
+        }
       }
 
       // Get agent profiles
@@ -7469,14 +10218,17 @@ async function handleRequest(req: Request): Promise<Response> {
       const g = (t: string) => tzParts.find((p) => p.type === t)?.value || "";
       const today = `${g("year")}-${g("month")}-${g("day")}`;
 
-      const { data: myAssignments } = await adminClient.from("shift_assignments").select("shift_id").eq("user_id", user.id);
-      const myShiftIds = (myAssignments || []).map((a: any) => a.shift_id);
-      let shiftId: string | null = null;
-      if (myShiftIds.length > 0) {
-        const { data: todayShift } = await adminClient
-          .from("shifts").select("id").in("id", myShiftIds).eq("date", today).limit(1).maybeSingle();
-        shiftId = todayShift?.id || null;
-      }
+      // Find today's assigned shift via a date-filtered join (see check-login:
+      // fetching all assignments then filtering caps at 1000 rows and misses the
+      // row once an agent has many shifts).
+      const { data: todayAssign } = await adminClient
+        .from("shift_assignments")
+        .select("shifts!inner(id,date)")
+        .eq("user_id", user.id)
+        .eq("shifts.date", today)
+        .limit(1)
+        .maybeSingle();
+      const shiftId: string | null = (todayAssign as any)?.shifts?.id || null;
 
       const { data: created, error } = await adminClient
         .from("shift_breaks")
@@ -7583,34 +10335,38 @@ async function handleRequest(req: Request): Promise<Response> {
       let nowTime = `${tzGet("hour")}:${tzGet("minute")}`;
       if (nowTime.startsWith("24:")) nowTime = `00:${nowTime.slice(3)}`; // hour12:false can emit 24:xx at midnight
 
-      // Get today's shift assignments for this user
-      const { data: myAssignments } = await adminClient
+      // Fetch ONLY today's assigned shifts, filtering by date server-side via an
+      // inner join. The previous approach fetched ALL of the user's assignments
+      // and filtered in JS — but PostgREST caps an unpaginated read at 1000 rows,
+      // so once an agent accumulated >1000 assignment rows (e.g. many months of
+      // shifts), today's row fell outside the returned window and EVERY login was
+      // wrongly blocked with "no shift scheduled for today". Filtering by date in
+      // the query returns only today's handful of rows, immune to the cap.
+      const { data: todayRows } = await adminClient
         .from("shift_assignments")
-        .select("shift_id")
-        .eq("user_id", user.id);
-      
-      if (!myAssignments || myAssignments.length === 0) {
-        // Record blocked attempt
+        .select("shifts!inner(id,date,start_time,end_time)")
+        .eq("user_id", user.id)
+        .eq("shifts.date", today);
+      const todayShifts = (todayRows || []).map((r: any) => r.shifts).filter(Boolean);
+
+      if (todayShifts.length === 0) {
+        // Cheap existence check (head+count, not a capped fetch) to tell
+        // "never scheduled" apart from "not scheduled today".
+        const { count: anyAssign } = await adminClient
+          .from("shift_assignments")
+          .select("*", { count: "exact", head: true })
+          .eq("user_id", user.id);
+        const noneAtAll = (anyAssign || 0) === 0;
         await adminClient.from("blocked_login_attempts").insert({
           user_id: user.id, user_name: userName, role: primaryRole,
-          reason: "No active shift assignment",
+          reason: noneAtAll ? "No active shift assignment" : "No shift scheduled for today",
         });
-        return json({ allowed: false, message: "Login not allowed. You currently have no active shift." });
-      }
-
-      const myShiftIds = myAssignments.map((a: any) => a.shift_id);
-      const { data: todayShifts } = await adminClient
-        .from("shifts")
-        .select("*")
-        .in("id", myShiftIds)
-        .eq("date", today);
-
-      if (!todayShifts || todayShifts.length === 0) {
-        await adminClient.from("blocked_login_attempts").insert({
-          user_id: user.id, user_name: userName, role: primaryRole,
-          reason: "No shift scheduled for today",
+        return json({
+          allowed: false,
+          message: noneAtAll
+            ? "Login not allowed. You currently have no active shift."
+            : "Login not allowed. You have no shift scheduled for today.",
         });
-        return json({ allowed: false, message: "Login not allowed. You have no shift scheduled for today." });
       }
 
       // Check if any shift covers the current time
@@ -9053,7 +11809,11 @@ async function handleRequest(req: Request): Promise<Response> {
     // GET /api/search-prediction?q=...
     if (req.method === "GET" && path === "search-prediction") {
       if (!checkUserRateLimit(user.id, "search-prediction", 60)) return json({ error: "Rate limit exceeded — slow down" }, 429);
-      const q = (url.searchParams.get("q") || "").trim();
+      // sanitizeSearch strips , ( ) % _ \ — without it these break out of the
+      // .or() filter string below and let a caller inject arbitrary PostgREST
+      // predicates against orders/prediction_leads (adminClient bypasses RLS).
+      // Matches the other search endpoints (see /search, /call-history).
+      const q = sanitizeSearch((url.searchParams.get("q") || "").trim());
       if (!q) return json({ orders: [], leads: [], order_history: [] });
 
       // Normalize phone: extract last 8 digits for matching
@@ -9083,6 +11843,8 @@ async function handleRequest(req: Request): Promise<Response> {
         orderQuery = orderQuery.or(`customer_name.ilike.%${q}%,display_id.ilike.%${q}%`);
         leadQuery = leadQuery.or(`name.ilike.%${q}%`);
       }
+      // adminClient bypasses RLS here — duplicated orders are admin/manager-only.
+      if (!isAdminOrManager) orderQuery = orderQuery.is("duplicated_from", null);
 
       const [ordersRes, leadsRes] = await Promise.all([orderQuery, leadQuery]);
       const orders = (ordersRes.data || []).map((o: any) => ({
@@ -9264,7 +12026,7 @@ async function handleRequest(req: Request): Promise<Response> {
       // so we paginate via .range() until exhausted. With ~10k memberships
       // and 3 small columns this is fast.
       const PAGE = 1000;
-      const counts: Record<string, { total: number; assigned: number; completed: number }> = {};
+      const counts: Record<string, { total: number; assigned: number; completed: number; open: number; distributable: number }> = {};
       let engineDataAsOf: string | null = null;
       for (let from = 0; ; from += PAGE) {
         const { data, error } = await adminClient
@@ -9275,10 +12037,17 @@ async function handleRequest(req: Request): Promise<Response> {
         if (!data || data.length === 0) break;
         for (const r of data) {
           const id = r.list_id;
-          if (!counts[id]) counts[id] = { total: 0, assigned: 0, completed: 0 };
+          if (!counts[id]) counts[id] = { total: 0, assigned: 0, completed: 0, open: 0, distributable: 0 };
           counts[id].total++;
           if (r.assigned_agent_id) counts[id].assigned++;
           if (r.is_completed) counts[id].completed++;
+          else {
+            // "open" = not done = what the operator counts as real work in a list;
+            // "distributable" additionally has no agent — exactly the pool the
+            // auto-assign 'unassigned' scope pulls, so badge and Distribute agree.
+            counts[id].open++;
+            if (!r.assigned_agent_id) counts[id].distributable++;
+          }
           if (r.updated_at && (!engineDataAsOf || r.updated_at > engineDataAsOf)) engineDataAsOf = r.updated_at;
         }
         if (data.length < PAGE) break;
@@ -9291,6 +12060,8 @@ async function handleRequest(req: Request): Promise<Response> {
         member_count: showSegmentMembers ? (counts[l.id]?.total ?? 0) : null,
         assigned_count: showSegmentMembers ? (counts[l.id]?.assigned ?? 0) : null,
         completed_count: showSegmentMembers ? (counts[l.id]?.completed ?? 0) : null,
+        open_count: showSegmentMembers ? (counts[l.id]?.open ?? 0) : null,
+        distributable_count: showSegmentMembers ? (counts[l.id]?.distributable ?? 0) : null,
         engine_data_as_of: engineDataAsOf,
       }));
 
@@ -9548,7 +12319,31 @@ async function handleRequest(req: Request): Promise<Response> {
       const { data: members, count, error } = await q;
       if (error) return json({ error: sanitizeDbError(error) }, 400);
 
-      return json({ list, members: members || [], total: count, page, limit });
+      // Truth enrichment: latest REAL call per phone from call_logs (last-8
+      // match via the bulk_last_calls RPC). Member rows are only stamped by the
+      // queue/no-answer paths, so calls made via the order-confirmation flow or
+      // standalone dialing would otherwise render "never". Best effort: an RPC
+      // failure degrades to un-enriched rows, never an error.
+      let enrichedMembers = members || [];
+      const p8 = (s: string | null) => String(s || "").replace(/\D/g, "").slice(-8);
+      const phone8s = [...new Set(enrichedMembers.map((m: any) => p8(m.customer_phone)).filter((x: string) => x.length >= 7))];
+      if (phone8s.length > 0) {
+        const { data: lastCalls, error: lcErr } = await adminClient.rpc("bulk_last_calls", { p8s: phone8s });
+        if (!lcErr && lastCalls) {
+          const byP8 = new Map<string, any>((lastCalls as any[]).map((r: any) => [r.phone8, r]));
+          enrichedMembers = enrichedMembers.map((m: any) => {
+            const lc = byP8.get(p8(m.customer_phone));
+            return lc ? {
+              ...m,
+              real_last_call_at: lc.last_call_at,
+              real_last_call_outcome: lc.outcome,
+              real_last_call_connection: lc.connection_state,
+            } : m;
+          });
+        }
+      }
+
+      return json({ list, members: enrichedMembers, total: count, page, limit });
     }
 
     // POST /api/segments/:id/assign — bulk-assign N members to an agent (or unassign)
@@ -9756,6 +12551,202 @@ async function handleRequest(req: Request): Promise<Response> {
       return json({ unassigned: count ?? 0, scope });
     }
 
+    // ── Assigner: cross-list assignment overview + mass unassign ──
+    // The per-list bulk-unassign above only frees one list at a time, so taking
+    // an agent off everything meant walking every list by hand. These two do it
+    // in one shot, across every list.
+
+    // GET /api/assigner/assignment-summary — who holds what, per agent per list.
+    // One aggregate RPC instead of the old one-request-per-list probe loop.
+    if (req.method === "GET" && path === "assigner/assignment-summary") {
+      if (!isAdminOrManager) return json({ error: "Forbidden" }, 403);
+
+      const { data: matrix, error: matrixErr } = await adminClient.rpc("assignment_matrix");
+      if (matrixErr) return json({ error: sanitizeDbError(matrixErr) }, 400);
+      const rows = matrix || [];
+
+      // Pendings are a parallel assignment system (orders.assigned_agent_id,
+      // status='pending') the matrix knows nothing about — without this an
+      // agent holding only leads was invisible in the Unassign tab.
+      const { data: pendingCounts, error: pendErr } = await adminClient.rpc("assigned_pending_counts");
+      if (pendErr) return json({ error: sanitizeDbError(pendErr) }, 400);
+      const pendingRows = pendingCounts || [];
+
+      const agentIds = [...new Set([
+        ...rows.map((r: any) => r.agent_id),
+        ...pendingRows.map((r: any) => r.agent_id),
+      ].filter(Boolean))];
+      const listIds = [...new Set(rows.map((r: any) => r.list_id).filter(Boolean))];
+
+      let profileRows: any[] = [];
+      if (agentIds.length > 0) {
+        const { data } = await adminClient.from("profiles").select("user_id, full_name").in("user_id", agentIds);
+        profileRows = data || [];
+      }
+      const nameById = new Map(profileRows.map((p: any) => [p.user_id, p.full_name as string]));
+
+      let listRows: any[] = [];
+      if (listIds.length > 0) {
+        const { data } = await adminClient.from("prediction_segment_lists").select("id, name, display_order, is_active").in("id", listIds);
+        listRows = data || [];
+      }
+      const listById = new Map(listRows.map((l: any) => [l.id, l]));
+
+      type SummaryList = { list_id: string; list_name: string; display_order: number; is_active: boolean; assigned: number; open: number };
+      type SummaryAgent = { agent_id: string; full_name: string; assigned_total: number; open_total: number; pendings_total: number; lists: SummaryList[] };
+      const byAgent = new Map<string, SummaryAgent>();
+      const agentEntry = (id: string): SummaryAgent => {
+        let entry = byAgent.get(id);
+        if (!entry) {
+          entry = {
+            agent_id: id,
+            full_name: nameById.get(id) || "Unknown agent",
+            assigned_total: 0,
+            open_total: 0,
+            pendings_total: 0,
+            lists: [],
+          };
+          byAgent.set(id, entry);
+        }
+        return entry;
+      };
+      for (const r of rows) {
+        const list = listById.get(r.list_id);
+        const entry = agentEntry(r.agent_id);
+        entry.assigned_total += r.members_assigned || 0;
+        entry.open_total += r.members_open || 0;
+        entry.lists.push({
+          list_id: r.list_id,
+          list_name: list?.name || "Removed list",
+          display_order: list?.display_order ?? 999,
+          is_active: list?.is_active ?? false,
+          assigned: r.members_assigned || 0,
+          open: r.members_open || 0,
+        });
+      }
+      for (const r of pendingRows) {
+        agentEntry(r.agent_id).pendings_total += r.pendings || 0;
+      }
+
+      const agentsOut = [...byAgent.values()]
+        .map(a => ({ ...a, lists: a.lists.sort((x, y) => x.display_order - y.display_order) }))
+        .sort((a, b) =>
+          (b.open_total + b.pendings_total) - (a.open_total + a.pendings_total) ||
+          a.full_name.localeCompare(b.full_name));
+
+      return json({
+        agents: agentsOut,
+        totals: {
+          agents: agentsOut.length,
+          assigned_total: agentsOut.reduce((s, a) => s + a.assigned_total, 0),
+          open_total: agentsOut.reduce((s, a) => s + a.open_total, 0),
+          pendings_total: agentsOut.reduce((s, a) => s + a.pendings_total, 0),
+        },
+      });
+    }
+
+    // POST /api/assigner/unassign-all — free prediction members from one agent,
+    // or from every agent, across ALL lists at once.
+    // Body: { agent_id: 'all' | <uuid>, list_ids?: string[],
+    //         include_pendings?: boolean, include_done?: boolean }
+    // Default frees only NOT-yet-called members (is_completed=false) — done
+    // members keep their agent stamp as the who-called-whom record.
+    // include_done ALSO clears the stamp on done rows so the (agent, list)
+    // pair fully detaches (operator decision 2026-07-28: an "empty" list must
+    // not stay attached to an agent's profile). Call history is untouched —
+    // is_completed / last_call_* / call_logs / sales credit all survive; only
+    // the 3 assignment columns are nulled.
+    // include_pendings also frees the agent's assigned status='pending' orders
+    // (leads). Only 'pending' — take/call_again means the agent already engaged,
+    // the orders-side mirror of the is_completed rule. Ignored when list_ids
+    // narrows the call, because pendings are not list-scoped.
+    if (req.method === "POST" && path === "assigner/unassign-all") {
+      if (!isAdminOrManager) return json({ error: "Forbidden" }, 403);
+      if (!checkUserRateLimit(user.id, "assigner.unassign", 20)) {
+        return json({ error: "Rate limit exceeded — try again in a minute" }, 429);
+      }
+      let body;
+      try { body = await req.json(); } catch { return json({ error: "Invalid JSON" }, 400); }
+      const agentId: string = typeof body?.agent_id === "string" && body.agent_id.length > 0 ? body.agent_id : "";
+      if (!agentId) return json({ error: "agent_id required ('all' or a user id)" }, 400);
+      const requestedLists: string[] = Array.isArray(body?.list_ids)
+        ? body.list_ids.filter((x: any) => typeof x === "string" && x.length > 0)
+        : [];
+      const listIds: string[] | null = requestedLists.length > 0 ? requestedLists : null;
+      const includePendings: boolean = body?.include_pendings === true && !listIds;
+      const includeDone: boolean = body?.include_done === true;
+
+      // Snapshot the breakdown BEFORE the wipe — after the update these numbers
+      // are gone, and the audit row is the only record of what was released.
+      const { data: matrix } = await adminClient.rpc("assignment_matrix");
+      const affected = (matrix || []).filter((r: any) =>
+        (agentId === "all" || r.agent_id === agentId) &&
+        (!listIds || listIds.includes(r.list_id))
+      );
+      const perAgent: Record<string, number> = {};
+      for (const r of affected) {
+        const n = includeDone ? (r.members_assigned || 0) : (r.members_open || 0);
+        perAgent[r.agent_id] = (perAgent[r.agent_id] || 0) + n;
+      }
+      const perAgentPendings: Record<string, number> = {};
+      if (includePendings) {
+        const { data: pendingCounts } = await adminClient.rpc("assigned_pending_counts");
+        for (const r of pendingCounts || []) {
+          if (agentId === "all" || r.agent_id === agentId) {
+            perAgentPendings[r.agent_id] = r.pendings || 0;
+          }
+        }
+      }
+
+      let q = adminClient
+        .from("prediction_segment_members")
+        .update({ assigned_agent_id: null, assigned_agent_name: null, assigned_at: null }, { count: "exact" })
+        .not("assigned_agent_id", "is", null);
+      if (!includeDone) q = q.eq("is_completed", false);
+      if (agentId !== "all") q = q.eq("assigned_agent_id", agentId);
+      if (listIds) q = q.in("list_id", listIds);
+      const { error, count } = await q;
+      if (error) return json({ error: sanitizeDbError(error) }, 400);
+
+      // Free the agent's untouched pending leads too — same 4 columns
+      // POST /orders/bulk-unassign nulls, scoped strictly to status='pending'.
+      let pendingsUnassigned = 0;
+      if (includePendings) {
+        let pq = adminClient
+          .from("orders")
+          .update(
+            { assigned_agent_id: null, assigned_agent_name: null, assigned_at: null, assigned_by: null },
+            { count: "exact" },
+          )
+          .not("assigned_agent_id", "is", null)
+          .eq("status", "pending");
+        if (agentId !== "all") pq = pq.eq("assigned_agent_id", agentId);
+        const { error: pendError, count: pendCount } = await pq;
+        if (pendError) return json({ error: sanitizeDbError(pendError) }, 400);
+        pendingsUnassigned = pendCount ?? 0;
+      }
+
+      const who = agentId === "all"
+        ? `all agents (${Object.keys(perAgent).length})`
+        : (await adminClient.from("profiles").select("full_name").eq("user_id", agentId).maybeSingle()).data?.full_name || agentId;
+
+      await audit(adminClient, user.id, user.email, "assigner.unassign_all", {
+        target_type: "prediction_segment_members",
+        target_id: agentId,
+        target_name: `${count ?? 0} clients${includePendings ? ` + ${pendingsUnassigned} pendings` : ""} freed from ${who}`,
+        payload: {
+          agent_id: agentId,
+          list_ids: listIds,
+          include_done: includeDone,
+          unassigned: count ?? 0,
+          per_agent: perAgent,
+          ...(includePendings ? { pendings_unassigned: pendingsUnassigned, per_agent_pendings: perAgentPendings } : {}),
+        },
+      });
+
+      return json({ unassigned: count ?? 0, pendings_unassigned: pendingsUnassigned, agent_id: agentId, per_agent: perAgent });
+    }
+
     // PATCH /api/segments/:id — admin-only edit of rule parameters
     if (req.method === "PATCH" && segments[0] === "segments" && segments.length === 2) {
       if (!isAdminOrManager) return json({ error: "Forbidden" }, 403);
@@ -9931,7 +12922,10 @@ async function handleRequest(req: Request): Promise<Response> {
     if (req.method === "GET" && path === "address/settlements") {
       const q = (url.searchParams.get("q") || "").trim();
       if (q.length < 2) return json([]);
-      const lc = q.toLowerCase();
+      // Sanitize before interpolating into .or() (same class as search-prediction;
+      // target is public geo data so impact is low, but keep it consistent).
+      const lc = sanitizeSearch(q.toLowerCase());
+      if (lc.length < 2) return json([]);
       const { data } = await adminClient
         .from("bg_settlements")
         .select("id, name, name_en, post_code, region, municipality")
@@ -9992,12 +12986,15 @@ async function handleRequest(req: Request): Promise<Response> {
       const candidateList = [...candidates];
 
       // Find all orders matching any canonical form of this phone (exact match).
-      const { data: orders } = await adminClient
+      // adminClient bypasses RLS — hide duplicated orders from non-admin/manager.
+      let ciOrderQuery = adminClient
         .from("orders")
         .select("id, display_id, status, price, product_name, customer_name, customer_phone, customer_city, customer_address, assigned_agent_name, created_at, source_type, order_items(id, product_name, quantity, price_per_unit, total_price)")
         .in("customer_phone", candidateList)
         .order("created_at", { ascending: false })
         .limit(100);
+      if (!isAdminOrManager) ciOrderQuery = ciOrderQuery.is("duplicated_from", null);
+      const { data: orders } = await ciOrderQuery;
 
       // Find all prediction leads matching this phone
       const { data: leads } = await adminClient
@@ -10171,6 +13168,7 @@ async function handleRequest(req: Request): Promise<Response> {
         date: o.created_at,
         agent: o.assigned_agent_name,
         price: Number(o.price || 0),
+        source_type: o.source_type,
         items: (o.order_items || []).map((i: any) => ({
           product_name: i.product_name,
           quantity: i.quantity,
@@ -10528,12 +13526,25 @@ async function handleRequest(req: Request): Promise<Response> {
         );
         // Super-admins earn no bonus — only real agents are on commission.
         const agentPayout = agentNames.has(a.name) ? calcAgentBonus(agentOrdersForPayout) : 0;
+        // packages_sold = PAID units only (aligns with payout). a.units stays pipeline SOLD.
+        const packagesSoldPaid = packagesSoldOf(agentOrdersForPayout);
+        const packagesAwaiting = packagesAwaitingOf(
+          orders.filter((o: any) => REAL_ORDER(o) && normAgent(ownerOf(o)) === a.name),
+        );
+        const packagesReturned = packagesReturnedOf(
+          orders.filter((o: any) => o.status === "returned" && REAL_ORDER(o) && normAgent(ownerOf(o)) === a.name),
+        );
 
         return {
           ...a,
           aov: a.sold > 0 ? a.revenue / a.sold : 0,
-          // Packages (units) sold + average revenue per package.
-          avg_per_package: a.units > 0 ? a.revenue / a.units : 0,
+          // Pipeline avg/pkg (SOLD basis) for analytics; packages_sold is paid-only.
+          avg_per_package: packagesSoldPaid > 0
+            ? (a.paid > 0 ? (agentOrdersForPayout.reduce((s: number, o: any) => s + num(o.price), 0) / packagesSoldPaid) : 0)
+            : (a.units > 0 ? a.revenue / a.units : 0),
+          packages_sold: packagesSoldPaid,
+          packages_awaiting: packagesAwaiting,
+          packages_returned: packagesReturned,
           // Of the decisions this agent reached (orders vs. cancels), what share cancelled.
           cancel_rate: (a.orders + a.cancelled) > 0 ? a.cancelled / (a.orders + a.cancelled) : 0,
           // Of this agent's orders, what share came back.
@@ -10541,7 +13552,6 @@ async function handleRequest(req: Request): Promise<Response> {
           calls: cs.calls, answered: cs.answered,
           answer_rate: cs.calls > 0 ? cs.answered / cs.calls : 0,
           talk_seconds: cs.talk_seconds,
-          // New: Payout earned by this agent (only for special roles)
           payout_earned: agentPayout,
         };
       }).sort((a: any, b: any) => b.revenue - a.revenue);
@@ -10877,12 +13887,22 @@ async function handleRequest(req: Request): Promise<Response> {
     // GET /api/lead-distribution-config
     if (req.method === "GET" && path === "lead-distribution-config") {
       if (!isAdminOrManager) return json({ error: "Forbidden" }, 403);
-      const { data, error } = await adminClient
+      let { data, error } = await adminClient
         .from("lead_distribution_config")
         .select("*")
+        .order("updated_at", { ascending: false })
         .limit(1)
-        .single();
+        .maybeSingle();
       if (error) return json({ error: sanitizeDbError(error) }, 400);
+      if (!data) {
+        // Self-heal: never let the page break on a missing config row.
+        const seeded = await adminClient
+          .from("lead_distribution_config")
+          .insert({ strategy: "round_robin", is_active: false, max_leads_per_agent: 50, priority_threshold: 500 })
+          .select("*").single();
+        if (seeded.error) return json({ error: sanitizeDbError(seeded.error) }, 400);
+        data = seeded.data;
+      }
       return json(data);
     }
 
@@ -10955,8 +13975,9 @@ async function handleRequest(req: Request): Promise<Response> {
       const { data: config } = await adminClient
         .from("lead_distribution_config")
         .select("*")
+        .order("updated_at", { ascending: false })
         .limit(1)
-        .single();
+        .maybeSingle();
       if (!config) return json({ error: "No distribution config" }, 400);
 
       // Get unassigned pending orders
@@ -10974,12 +13995,23 @@ async function handleRequest(req: Request): Promise<Response> {
         .select("user_id, full_name")
         .eq("is_active", true);
       const profileIds = (allProfiles || []).map((p: any) => p.user_id);
-      const { data: agentRoles } = await adminClient
+      const { data: allAgentRoles } = await adminClient
         .from("user_roles")
         .select("user_id, role")
-        .in("user_id", profileIds.length > 0 ? profileIds : ["__none__"])
-        .in("role", ["agent", "prediction_agent"]);
-      const agentUserIds = [...new Set((agentRoles || []).map((r: any) => r.user_id))];
+        .in("user_id", profileIds.length > 0 ? profileIds : ["__none__"]);
+      // Assignable = holds any agent-family role AND is not a super-admin.
+      // Matches the manual Assigner's audience and the commission rule that
+      // admins/managers never own leads. (Previously this looked only at
+      // 'agent'|'prediction_agent', silently skipping every pending_agent —
+      // the bulk of the call floor — so distribution assigned nothing.)
+      const AGENT_ROLES = new Set(["agent", "pending_agent", "prediction_agent", "inbound_agent"]);
+      const rolesByUser: Record<string, Set<string>> = {};
+      for (const r of allAgentRoles || []) {
+        (rolesByUser[r.user_id] ||= new Set()).add(r.role);
+      }
+      const agentUserIds = Object.entries(rolesByUser)
+        .filter(([, rs]) => [...rs].some((x) => AGENT_ROLES.has(x)) && !rs.has("admin") && !rs.has("manager"))
+        .map(([uid]) => uid);
       if (!agentUserIds.length) return json({ assigned: 0, message: "No agents available" });
 
       // Get current load per agent
@@ -11132,7 +14164,7 @@ async function handleRequest(req: Request): Promise<Response> {
       // Online agents with today's activity
       const { data: profiles } = await adminClient
         .from("profiles")
-        .select("user_id, full_name, email, last_seen_at")
+        .select("user_id, full_name, email, last_seen_at, voip_state, voip_state_at")
         .eq("is_active", true);
 
       const pIds = (profiles || []).map((p: any) => p.user_id);
@@ -11192,17 +14224,25 @@ async function handleRequest(req: Request): Promise<Response> {
       // shift or closed the tab without logging out, and could pin stale sessions
       // "online" forever. login_time is still surfaced for the "Since …" label.
       const ONLINE_WINDOW_MS = 2 * 60 * 1000;
+      // Same staleness rule as GET /agents/online — see that handler.
+      const CALL_STALE_MS = 3 * 60 * 1000;
       const nowMs = Date.now();
       const agentList = agentProfiles.map((p: any) => {
         const login = loginMap[p.user_id];
         const activity = agentActivity[p.user_id] || { confirmed: 0, total: 0 };
         const lastSeen = p.last_seen_at ? new Date(p.last_seen_at).getTime() : 0;
+        const isOnline = lastSeen > 0 && (nowMs - lastSeen) < ONLINE_WINDOW_MS;
+        const stateAt = p.voip_state_at ? new Date(p.voip_state_at).getTime() : 0;
+        const inCall = isOnline &&
+          (p.voip_state === "dialing" || p.voip_state === "in_call") &&
+          stateAt > 0 && (nowMs - stateAt) < CALL_STALE_MS;
         return {
           user_id: p.user_id,
           full_name: p.full_name,
           email: p.email,
           roles: roleMap2[p.user_id] || [],
-          is_online: lastSeen > 0 && (nowMs - lastSeen) < ONLINE_WINDOW_MS,
+          is_online: isOnline,
+          in_call: inCall,
           login_time: login?.login_time || null,
           last_seen_at: p.last_seen_at || null,
           active_leads: activeMap[p.user_id] || 0,
@@ -11517,6 +14557,485 @@ async function getPersonalListCap(adminClient: any): Promise<number> {
   return PERSONAL_LIST_CAP_DEFAULT;
 }
 
+// Unpaid-delivery chase window. Operator-tunable from Settings → Notifications.
+// These MUST stay in step with the defaults hard-coded in
+// notify_unpaid_shipped_orders() (migration 20260905000100) — the DB job reads
+// app_settings directly and falls back to the same numbers.
+const UNPAID_CHASE_DAYS_DEFAULT = 3;        // first ping N days after shipping
+const UNPAID_CHASE_STOP_DAYS_DEFAULT = 30;  // stop chasing past this age
+
+// Product of the Day (the /calls promo banner). Off until the operator sets one
+// up from Call Scripts → Promo. Display-only — never touches payout math.
+const PROMO_OF_THE_DAY_DEFAULT = {
+  enabled: false, product_id: null, product_name: "",
+  price_eur: null, bonus_eur: null, expires_on: null, note: "",
+};
+
+// Concurrent-line cap fallback. The REAL value comes from the PBX health pull,
+// which now reads it from the enforced dialplan global OUTMAXCHANS_1, so this
+// constant only covers the window before the first snapshot lands.
+// Deliberately 10, NOT the 25 A1 sold us: the 2026-07-28 CAC test proved A1's
+// Admission Control still admits only 10 concurrent calls (11/13/18-call bursts
+// all yielded exactly 10, the rest rejected with RELEASE_BECAUSE_IN_ADMISSION_FAILED).
+// Raise it only when a re-test passes. Do not scatter this number again.
+const TRUNK_MAX_LINES_FALLBACK = 10;
+
+// A1 minutes bundle. Operator-tunable from Settings → Telephony
+// (app_settings.voip_minutes_bundle) because A1 changes it commercially, not on
+// our release cycle.
+//   included_minutes — bundle size (20,000 since the 2026-07 upgrade; was 5,000)
+//   billing_day      — day of month the cycle resets. A1's invoice date, NOT
+//                      necessarily the 1st — confirm before trusting the gauge.
+//   metric           — 'talk' (answered time, what A1 bills) or 'total'
+//                      (includes ring time, always higher than the invoice).
+const VOIP_MINUTES_BUNDLE_DEFAULT = {
+  included_minutes: 20000,
+  billing_day: 1,
+  metric: "talk" as "talk" | "total",
+  warn_pct: 80,
+  critical_pct: 95,
+};
+
+async function getVoipMinutesBundle(adminClient: any) {
+  try {
+    const { data } = await adminClient
+      .from("app_settings").select("value")
+      .eq("key", "voip_minutes_bundle").maybeSingle();
+    const v = data?.value;
+    if (v && typeof v === "object" && !Array.isArray(v)) {
+      return { ...VOIP_MINUTES_BUNDLE_DEFAULT, ...v };
+    }
+  } catch (_) { /* fall through to default */ }
+  return VOIP_MINUTES_BUNDLE_DEFAULT;
+}
+
+// Current billing cycle [start, end) for a reset day-of-month. billing_day is
+// clamped to 28 on write, so no month can skip a cycle boundary.
+function voipBillingCycle(billingDay: number, now = new Date()) {
+  const d = Math.min(Math.max(Math.floor(billingDay) || 1, 1), 28);
+  const start = new Date(now);
+  start.setHours(0, 0, 0, 0);
+  start.setDate(d);
+  if (now.getDate() < d) start.setMonth(start.getMonth() - 1);
+  const end = new Date(start);
+  end.setMonth(end.getMonth() + 1);
+  return { start, end };
+}
+
+// Bundle consumption for the CURRENT billing cycle. Aggregated in Postgres
+// (voip_minutes_cycle_usage, migration 20260906000000) rather than by streaming
+// call_logs — a cycle can hold 30k+ rows and PostgREST silently caps a response
+// at 1000, which is exactly how this page used to under-report minutes.
+async function computeVoipCycle(adminClient: any) {
+  const bundle = await getVoipMinutesBundle(adminClient);
+  const { start, end } = voipBillingCycle(bundle.billing_day);
+  const { data, error } = await adminClient.rpc("voip_minutes_cycle_usage", {
+    p_start: start.toISOString(), p_end: end.toISOString(),
+  });
+  if (error) return null;
+  const days: any[] = data || [];
+
+  const secField = bundle.metric === "total" ? "total_seconds" : "talk_seconds";
+  const usedMin = Math.round(days.reduce((s, d) => s + Number(d[secField] || 0), 0) / 60);
+  const usedTotalMin = Math.round(days.reduce((s, d) => s + Number(d.total_seconds || 0), 0) / 60);
+
+  const DAY_MS = 86400_000;
+  const daysTotal = Math.round((end.getTime() - start.getTime()) / DAY_MS);
+  const daysElapsed = Math.max(1, Math.ceil((Date.now() - start.getTime()) / DAY_MS));
+  const daysRemaining = Math.max(0, daysTotal - daysElapsed);
+
+  // Weekday-aware forecast: average each day-of-week seen so far, then sum the
+  // expected value of every remaining calendar day. A flat used/elapsed*total
+  // is biased by up to ~30% depending on how many weekends have passed.
+  const byDow: number[][] = [[], [], [], [], [], [], []];
+  for (const d of days) {
+    const dow = new Date(`${d.day}T12:00:00Z`).getUTCDay();
+    byDow[dow].push(Number(d[secField] || 0) / 60);
+  }
+  const dowAvg = byDow.map((a) => (a.length ? a.reduce((s, v) => s + v, 0) / a.length : null));
+  const overallAvg = usedMin / daysElapsed;
+  let projected = usedMin;
+  const cursor = new Date(start.getTime() + daysElapsed * DAY_MS);
+  for (let i = 0; i < daysRemaining; i++) {
+    projected += dowAvg[cursor.getUTCDay()] ?? overallAvg;
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  projected = Math.round(projected);
+
+  const included = Number(bundle.included_minutes) || 0;
+  const pctUsed = included ? Math.round((usedMin / included) * 100) : 0;
+  const projectedPct = included ? Math.round((projected / included) * 100) : 0;
+  return {
+    start: start.toISOString(), end: end.toISOString(),
+    days_total: daysTotal, days_elapsed: daysElapsed, days_remaining: daysRemaining,
+    metric: bundle.metric,
+    used_minutes: usedMin, used_total_minutes: usedTotalMin,
+    included_minutes: included,
+    pct_used: pctUsed,
+    projected_minutes: projected, projected_pct: projectedPct,
+    projected_over_by: Math.max(0, projected - included),
+    status: pctUsed >= bundle.critical_pct || projectedPct >= 100
+      ? "critical" : pctUsed >= bundle.warn_pct ? "warn" : "ok",
+  };
+}
+
+// ── Affiliate postback delivery ──────────────────────────────────────────────
+// Drains the affiliate_postbacks queue: renders the affiliate's URL template,
+// GETs it (10s timeout), logs the outcome, and schedules retries with
+// exponential backoff. Claiming goes through the FOR UPDATE SKIP LOCKED RPC
+// (claim_due_affiliate_postbacks, migration 20260801000200), so overlapping
+// drains (cron tick + a waitUntil nudge) can never double-send a row.
+// Backoff by attempt number (the claim already incremented it):
+// 1m → 5m → 15m → 1h → 6h → 24h, then terminal 'failed' (admin can resend).
+const POSTBACK_BACKOFF_MINUTES = [1, 5, 15, 60, 360, 1440];
+const POSTBACK_MAX_ATTEMPTS = 7;
+
+// Keitaro-style default {status}: 'lead' = revenue on hold, 'sale' = confirmed
+// revenue, 'rejected' = lost. Trackers needing other words use {stage:…}.
+const POSTBACK_STATUS_MAP: Record<string, string> = {
+  lead: "lead", hold: "lead", approve: "sale",
+  cancel: "rejected", trash: "rejected", return: "rejected", test: "lead",
+};
+const POSTBACK_STAGE_ORDER = ["lead", "hold", "approve", "cancel", "trash", "return"];
+
+// AlterCPA-family endpoints answer HTTP 200 with the real verdict in the JSON
+// BODY — {"status":"error","error":"no-id"} is a rejection, not a delivery.
+// Treating 2xx as success made every postback we ever sent look green while
+// none of them landed. Generic trackers (Keitaro etc.) return HTML or an empty
+// body, so anything that isn't JSON-with-a-status stays "delivered" as before.
+//
+// Permanent = never worth retrying; burning the 7-attempt backoff on these
+// just delays the failure being visible.
+const POSTBACK_PERMANENT_ERRORS = new Set([
+  "access-denied", // order isn't ours / unknown id
+  "orderid",       // no order id supplied
+  "no-id",         // same, older wording
+  "key",           // bad or missing API token
+  "func",          // no such endpoint
+  "security",      // rejected credential
+]);
+
+// ── AlterCPA advertiser-API mode ────────────────────────────────────────────
+// Our reason strings → their numeric codes. Overridable per affiliate via
+// affiliates.altercpa_reason_map, because each network configures its own
+// reason table (cpa.toys and cashfactories already diverge on 15/18/19).
+// 'rude'/'uncooperative' deliberately map to 2 (Changed his mind) rather than
+// a trash-flagged code — operator decision 2026-07-22, see the migration.
+const ALTERCPA_REASON_DEFAULT: Record<string, number> = {
+  // trash-flagged on their side, and genuinely invalid on ours
+  wrong_number: 1,        // Incorrect phone
+  wrong_person: 3,        // Did not order
+  not_reachable: 11,      // Could not get through
+  bought_elsewhere: 8,    // Ordered elsewhere
+  duplicate_order: 7,     // Duplicate order
+  wrong_product: 14,      // Product did not fit
+  // not trash — a real customer who said no
+  price_too_high: 9,      // Expensive
+  no_money: 9,            // Expensive
+  rude: 2, uncooperative: 2, not_satisfied: 2, changed_mind: 2,
+  still_using_product: 2, not_interested: 2, will_call_back: 2,
+  family_refused: 2, other: 2,
+};
+
+// Their status codes. Approval is NOT a status change — see accept=1 below.
+const ALTERCPA_STATUS = { processing: 2, cancelled: 5, sending: 7, completed: 10, returned: 11 };
+
+// Build the AlterCPA query string for one event. Returns null when the event
+// cannot be expressed (no oid to key on).
+function altercpaParams(
+  event: string,
+  extId: string | null,
+  reason: string | null,
+  reasonMap: Record<string, number> | null,
+): URLSearchParams | null {
+  if (!extId) return null;                       // no oid → nothing we can say
+  const p = new URLSearchParams({ oid: extId });
+  const codeFor = (r: string | null) =>
+    (r && (reasonMap?.[r] ?? ALTERCPA_REASON_DEFAULT[r])) ?? 2; // 2 = changed his mind
+  switch (event) {
+    case "lead":    p.set("status", String(ALTERCPA_STATUS.processing)); break;
+    // Confirmed by the call centre = accepted. MUST be accept=1, never a
+    // status number, or their hold timer / commission mechanics don't fire.
+    case "hold":    p.set("accept", "1"); break;
+    case "ship":    p.set("status", String(ALTERCPA_STATUS.sending)); break;
+    case "approve": p.set("status", String(ALTERCPA_STATUS.completed)); break;
+    case "return":  p.set("status", String(ALTERCPA_STATUS.returned)); break;
+    case "cancel":
+    case "trash":
+      p.set("status", String(ALTERCPA_STATUS.cancelled));
+      p.set("reason", String(codeFor(reason)));  // mandatory when status=5
+      break;
+    default: return null;                        // 'test' handled by the caller
+  }
+  return p;
+}
+
+// The status.json endpoint is the free-text one and cannot carry numeric
+// statuses, cancel reasons or tracking codes. edit.json can. Partners often
+// paste the status.json URL, so normalise it instead of making them re-paste.
+function altercpaBaseUrl(raw: string): string {
+  return raw.replace(/\/api\/comp\/status\.json/i, "/api/comp/edit.json");
+}
+
+function classifyPostbackBody(
+  bodyText: string,
+  // AlterCPA connectivity probe: we deliberately send no order id, so the
+  // endpoint answering "no order id" is exactly the success signal — it proves
+  // the URL resolved AND the API token was accepted (a bad token answers
+  // "key"). Only the portal's test-fire sets this.
+  probeMode = false,
+): { ok: boolean; permanent: boolean; error?: string } {
+  const t = (bodyText || "").trim();
+  if (!t || (t[0] !== "{" && t[0] !== "[")) return { ok: true, permanent: false };
+  let parsed: any;
+  try { parsed = JSON.parse(t); } catch { return { ok: true, permanent: false }; }
+  if (!parsed || typeof parsed !== "object" || parsed.status === undefined) {
+    return { ok: true, permanent: false };
+  }
+  if (parsed.status !== "error") return { ok: true, permanent: false };
+  const err = String(parsed.error ?? "unknown");
+  // "edit" = AlterCPA's "nothing to update", i.e. a successful no-op. Retrying
+  // it would manufacture permanent false failures on every unchanged resend.
+  if (err === "edit") return { ok: true, permanent: false };
+  if (probeMode && (err === "no-id" || err === "orderid")) return { ok: true, permanent: false };
+  return { ok: false, permanent: POSTBACK_PERMANENT_ERRORS.has(err), error: `api: ${err}` };
+}
+
+// String-level SSRF guard for affiliate-supplied postback URLs. The portal's
+// PATCH /affiliate/postback validates on save too — this is the backstop that
+// also covers URLs written directly by admins.
+function isSafePostbackUrl(raw: string): boolean {
+  try {
+    const u = new URL(raw);
+    if (u.protocol !== "http:" && u.protocol !== "https:") return false;
+    const host = u.hostname.toLowerCase();
+    if (host === "localhost" || host === "0.0.0.0" || host === "[::1]") return false;
+    if (/^127\.|^10\.|^192\.168\.|^169\.254\.|^172\.(1[6-9]|2\d|3[01])\./.test(host)) return false;
+    if (host.endsWith(".supabase.co") || host.endsWith(".supabase.net")) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function renderPostbackUrl(template: string, ctx: Record<string, string>): string {
+  // {stage:a|b|c|d|e|f} — positional custom mapping (AlterCPA convention),
+  // values in order lead|hold|approve|cancel|trash|return.
+  let out = template.replace(/\{stage:([^}]*)\}/gi, (_m, map: string) => {
+    const parts = String(map).split("|");
+    const idx = POSTBACK_STAGE_ORDER.indexOf(ctx.stage);
+    return encodeURIComponent(idx >= 0 ? (parts[idx] ?? ctx.stage) : ctx.stage);
+  });
+  // Plain {macro}s — unknown macros stay literal so misspellings are visible
+  // in the affiliate's own tracker logs instead of silently vanishing.
+  out = out.replace(/\{([a-z][a-z0-9_]*)\}/gi, (m, name: string) => {
+    const k = name.toLowerCase();
+    return Object.prototype.hasOwnProperty.call(ctx, k) ? encodeURIComponent(ctx[k]) : m;
+  });
+  return out;
+}
+
+async function drainAffiliatePostbacks(
+  client: any,
+  batch = 20,
+): Promise<{ claimed: number; delivered: number; retried: number; failed: number; skipped: number }> {
+  const counters = { claimed: 0, delivered: 0, retried: 0, failed: 0, skipped: 0 };
+  const { data: rows, error: claimErr } = await client.rpc("claim_due_affiliate_postbacks", { _batch: batch });
+  if (claimErr) {
+    console.error("postback drain: claim failed:", claimErr.code);
+    return counters;
+  }
+  if (!rows?.length) return counters;
+  counters.claimed = rows.length;
+
+  // Batch-load context for the whole claim (affiliates / leads).
+  // The orders table is deliberately NOT loaded here: nothing in a postback
+  // may carry orders.display_id, so there is nothing left to read from it.
+  const affIds = [...new Set(rows.map((r: any) => r.affiliate_id))];
+  const leadIds = [...new Set(rows.map((r: any) => r.affiliate_lead_id).filter(Boolean))];
+  const [affRes, leadRes] = await Promise.all([
+    client.from("affiliates")
+      .select("id, code, status, postback_url, postback_enabled, postback_events, postback_format, altercpa_reason_map")
+      .in("id", affIds),
+    leadIds.length
+      ? client.from("affiliate_leads")
+        .select("id, ext_id, clickid, sub1, sub2, sub3, sub4, sub5, offer_id, payout_eur_snapshot, order_id")
+        .in("id", leadIds)
+      : Promise.resolve({ data: [] }),
+  ]);
+  const affById = new Map((affRes.data || []).map((a: any) => [a.id, a]));
+  const leadById = new Map((leadRes.data || []).map((l: any) => [l.id, l]));
+
+  await Promise.all(rows.map(async (row: any) => {
+    const finish = (patch: Record<string, unknown>) =>
+      client.from("affiliate_postbacks").update(patch).eq("id", row.id);
+    try {
+      const aff = affById.get(row.affiliate_id);
+      const lead = row.affiliate_lead_id ? leadById.get(row.affiliate_lead_id) : null;
+      const isTest = row.event === "test";
+
+      // Skips are policy decisions, not failures — no retry.
+      const skip = async (why: string) => {
+        counters.skipped++;
+        await finish({ status: "skipped", last_error: why });
+      };
+      if (!aff) return await skip("affiliate missing");
+      if (aff.status === "banned") return await skip("affiliate banned");
+      if (!aff.postback_url) return await skip("no postback url");
+      if (!isTest && !aff.postback_enabled) return await skip("postbacks disabled");
+      if (!isTest && aff.postback_events && aff.postback_events[row.event] === false) {
+        return await skip("event disabled");
+      }
+      if (!isSafePostbackUrl(aff.postback_url)) return await skip("unsafe url");
+      if (!isTest && !lead) return await skip("lead missing");
+
+      const payout = Number(lead?.payout_eur_snapshot ?? 0) || 0;
+      const moneyOn = row.event === "approve";
+      const holdOn = row.event === "lead" || row.event === "hold";
+      const click = lead?.clickid || (isTest ? "test-click-1" : "");
+      const ctx: Record<string, string> = {
+        // NEITHER of these may ever render orders.display_id. {id} is THEIR
+        // lead id (no fallback — a fallback would silently leak ORD-xxxxx for
+        // any lead sent without an ext_id); {oid} is our opaque lead ref.
+        id: lead?.ext_id || (isTest ? "TEST-1" : ""),
+        oid: lead?.id || (isTest ? "TEST-REF" : ""),
+        offer: lead?.offer_id || "",
+        stage: isTest ? "test" : row.event,
+        status: POSTBACK_STATUS_MAP[row.event] || row.event,
+        reason: row.reason || "",
+        subid: lead?.clickid || lead?.sub1 || (isTest ? "test-click-1" : ""),
+        clickid: click, cuid: click, fbclid: click, gclid: click, ttclid: click,
+        cash: (moneyOn ? payout : 0).toFixed(2),
+        payout: (moneyOn ? payout : 0).toFixed(2),
+        hold: (holdOn ? payout : 0).toFixed(2),
+        sub1: lead?.sub1 || "", sub2: lead?.sub2 || "", sub3: lead?.sub3 || "",
+        sub4: lead?.sub4 || "", sub5: lead?.sub5 || "",
+        currency: "EUR",
+        date: new Date().toISOString(),
+        rand: crypto.randomUUID().slice(0, 8),
+      };
+      const isAlterCpa = aff.postback_format === "altercpa";
+
+      let rendered: string;
+      if (isAlterCpa) {
+        // Their advertiser API takes fixed parameter names, so we build the
+        // query ourselves and ignore the URL's macros entirely.
+        const base = altercpaBaseUrl(aff.postback_url);
+        if (isTest) {
+          // A bare call is a genuine auth probe: a valid token answers
+          // "no-id" (endpoint reached, key accepted), a bad one answers "key".
+          rendered = base;
+        } else {
+          const params = altercpaParams(
+            row.event, lead?.ext_id ?? null, row.reason, aff.altercpa_reason_map,
+          );
+          if (!params) {
+            return await skip(
+              lead?.ext_id ? `event '${row.event}' not mapped for altercpa` : "no ext_id for altercpa",
+            );
+          }
+          rendered = `${base}${base.includes("?") ? "&" : "?"}${params.toString()}`;
+        }
+      } else {
+        rendered = renderPostbackUrl(aff.postback_url, ctx);
+      }
+
+      // Tracker dedup: an identical rendered URL was already delivered for this
+      // lead → skip. Templates using {rand}/{date} opt out.
+      // NOT applied to AlterCPA: that is a status API, resends are idempotent
+      // (it answers "edit" = nothing changed), and suppressing them would lose
+      // a real transition — e.g. confirmed → cancelled → confirmed renders the
+      // same accept=1 twice and the partner would never learn about the second.
+      if (!isTest && !isAlterCpa && row.affiliate_lead_id) {
+        const { data: dupe } = await client
+          .from("affiliate_postbacks").select("id")
+          .eq("affiliate_lead_id", row.affiliate_lead_id)
+          .eq("status", "delivered")
+          .eq("rendered_url", rendered)
+          .neq("id", row.id)
+          .limit(1).maybeSingle();
+        if (dupe) {
+          counters.skipped++;
+          return await finish({ status: "skipped", rendered_url: rendered, last_error: "unchanged" });
+        }
+      }
+
+      let code: number | null = null;
+      let bodyText = "";
+      let errText = "";
+      try {
+        const res = await fetch(rendered, {
+          method: "GET",
+          redirect: "follow",
+          signal: AbortSignal.timeout(10_000),
+          headers: { "User-Agent": "ElyonCRM-Postback/1.0" },
+        });
+        code = res.status;
+        try { bodyText = (await res.text()).slice(0, 1024); } catch { bodyText = ""; }
+      } catch (e: any) {
+        errText = String(e?.message || e).slice(0, 300);
+      }
+
+      // A 2xx is necessary but NOT sufficient — the body decides (see
+      // classifyPostbackBody).
+      const transportOk = code !== null && code >= 200 && code < 300;
+      const verdict = transportOk
+        ? classifyPostbackBody(bodyText, isAlterCpa && isTest)
+        : { ok: false, permanent: false, error: errText || `HTTP ${code}` };
+
+      if (verdict.ok) {
+        counters.delivered++;
+        return await finish({
+          status: "delivered",
+          delivered_at: new Date().toISOString(),
+          rendered_url: rendered,
+          last_response_code: code,
+          last_response_body: bodyText,
+          last_error: null,
+        });
+      }
+      const failReason = verdict.error || errText || `HTTP ${code}`;
+
+      const attempts = Number(row.attempts) || 1; // claim returns the post-increment value
+      if (verdict.permanent || attempts >= POSTBACK_MAX_ATTEMPTS) {
+        counters.failed++;
+        return await finish({
+          status: "failed",
+          rendered_url: rendered,
+          last_response_code: code,
+          last_response_body: bodyText,
+          last_error: failReason,
+        });
+      }
+      const delayMin = POSTBACK_BACKOFF_MINUTES[Math.min(attempts, POSTBACK_BACKOFF_MINUTES.length) - 1];
+      counters.retried++;
+      return await finish({
+        status: "pending",
+        next_attempt_at: new Date(Date.now() + delayMin * 60_000).toISOString(),
+        rendered_url: rendered,
+        last_response_code: code,
+        last_response_body: bodyText,
+        last_error: failReason,
+      });
+    } catch (e: any) {
+      // Never let one row kill the batch; the row stays on its 10-min lease.
+      console.error("postback drain: row error:", String(e?.message || e).slice(0, 200));
+    }
+  }));
+  return counters;
+}
+
+// Fire-and-forget drain right after a status change / intake so trackers hear
+// about events in seconds. On Supabase's runtime EdgeRuntime.waitUntil keeps
+// the isolate alive for it; without it the promise still starts and the
+// every-minute cron remains the delivery guarantee either way.
+function nudgePostbackDrain(client: any) {
+  try {
+    const p = drainAffiliatePostbacks(client, 5).catch(() => {});
+    (globalThis as any).EdgeRuntime?.waitUntil?.(p);
+  } catch (_) { /* best-effort */ }
+}
+
 function json(data: any, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
@@ -11534,6 +15053,16 @@ function json(data: any, status = 200) {
 // filter separators in our search-string concatenation.
 function sanitizeSearch(s: string): string {
   return (s || "").replace(/[%_\\,().]/g, "").trim();
+}
+
+// True if the target user holds a privileged role (admin or manager). Used to
+// stop a manager from deleting/suspending an admin or a fellow manager — a
+// manager may only manage plain agent accounts.
+async function targetHasPrivilegedRole(client: any, userId: string): Promise<boolean> {
+  const { data } = await client
+    .from("user_roles").select("role").eq("user_id", userId)
+    .in("role", ["admin", "manager"]).limit(1);
+  return !!(data && data.length);
 }
 
 // In-memory sliding-window rate limiter for public webhook endpoints.

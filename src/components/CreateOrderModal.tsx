@@ -14,12 +14,13 @@ import { statusLabel } from '@/types';
 import { cn } from '@/lib/utils';
 import { EmptyState } from '@/components/EmptyState';
 import { useToast } from '@/hooks/use-toast';
-import { apiGetProducts, apiCreateOrder, apiGetCustomerPrefill, apiSaveCustomerProfile, apiMatchCourierOffice, type CancellationReason } from '@/lib/api';
+import { apiGetProducts, apiCreateOrder, apiGetCustomerPrefill, apiSaveCustomerProfile, apiMatchCourierOffice, apiGetOrder, apiUpdateCustomer, apiSyncOrderItems, apiUpdateOrderStatus, apiAddOrderNote, type CancellationReason } from '@/lib/api';
 import { formatProductWithQuantity, isLegacyPromoName } from '@/lib/utils';
 import { formatLev } from '@/lib/currency';
 import { DeliveryMethodPicker, type DeliveryValue } from '@/components/DeliveryMethodPicker';
 import { CancellationReasonPicker } from '@/components/CancellationReasonPicker';
-import { composeHomeAddress, parseHomeAddress, looksLikeStructuredDetail } from '@/lib/address';
+import { cancelReasonRequiresNote } from '@/lib/cancellationReasons';
+import { composeHomeAddress, parseHomeAddress, looksLikeStructuredDetail, resolveDeliveryPrefill } from '@/lib/address';
 
 type CreateStatus = 'confirmed' | 'call_again' | 'cancelled' | 'trashed' | 'pending';
 
@@ -55,6 +56,11 @@ interface CreateOrderModalProps {
   hideStatusPicker?: boolean;
   /** Header text override — e.g. "Confirm Order — +383..." */
   title?: string;
+  /** Complete an EXISTING order instead of creating a new one (lead/pending
+   *  confirm flow). Saving updates that order's fields + items in place and
+   *  then flips its status — never a second order, so the affiliate sidecar
+   *  and the DB postback triggers keep pointing at the same order id. */
+  existingOrderId?: string;
 }
 
 // What the agent picks — mirrors the Order Editor's outcomes. Cancelled
@@ -69,7 +75,7 @@ const STATUS_OPTIONS: { value: CreateStatus; labelKey: string; cls: string }[] =
 ];
 
 export function CreateOrderModal({
-  open, onClose, prefillPhone, prefillName, defaultStatus = 'confirmed', hideStatusPicker, title,
+  open, onClose, prefillPhone, prefillName, defaultStatus = 'confirmed', hideStatusPicker, title, existingOrderId,
 }: CreateOrderModalProps) {
   const { t } = useTranslation();
   const { toast } = useToast();
@@ -147,8 +153,9 @@ export function CreateOrderModal({
     Promise.all([
       apiGetProducts().catch(() => []),
       phoneOk ? apiGetCustomerPrefill(prefillPhone!).catch(() => ({ profile: null, recent: [] })) : Promise.resolve({ profile: null, recent: [] }),
+      existingOrderId ? apiGetOrder(existingOrderId).catch(() => null) : Promise.resolve(null),
     ])
-      .then(([prods, pre]: [any[], { profile: any; recent: any[] }]) => {
+      .then(([prods, pre, existingOrder]: [any[], { profile: any; recent: any[] }, any]) => {
         const profile = pre?.profile || null;
         const recent = pre?.recent || [];
         setProducts(prods || []);
@@ -273,10 +280,45 @@ export function CreateOrderModal({
           const d = new Date(bday + 'T00:00:00');
           if (!isNaN(d.getTime())) setBirthday(d);
         }
+
+        // ── Existing-order overlay (lead/pending confirm flow) ──
+        // The lead's own data wins over the generic profile prefill, but a
+        // sparse webhook lead keeps the smart prefill for whatever it lacks.
+        if (existingOrder) {
+          const parseDay = (s?: string | null) => {
+            if (!s) return undefined;
+            const d = new Date(s.length === 10 ? `${s}T00:00:00` : s);
+            return isNaN(d.getTime()) ? undefined : d;
+          };
+          if (existingOrder.customer_name && existingOrder.customer_name !== '—') {
+            setName(existingOrder.customer_name);
+          }
+          const orderItems = (existingOrder.order_items || []).filter((i: any) => i.product_name && i.product_name !== '—');
+          if (orderItems.length > 0) {
+            setItems(orderItems.map((i: any) => {
+              const match = (prods || []).find((p: any) => p.id === i.product_id);
+              return {
+                product_id: i.product_id ?? null,
+                product_name: match?.name || i.product_name,
+                quantity: Math.max(1, Number(i.quantity) || 1),
+                price_per_unit: Math.max(0, Number(i.price_per_unit) || 0),
+              };
+            }));
+          }
+          const hasDelivery = !!(existingOrder.customer_address || existingOrder.customer_city
+            || existingOrder.street || existingOrder.courier_office_code);
+          if (hasDelivery) setDelivery(resolveDeliveryPrefill(existingOrder));
+          if (existingOrder.delivery_instructions) setDeliveryInstructions(existingOrder.delivery_instructions);
+          if (existingOrder.gift_note) setGiftNote(existingOrder.gift_note);
+          const sad = parseDay(existingOrder.ship_after_date);
+          if (sad) setShipAfterDate(sad);
+          const ob = parseDay(existingOrder.birthday);
+          if (ob) setBirthday(ob);
+        }
       })
       .catch(() => {})
       .finally(() => { setLoading(false); setPrefilling(false); });
-  }, [open, prefillPhone, prefillName, defaultStatus]);
+  }, [open, prefillPhone, prefillName, defaultStatus, existingOrderId]);
 
   // When we have a free-text courier address but no resolved office, try to
   // match it against our cached office list and auto-fill the office (code +
@@ -415,9 +457,69 @@ export function CreateOrderModal({
       toast({ title: t('orderModal.cancelReasonRequired'), description: t('orderModal.cancelReasonRequiredDesc'), variant: 'destructive' });
       return;
     }
+    if (status === 'cancelled' && cancelReasonRequiresNote(cancellationReason) && !cancellationReasonNotes.trim()) {
+      toast({ title: t('orderModal.cancelNoteRequired'), description: t('orderModal.cancelNoteRequiredDesc'), variant: 'destructive' });
+      return;
+    }
 
     setSaving(true);
     try {
+      if (existingOrderId && !isManualMode) {
+        // Lead/pending confirm: complete the EXISTING order in place — fields
+        // first, then items, then the status flip (the status endpoint's
+        // completeness gate expects the fields to already be there). The same
+        // order id keeps the affiliate sidecar + postback triggers intact.
+        // Phone is deliberately not sent: it's locked in this mode and the
+        // stored E.164 value must never be overwritten with display text.
+        await apiUpdateCustomer(existingOrderId, {
+          customer_name: name.trim(),
+          customer_address: composedAddress,
+          customer_city: delivery.city.trim(),
+          postal_code: delivery.postal_code.trim(),
+          street: delivery.street.trim(),
+          street_number: delivery.street_number.trim(),
+          quarter: delivery.quarter.trim(),
+          apartment: delivery.apartment.trim(),
+          floor: delivery.floor.trim(),
+          block: delivery.block.trim(),
+          entry: delivery.entry.trim(),
+          delivery_type: delivery.delivery_type,
+          home_courier: delivery.home_courier,
+          courier_office_code: delivery.courier_office_code,
+          courier_office_name: delivery.courier_office_name,
+          courier_office_city: delivery.courier_office_city,
+          delivery_instructions: deliveryInstructions.trim(),
+          gift_note: giftNote.trim(),
+          birthday: birthday ? format(birthday, 'yyyy-MM-dd') : null,
+          ship_after_date: shipAfterDate ? format(shipAfterDate, 'yyyy-MM-dd') : null,
+          price: totalPrice,
+          quantity: items.reduce((s, i) => s + i.quantity, 0),
+          product_name: items.map(i => formatProductWithQuantity(i.product_name, i.quantity)).join(', ') || '—',
+        });
+        await apiSyncOrderItems(existingOrderId, items.map(i => ({
+          product_id: i.product_id,
+          product_name: i.product_name,
+          quantity: Math.max(1, i.quantity),
+          price_per_unit: Math.max(0, i.price_per_unit),
+        })));
+        if (notes.trim()) {
+          try { await apiAddOrderNote(existingOrderId, notes.trim()); } catch { /* best effort */ }
+        }
+        if (status !== 'pending') {
+          await apiUpdateOrderStatus(existingOrderId, status,
+            status === 'cancelled' && cancellationReason ? {
+              cancellation_reason: cancellationReason,
+              cancellation_reason_notes: cancellationReasonNotes.trim() || undefined,
+            } : undefined);
+        }
+        toast({
+          title: t('createOrder.orderCompleted'),
+          description: t('createOrder.statusDesc', { status: statusLabel(status) }),
+        });
+        onClose(true, status, false);
+        return;
+      }
+
       await apiCreateOrder({
         product_name: items.map(i => formatProductWithQuantity(i.product_name, i.quantity)).join(', ') || '—',
         customer_name: name.trim(),
@@ -836,7 +938,7 @@ export function CreateOrderModal({
               </Button>
               <Button size="sm" onClick={handleSave} disabled={saving || savingInfo}>
                 {saving && <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />}
-                {t('common.createOrder')}
+                {existingOrderId && !isManualMode ? t('createOrder.saveAndConfirm') : t('common.createOrder')}
               </Button>
             </div>
           </div>

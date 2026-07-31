@@ -49,6 +49,11 @@ const SegmentDetailPage = lazy(() => import("./pages/SegmentDetailPage"));
 const PersonalListPage = lazy(() => import("./pages/PersonalListPage"));
 const CallAgainPage = lazy(() => import("./pages/CallAgainPage"));
 const VoipHealthPage = lazy(() => import("./pages/VoipHealthPage"));
+const AffiliatesAdminPage = lazy(() => import("./pages/AffiliatesAdminPage"));
+// Affiliate (webmaster) portal — the only pages an 'affiliate' login can see.
+const AffiliateDashboardPage = lazy(() => import("./pages/AffiliateDashboardPage"));
+const AffiliateOffersCataloguePage = lazy(() => import("./pages/AffiliateOffersCataloguePage"));
+const AffiliateIntegrationPage = lazy(() => import("./pages/AffiliateIntegrationPage"));
 // Public, full-screen wall-board for the office TV. No login (token in the URL).
 const TvLeaderboardPage = lazy(() => import("./pages/TvLeaderboardPage"));
 
@@ -116,6 +121,10 @@ const App = () => (
                 <Route path="/ads" element={<Navigate to="/webhooks" replace />} />
                 <Route path="/inbound-leads" element={<ProtectedRoute moduleKey="inbound_leads"><InboundLeadsPage /></ProtectedRoute>} />
                 <Route path="/webhooks" element={<ProtectedRoute moduleKey="webhooks"><WebhookManagementPage /></ProtectedRoute>} />
+                <Route path="/affiliates-admin" element={<ProtectedRoute moduleKey="affiliates_admin"><AffiliatesAdminPage /></ProtectedRoute>} />
+                <Route path="/affiliate" element={<ProtectedRoute moduleKey="affiliate_portal"><AffiliateDashboardPage /></ProtectedRoute>} />
+                <Route path="/affiliate/offers" element={<ProtectedRoute moduleKey="affiliate_portal"><AffiliateOffersCataloguePage /></ProtectedRoute>} />
+                <Route path="/affiliate/integration" element={<ProtectedRoute moduleKey="affiliate_portal"><AffiliateIntegrationPage /></ProtectedRoute>} />
                 <Route path="/search-prediction" element={<ProtectedRoute moduleKey="search_prediction"><SearchPredictionPage /></ProtectedRoute>} />
                 <Route path="/insights" element={<ProtectedRoute moduleKey="insights" moduleKeysAny={["performance", "agent_activity"]}><ManagementInsightsPage /></ProtectedRoute>} />
                 <Route path="/operations" element={<ProtectedRoute moduleKey="operations"><OperationsPage /></ProtectedRoute>} />

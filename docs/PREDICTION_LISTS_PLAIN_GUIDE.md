@@ -1,7 +1,7 @@
 # Prediction Lists — The Plain-Words Guide
 
 *For everyone: agents, managers, new people. No technical knowledge needed.*
-*This describes the live system since 10 June 2026. The technical version is in [HOW_PREDICTION_SEGMENTS_WORK_NOW.md](HOW_PREDICTION_SEGMENTS_WORK_NOW.md).*
+*This describes the live system since 10 June 2026 (unassign behaviour updated 28 July 2026). The technical version is in [HOW_PREDICTION_SEGMENTS_WORK_NOW.md](HOW_PREDICTION_SEGMENTS_WORK_NOW.md).*
 
 ---
 
@@ -59,7 +59,8 @@ The answers are glued together into the list name. Example: a customer who last 
 - **NEWCOMERS** — paid less than 21 days ago. They exist as lists so you can see them, but the idea is: they just bought, let them rest 21 days before any re-marketing call. **They are never handed to an agent automatically — only you assign them.** After 21 days the system moves them into their normal band list on its own (and if you had assigned them, that agent goes with them).
 - **Current Cancels** — anyone whose **latest action was a cancellation** (within the last 14 days). They are parked here, **assigned to nobody**, so they don't get a sales call right after saying no. After 14 days the system automatically returns them to their normal list.
 - **Current Returns** — anyone whose **most recent order was returned**. This is an **extra** list just for tracking returns — **assigned to nobody**. If the customer has bought before, they **also** stay in their normal calling list (they show in both places); if they never had a successful purchase, they show **only** here. They drop off automatically the moment they place a new order. The list shows the returned order's date.
-- **Never-Converted Recent / Old** — people who never bought anything. "Recent" = their last cancellation was within 6 months; "Old" = older than that, or no real history (including junk/unreachable numbers). Lowest priority calling material.
+- **Never-Converted Recent / Old** — people who never bought anything. "Recent" = their last cancellation was within 6 months; "Old" = older than that, or no real history. Lowest priority calling material.
+- **Trash List** — everyone whose **most recent order was trashed**, shown **with the reason** (wrong number, wrong person, **unreachable**, rude, does-not-cooperate, other). Assigned to nobody — it's a see-everything list so you always know who was trashed and why. Wrong-number / wrong-person / **unreachable** customers are also removed from every calling list (dead numbers); the other reasons stay callable but still appear here. A customer leaves the moment a newer order appears. **"Unreachable"** lands here two ways: an agent picks it by hand, or the system auto-trashes after **9 no-answers** — reached gently at **2 calls a day, 3–4 hours apart, over about 4 days** (a client is never hammered with 9 calls in one day).
 - **FULL MONAD LIST** — the imported Monadon customers. They are **only** here, never in our normal lists, and their old purchases never count as ours.
 - **Cancelled Pendings** — a hand-made list (old leads kept with name + product for callback). The system never touches hand-made lists.
 
@@ -84,16 +85,30 @@ The answers are glued together into the list name. Example: a customer who last 
 | **Total orders** | How many paid orders they have ever had |
 | **Avg / pkg** | Average money per order (total ÷ orders), shown in € and лв |
 | **Total spend** | Everything they have ever paid us |
-| **Assigned** | Which agent owns this customer right now |
+| **Assigned** | Which agent owns this customer right now (you can clear this at any time from the Assigner's **Unassign** tab — even for people who were already called) |
 | **Last call** | When we last called them and what happened |
 
 ## What happens to agent work when someone moves lists
 
-When a customer moves from one list to another (for example ages from 21d into 57d), **the agent assignment and the call history move with them** — work is never lost. Two sensible exceptions:
+When a customer moves from one list to another (for example ages from 21d into 57d), **the agent assignment and the call history move with them** — work is never lost. Three sensible exceptions:
 
 - When a customer **buys again**, their "done" mark is cleared — they're a fresh opportunity again (after the 21-day rest).
 - When a customer enters **Current Cancels**, the assignment is removed on purpose — nobody should call them there.
 - When a customer enters a **NEWCOMERS** list, any inherited assignment is removed on purpose — fresh buyers are handed to an agent only when **you** assign them. (Once you do, that agent stays with them when they later age out of NEWCOMERS.)
+
+The engine never removes an assignment for any other reason. The only other way it disappears is when **you** take it back — see below.
+
+## Taking work back from an agent (the Unassign tab)
+
+The third tab on the **Assigner** page shows every agent who is holding anything, and how much: how many people they still have **to call**, how many pending leads, and how many they've already **done**.
+
+- **Open an agent** → you see every list they hold plus their pending leads.
+- **Open a list** → you see the actual people in it, already-called ones marked *Done*, each with its own **Unassign** button. So you can free a single client without touching the rest.
+- **Unassign (whole list or whole agent)** → frees **everything**, including the people they already called, so the list **completely detaches** from that agent. This is deliberate: a list an agent has finished should not keep hanging on their profile forever.
+
+**What you never lose by unassigning:** the call history and recordings, the "done" marks, the cancel/return records, and the sales credit for confirmed orders. Only the "assigned to" label is removed, so somebody else can be given the work.
+
+Freeing a client does **not** re-open them for calling if the rules say otherwise — e.g. a customer who cancelled is still parked in **Current Cancels** for 14 days, and a customer who bought is still resting in **NEWCOMERS** for 21 days. Unassigning and the calling rules are two separate things.
 
 ---
 
@@ -111,7 +126,7 @@ When a customer moves from one list to another (for example ages from 21d into 5
 
 ---
 
-*Built and verified 10 June 2026 (engine v3). If the rules ever change, update this guide, the technical doc, and the `elyon-segments-and-prediction` skill together.*
+*Built and verified 10 June 2026 (engine v3); unassign/detach behaviour revised 28 July 2026. If the rules ever change, update this guide, the technical doc, and the `elyon-segments-and-prediction` skill together.*
 
 ---
 

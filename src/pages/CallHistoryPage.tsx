@@ -1,8 +1,9 @@
-import { useState, useEffect, Fragment } from 'react';
+import { useState, useEffect, useCallback, Fragment } from 'react';
 import { useTranslation } from 'react-i18next';
 import i18n from '@/i18n';
 import { useQuery } from '@tanstack/react-query';
-import { Search, Filter, ChevronLeft, ChevronRight, FileText, ShoppingCart, Clock, ChevronDown, ChevronUp, Play, Download, Loader2, Mic } from 'lucide-react';
+import { Search, Filter, ChevronLeft, ChevronRight, FileText, ShoppingCart, Clock, ChevronDown, ChevronUp, Play, Download, Loader2, Mic, CheckCheck } from 'lucide-react';
+import { SmartPagination } from '@/components/SmartPagination';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -15,6 +16,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
 import { STATUS_COLORS as ORDER_STATUS_COLORS, statusLabel } from '@/types';
 import { apiGetCallHistory, apiGetAgents, apiGetRecordingAudioUrl } from '@/lib/api';
+import { useListenedMark } from '@/hooks/useListenedMark';
 import { AppLayout } from '@/layouts/AppLayout';
 import { cn } from '@/lib/utils';
 import { EmptyState } from '@/components/EmptyState';
@@ -161,6 +163,20 @@ export default function CallHistoryPage() {
   const [audioUrls, setAudioUrls] = useState<Record<string, string>>({});
   const [loadingAudio, setLoadingAudio] = useState<Record<string, boolean>>({});
   const limit = 25;
+
+  // Team-wide "reviewed" mark: >=10s of real playback by a hear-all role sets
+  // it (server-side, first listener wins). locallyListened makes the ✓✓ appear
+  // immediately without a refetch.
+  const [locallyListened, setLocallyListened] = useState<Set<string>>(new Set());
+  const onMarked = useCallback((id: string) => {
+    setLocallyListened((prev) => new Set(prev).add(id));
+  }, []);
+  const trackListen = useListenedMark(canDownload, onMarked);
+  const isListened = (log: any) => !!log.listened_at || locallyListened.has(log.id);
+  const listenedTitle = (log: any) =>
+    log.listened_by_name
+      ? t('orderCalls.listenedBy', { name: log.listened_by_name, date: log.listened_at ? format(new Date(log.listened_at), 'dd/MM/yy HH:mm') : '' })
+      : t('orderCalls.listened');
 
   // Recordings stream on demand from the PBX via a short-lived signed URL.
   const loadAudio = async (file: string): Promise<string | null> => {
@@ -424,7 +440,12 @@ export default function CallHistoryPage() {
                     </TableCell>
                     <TableCell className="text-right pr-4">
                       {log.recording_file ? (
-                        <div className="inline-flex gap-1.5">
+                        <div className="inline-flex items-center gap-1.5">
+                          {isListened(log) && (
+                            <span title={listenedTitle(log)} className="inline-flex text-emerald-600">
+                              <CheckCheck className="h-3.5 w-3.5" />
+                            </span>
+                          )}
                           <Button variant="outline" size="sm" onClick={() => playRecording(log.id, log.recording_file)} className="gap-1.5 h-7">
                             <Play className="h-3 w-3" /> Play
                           </Button>
@@ -453,7 +474,7 @@ export default function CallHistoryPage() {
                   {loadingAudio[log.recording_file] ? (
                     <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> {t('callHist.loadingAudio')}</div>
                   ) : audioUrls[log.recording_file] ? (
-                    <audio controls autoPlay src={audioUrls[log.recording_file]} className="w-full max-w-2xl h-9" controlsList={canDownload ? undefined : 'nodownload'} onContextMenu={canDownload ? undefined : (e) => e.preventDefault()} />
+                    <audio controls autoPlay src={audioUrls[log.recording_file]} className="w-full max-w-2xl h-9" controlsList={canDownload ? undefined : 'nodownload'} onContextMenu={canDownload ? undefined : (e) => e.preventDefault()} onTimeUpdate={trackListen(log.id, isListened(log))} />
                   ) : (
                     <Button variant="outline" size="sm" onClick={() => loadAudio(log.recording_file)} className="gap-1.5 h-7"><Play className="h-3 w-3" /> Load recording</Button>
                   )}
@@ -636,6 +657,11 @@ export default function CallHistoryPage() {
                 {log.total_price ? <MobileCardField label={t('createOrder.total')} value={Number(log.total_price).toLocaleString()} /> : null}
                 {log.recording_file && (
                   <MobileCardActions>
+                    {isListened(log) && (
+                      <span title={listenedTitle(log)} className="inline-flex items-center text-emerald-600">
+                        <CheckCheck className="h-4 w-4" />
+                      </span>
+                    )}
                     <Button variant="outline" size="sm" className="gap-1.5" onClick={() => playRecording(log.id, log.recording_file)}>
                       <Play className="h-3.5 w-3.5" /> Play
                     </Button>
@@ -656,7 +682,7 @@ export default function CallHistoryPage() {
                       loadingAudio[log.recording_file] ? (
                         <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> {t('callHist.loadingAudio')}</div>
                       ) : audioUrls[log.recording_file] ? (
-                        <audio controls autoPlay src={audioUrls[log.recording_file]} className="w-full h-9" controlsList={canDownload ? undefined : 'nodownload'} onContextMenu={canDownload ? undefined : (e) => e.preventDefault()} />
+                        <audio controls autoPlay src={audioUrls[log.recording_file]} className="w-full h-9" controlsList={canDownload ? undefined : 'nodownload'} onContextMenu={canDownload ? undefined : (e) => e.preventDefault()} onTimeUpdate={trackListen(log.id, isListened(log))} />
                       ) : (
                         <Button variant="outline" size="sm" onClick={() => loadAudio(log.recording_file)} className="gap-1.5"><Play className="h-3.5 w-3.5" /> {t('callHist.loadRecording')}</Button>
                       )
@@ -683,14 +709,7 @@ export default function CallHistoryPage() {
             <p className="text-sm text-muted-foreground">
               {t('ordersPage.pageOf', { page, totalPages, total })}
             </p>
-            <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>
-                <ChevronLeft className="h-4 w-4" />
-              </Button>
-              <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-            </div>
+            <SmartPagination page={page} totalPages={totalPages} onPageChange={setPage} />
           </div>
         )}
       </div>

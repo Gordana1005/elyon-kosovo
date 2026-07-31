@@ -9,6 +9,7 @@ import {
   Users, CalendarDays, FileText, History, ChevronLeft,
   ChevronRight, ChevronDown, Phone, PhoneCall, PhoneIncoming, Warehouse, Settings, Inbox,
   Webhook, UserPlus, SearchIcon, TrendingUp, Activity, Zap, Layers, Lock, Clock, Gauge, FileUp,
+  Handshake,
 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { SidebarCallIndicator } from '@/components/calls/SidebarCallIndicator';
@@ -33,6 +34,17 @@ interface NavSection {
 }
 
 const sections: NavSection[] = [
+  {
+    // Affiliate (webmaster) portal — module access alone isn't enough here:
+    // admins pass every module check, but these pages are the partner's view,
+    // so the items render only for logins that actually hold the role.
+    labelKey: '',
+    items: [
+      { titleKey: 'nav.affiliateDashboard', path: '/affiliate', icon: Handshake, moduleKey: 'affiliate_portal' },
+      { titleKey: 'nav.affiliateOffers', path: '/affiliate/offers', icon: Package, moduleKey: 'affiliate_portal' },
+      { titleKey: 'nav.affiliateIntegration', path: '/affiliate/integration', icon: Webhook, moduleKey: 'affiliate_portal' },
+    ],
+  },
   {
     labelKey: '',
     items: [
@@ -92,6 +104,7 @@ const sections: NavSection[] = [
     items: [
       { titleKey: 'nav.products', path: '/products', icon: Package, moduleKey: 'products' },
       { titleKey: 'nav.webhooksAds', path: '/webhooks', icon: Webhook, moduleKey: 'webhooks' },
+      { titleKey: 'nav.affiliates', path: '/affiliates-admin', icon: Handshake, moduleKey: 'affiliates_admin' },
     ],
   },
   {
@@ -122,10 +135,13 @@ export function AppSidebar() {
   // Filter sections based on module enabled + role permissions
   const visibleSections = sections
     .map(section => {
-      const items = section.items.filter(item =>
-        canAccessModule(item.moduleKey) ||
-        (item.moduleKeysAny?.some(k => canAccessModule(k)) ?? false)
-      );
+      const items = section.items.filter(item => {
+        // Partner-only surface: admins pass canAccessModule for everything,
+        // but the portal items should only clutter an actual affiliate's nav.
+        if (item.moduleKey === 'affiliate_portal' && !user?.isAffiliate) return false;
+        return canAccessModule(item.moduleKey) ||
+          (item.moduleKeysAny?.some(k => canAccessModule(k)) ?? false);
+      });
       if (items.length === 0) return null;
       return { ...section, items };
     })

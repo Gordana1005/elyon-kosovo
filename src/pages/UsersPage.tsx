@@ -2,8 +2,8 @@ import { useState, useEffect } from 'react';
 import { apiErrorText } from '@/i18n/apiErrors';
 import { useTranslation } from 'react-i18next';
 import { AppLayout } from '@/layouts/AppLayout';
-import { UserPlus, Shield, Headphones, ToggleLeft, ToggleRight, Loader2, Trash2, Package, Crown, UserCheck, Users as UsersIcon } from 'lucide-react';
-import { apiGetUsers, apiToggleUserActive, apiSetUserRoles, apiDeleteUser } from '@/lib/api';
+import { UserPlus, Shield, Headphones, ToggleLeft, ToggleRight, Loader2, Trash2, Package, Crown, UserCheck, Users as UsersIcon, Pencil } from 'lucide-react';
+import { apiGetUsers, apiToggleUserActive, apiSetUserRoles, apiDeleteUser, apiUpdateUser } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import i18n from '@/i18n';
 import { useAuth } from '@/contexts/AuthContext';
@@ -70,6 +70,11 @@ export default function UsersPage() {
   const [creating, setCreating] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<UserRow | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [editTarget, setEditTarget] = useState<UserRow | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editEmail, setEditEmail] = useState('');
+  const [editPassword, setEditPassword] = useState('');
+  const [savingEdit, setSavingEdit] = useState(false);
   const { toast } = useToast();
   const { user: currentUser } = useAuth();
 
@@ -190,6 +195,38 @@ export default function UsersPage() {
     }
   };
 
+  const openEdit = (u: UserRow) => {
+    setEditTarget(u);
+    setEditName(u.full_name);
+    setEditEmail(u.email);
+    setEditPassword('');
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editTarget) return;
+    const patch: { full_name?: string; email?: string; password?: string } = {};
+    const name = editName.trim();
+    const email = editEmail.trim();
+    if (name && name !== editTarget.full_name) patch.full_name = name;
+    if (email && email !== editTarget.email) patch.email = email;
+    if (editPassword) patch.password = editPassword;
+    if (Object.keys(patch).length === 0) {
+      toast({ title: t('usersPage.noChanges') });
+      return;
+    }
+    setSavingEdit(true);
+    try {
+      await apiUpdateUser(editTarget.user_id, patch);
+      toast({ title: t('usersPage.userUpdated') });
+      setEditTarget(null);
+      fetchUsers();
+    } catch (err: any) {
+      toast({ title: t('common.error'), description: apiErrorText(err), variant: 'destructive' });
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
   const isSelf = (userId: string) => currentUser?.id === userId;
 
   // Manager can only manage agents they can create (pending_agent, prediction_agent)
@@ -297,15 +334,26 @@ export default function UsersPage() {
                 <td className="px-4 py-3 font-semibold">{u.orders_processed}</td>
                 <td className="px-4 py-3 font-semibold">{u.leads_processed}</td>
                 <td className="px-4 py-3">
-                  {!isSelf(u.user_id) && canManageUser(u.roles) && (
-                    <button
-                      onClick={() => setDeleteTarget(u)}
-                      className="flex h-7 w-7 items-center justify-center rounded-md text-destructive hover:bg-destructive/10 transition-colors"
-                      title={t('usersPage.deleteUserTitle')}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  )}
+                  <div className="flex items-center gap-1">
+                    {isAdmin && (
+                      <button
+                        onClick={() => openEdit(u)}
+                        className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted transition-colors"
+                        title={t('usersPage.editUserTitle')}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </button>
+                    )}
+                    {!isSelf(u.user_id) && canManageUser(u.roles) && (
+                      <button
+                        onClick={() => setDeleteTarget(u)}
+                        className="flex h-7 w-7 items-center justify-center rounded-md text-destructive hover:bg-destructive/10 transition-colors"
+                        title={t('usersPage.deleteUserTitle')}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    )}
+                  </div>
                 </td>
               </tr>
             ))}
@@ -356,6 +404,37 @@ export default function UsersPage() {
               </button>
               <button onClick={handleCreateWithRoles} disabled={creating} className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50">
                 {creating ? t('usersPage.creating') : t('usersPage.createUser')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit User Modal (Superadmin only) */}
+      {editTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/30 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-xl border bg-card p-6 shadow-xl">
+            <h2 className="text-lg font-semibold text-card-foreground">{t('usersPage.editUser')}</h2>
+            <div className="mt-4 space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-muted-foreground mb-1">{t('usersPage.fullName')}</label>
+                <input value={editName} onChange={e => setEditName(e.target.value)} placeholder={t('usersPage.fullName')} className="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-muted-foreground mb-1">{t('usersPage.email')}</label>
+                <input value={editEmail} onChange={e => setEditEmail(e.target.value)} placeholder={t('usersPage.email')} type="email" className="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-muted-foreground mb-1">{t('usersPage.newPasswordOptional')}</label>
+                <input value={editPassword} onChange={e => setEditPassword(e.target.value)} placeholder="••••••••" type="password" autoComplete="new-password" className="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+              </div>
+            </div>
+            <div className="mt-6 flex justify-end gap-3">
+              <button onClick={() => setEditTarget(null)} disabled={savingEdit} className="rounded-lg border px-4 py-2 text-sm font-medium hover:bg-muted transition-colors">
+                {t('common.cancel')}
+              </button>
+              <button onClick={handleSaveEdit} disabled={savingEdit} className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50">
+                {savingEdit ? t('usersPage.saving') : t('common.save')}
               </button>
             </div>
           </div>

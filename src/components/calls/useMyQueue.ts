@@ -150,13 +150,13 @@ export function useQueueMutations() {
       // is_completed=true here. If the customer ever generates a new order,
       // the segment classifier will re-evaluate them; no soft-delete column
       // for now.
-      // No-answer / call-again apply a SHORT cooldown (~3h): the customer is
-      // skipped in the calling bucket for a few hours, then resurfaces. They
-      // sit in Call Again for the whole 3-day window. The window itself
-      // (call_again_since) is owned server-side by POST /call-logs — which also
-      // enforces the 5-strike auto-trash — so we only set the cooldown here to
-      // stay consistent with the server.
-      const RETRY_COOLDOWN_MS = 3 * 60 * 60 * 1000;
+      // No-answer / call-again apply a SHORT cooldown (~3–4h): the customer is
+      // skipped in the calling bucket for a few hours, then resurfaces. This is
+      // an OPTIMISTIC value only — the authoritative schedule (2 calls/day, the
+      // ~09:00 next-day resume once the daily cap is hit, and the 9-strike
+      // auto-trash → Unreachable) is owned server-side by POST /call-logs and
+      // overwrites this on the next refetch. We match its intra-day ~3.5h gap.
+      const RETRY_COOLDOWN_MS = 3.5 * 60 * 60 * 1000;
       const isRetry = outcome === 'no_answer' || outcome === 'call_again' || outcome === 'didnt_answer';
       const retryMs = opts?.retryMs ?? RETRY_COOLDOWN_MS;
 

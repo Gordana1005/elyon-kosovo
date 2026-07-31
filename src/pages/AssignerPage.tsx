@@ -6,7 +6,8 @@ import { AppLayout } from '@/layouts/AppLayout';
 import {
   apiGetUnassignedPending, apiBulkAssignOrders, apiGetOnlineAgents,
   apiGetSegments, apiAutoAssignSegment, apiBulkUnassignSegment,
-  apiGetSegment, apiAssignSegmentMembers, apiGetOrders, apiBulkUnassignOrders,
+  apiGetSegment, apiAssignSegmentMembers,
+  apiGetAssignmentSummary, type AssignmentSummary,
 } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import i18n from '@/i18n';
@@ -17,7 +18,6 @@ import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import {
   Loader2, UserPlus, Users, Inbox, Clock, Layers, Split, ChevronRight, UserX,
 } from 'lucide-react';
@@ -28,6 +28,7 @@ import { MobileCard, MobileCardHeader, MobileCardField } from '@/components/ui/m
 import { SegmentMemberTable, type SegmentMember } from '@/components/assigner/SegmentMemberTable';
 import { AgentPickerChips } from '@/components/assigner/AgentPickerChips';
 import { CrossListBasketBar, type BasketItem } from '@/components/assigner/CrossListBasketBar';
+import { BulkUnassignPanel } from '@/components/assigner/BulkUnassignPanel';
 
 interface UnassignedOrder {
   id: string;
@@ -39,25 +40,24 @@ interface UnassignedOrder {
   created_at: string;
 }
 
-interface AssignedPendingOrder {
-  id: string;
-  display_id: string;
-  customer_name: string;
-  customer_phone: string;
-  product_name: string;
-  source_type: string;
-  created_at: string;
-  assigned_at: string | null;
-}
-
 interface OnlineAgent {
   user_id: string;
   full_name: string;
   email: string;
   roles: string[];
   active_leads: number;
+  /** Open orders (pending/take/call_again) — same number as active_leads. */
+  orders_open?: number;
+  /** Prediction-list members currently assigned to the agent. */
+  members_assigned?: number;
+  /** Assigned members not yet done — the agent's real "calls left". */
+  members_open?: number;
+  /** Open members parked in a call-again cooldown right now. */
+  members_parked?: number;
   shift: { start_time: string; end_time: string } | null;
   is_online: boolean;
+  /** Live browser-reported softphone state (dialing/in_call, staleness-guarded). */
+  in_call?: boolean;
   last_seen_at: string | null;
 }
 
@@ -69,6 +69,10 @@ interface SegmentList {
   member_count: number;
   assigned_count: number;
   completed_count: number;
+  /** Not-done members — the list's real workload. */
+  open_count?: number | null;
+  /** Not-done AND unassigned — exactly what Distribute (unassigned scope) pulls. */
+  distributable_count?: number | null;
   is_active: boolean;
   is_static?: boolean;
   display_order: number;
@@ -92,19 +96,11 @@ export default function AssignerPage() {
   const queryClient = useQueryClient();
   const [selectedOrders, setSelectedOrders] = useState<string[]>([]);
   const [selectedAgent, setSelectedAgent] = useState('');
-  const [inspectAgent, setInspectAgent] = useState<OnlineAgent | null>(null);
-  const [inspectTab, setInspectTab] = useState<'pendings' | 'lists'>('pendings');
-  const [inspectPendingSelected, setInspectPendingSelected] = useState<string[]>([]);
-  const [inspectPendingBusy, setInspectPendingBusy] = useState(false);
-  const [inspectListId, setInspectListId] = useState('');
-  const [inspectListPage, setInspectListPage] = useState(1);
-  const [inspectListCompleted, setInspectListCompleted] = useState<'all' | 'no'>('no');
-  const [inspectMemberSelected, setInspectMemberSelected] = useState<string[]>([]);
-  const [inspectMemberBusy, setInspectMemberBusy] = useState(false);
-
-  // For the inspector: which prediction lists actually have members assigned to the current inspectAgent
-  const [agentAssignedListIds, setAgentAssignedListIds] = useState<string[]>([]);
-  const [agentListsLoading, setAgentListsLoading] = useState(false);
+  const [sourceFilter, setSourceFilter] = useState('all');
+  // Controlled tabs so agent-card / pendings-chip clicks can jump straight to
+  // the Unassign tab and focus that agent's row (the old drawer is gone).
+  const [activeTab, setActiveTab] = useState('prediction_lists');
+  const [unassignFocus, setUnassignFocus] = useState<{ agentId: string; section?: 'pendings' } | null>(null);
 
   // Cross-list basket — hand-picked members keyed `${listId}|${phone}`,
   // accumulated across every expanded list.
@@ -129,21 +125,13 @@ export default function AssignerPage() {
     refetchInterval: 30000,
   });
 
-  const { data: assignedPendingData, isLoading: assignedPendingLoading } = useQuery<{ orders: AssignedPendingOrder[] }>({
-    queryKey: ['assigned-pending', inspectAgent?.user_id],
-    queryFn: () => apiGetOrders({ status: 'pending', agent_id: inspectAgent?.user_id, limit: 200 }),
-    enabled: !!inspectAgent?.user_id,
-  });
-
-  const { data: assignedMemberData, isLoading: assignedMemberLoading } = useQuery<{ members: SegmentMember[]; total: number }>({
-    queryKey: ['agent-assigned-members', inspectAgent?.user_id, inspectListId, inspectListPage, inspectListCompleted],
-    queryFn: () => apiGetSegment(inspectListId, {
-      page: inspectListPage,
-      limit: PAGE_SIZE,
-      assigned: inspectAgent?.user_id,
-      completed: inspectListCompleted === 'all' ? undefined : 'no',
-    }),
-    enabled: !!inspectAgent?.user_id && !!inspectListId,
+  // Who holds which list, in one aggregate. Feeds the Unassign tab and the
+  // agent-card click routing (an agent with nothing held gets a toast instead
+  // of a tab jump).
+  const { data: assignmentSummary } = useQuery<AssignmentSummary>({
+    queryKey: ['assignment-summary'],
+    queryFn: apiGetAssignmentSummary,
+    refetchInterval: 30000,
   });
 
   const assignMutation = useMutation({
@@ -158,95 +146,48 @@ export default function AssignerPage() {
     onError: (err: any) => toast({ title: t('common.error'), description: apiErrorText(err), variant: 'destructive' }),
   });
 
+  // Source filter for the Pendings tab (affiliate leads, site, webhook, …).
+  // Client-side: the endpoint already returns every unassigned pending row.
+  const matchesSource = (o: { source_type?: string }, f: string) => {
+    if (f === 'all') return true;
+    if (f === 'manual') return !o.source_type || o.source_type === 'manual';
+    return o.source_type === f;
+  };
+  const filteredOrders = useMemo(
+    () => orders.filter(o => matchesSource(o, sourceFilter)),
+    [orders, sourceFilter],
+  );
+  const allFilteredSelected =
+    filteredOrders.length > 0 && filteredOrders.every(o => selectedOrders.includes(o.id));
+
   const toggleOrder = (id: string) =>
     setSelectedOrders(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
   const toggleAllOrders = () =>
-    setSelectedOrders(selectedOrders.length === orders.length ? [] : orders.map(o => o.id));
+    setSelectedOrders(allFilteredSelected ? [] : filteredOrders.map(o => o.id));
 
   const onlineAgents = agents.filter(a => a.is_online);
   const agentsSorted = useMemo(() => [...agents].sort((a, b) => {
     if (a.is_online !== b.is_online) return a.is_online ? -1 : 1;
-    return a.active_leads - b.active_leads;
+    const loadA = (a.members_open ?? 0) + (a.orders_open ?? a.active_leads ?? 0);
+    const loadB = (b.members_open ?? 0) + (b.orders_open ?? b.active_leads ?? 0);
+    return loadA - loadB;
   }), [agents]);
-  const totalUnassignedInLists = segments.reduce((s, x) => s + (x.member_count - x.assigned_count), 0);
+  // Sum of not-done+unassigned members = what can actually be distributed.
+  const totalAssignableInLists = segments.reduce((s, x) => s + (x.distributable_count ?? Math.max(0, x.member_count - x.assigned_count)), 0);
 
-  // When the inspected agent changes, reset UI state and prefer "all states" in the lists tab
-  // so the manager can immediately see every member currently assigned to that agent.
-  useEffect(() => {
-    if (!inspectAgent) {
-      setInspectListId('');
-      setAgentAssignedListIds([]);
+  // Agent card / pendings chip → the Unassign tab, focused on that agent.
+  // An agent holding nothing has no row there — tell the manager instead.
+  const openUnassignFor = (agentId: string, name: string, section?: 'pendings') => {
+    const holds = assignmentSummary?.agents.some(
+      a => a.agent_id === agentId && (a.assigned_total > 0 || (a.pendings_total ?? 0) > 0),
+    );
+    if (!holds) {
+      toast({ title: t('assigner.nothingAssignedToAgent', { name }) });
       return;
     }
-
-    setInspectListPage(1);
-    setInspectPendingSelected([]);
-    setInspectMemberSelected([]);
-    setInspectListCompleted('all'); // show everything assigned to the agent, not just "not called"
-  }, [inspectAgent?.user_id]);
-
-  // Discover which lists the currently inspected agent actually has assignments in.
-  // We do cheap count-only probes (limit:1) so the inspector can prioritize the relevant lists.
-  useEffect(() => {
-    if (!inspectAgent?.user_id || segments.length === 0) {
-      setAgentAssignedListIds([]);
-      return;
-    }
-
-    const loadAgentLists = async () => {
-      setAgentListsLoading(true);
-      try {
-        const activeSegments = segments.filter(s => s.is_active);
-        const checks = await Promise.all(
-          activeSegments.map(async (s) => {
-            try {
-              const res: any = await apiGetSegment(s.id, {
-                assigned: inspectAgent.user_id,
-                limit: 1,
-                completed: 'all'
-              });
-              return (res?.total ?? 0) > 0 ? s.id : null;
-            } catch {
-              return null;
-            }
-          })
-        );
-        setAgentAssignedListIds(checks.filter(Boolean) as string[]);
-      } finally {
-        setAgentListsLoading(false);
-      }
-    };
-
-    loadAgentLists();
-  }, [inspectAgent?.user_id, segments]);
-
-  // Smart default list selection for the inspector:
-  // 1. Prefer a list the agent actually has assignments in (from the discovery above).
-  // 2. Fall back to the first globally active list.
-  useEffect(() => {
-    if (!inspectAgent || segments.length === 0) return;
-
-    // Only auto-pick if user hasn't manually chosen something yet for this agent,
-    // or if the previous choice is no longer valid.
-    const currentStillValid = inspectListId && segments.some(s => s.id === inspectListId);
-
-    if (agentAssignedListIds.length > 0) {
-      const firstForAgent = agentAssignedListIds.find(id => segments.some(s => s.id === id));
-      if (firstForAgent && (!currentStillValid || !agentAssignedListIds.includes(inspectListId))) {
-        setInspectListId(firstForAgent);
-        setInspectListPage(1);
-      }
-    } else if (!currentStillValid) {
-      // No assignments found for this agent yet — fall back to global first
-      const firstGlobal = segments
-        .filter(s => s.is_active)
-        .sort((a, b) => a.display_order - b.display_order)[0];
-      if (firstGlobal) {
-        setInspectListId(firstGlobal.id);
-        setInspectListPage(1);
-      }
-    }
-  }, [agentAssignedListIds, segments, inspectAgent?.user_id]);
+    setUnassignFocus({ agentId, section });
+    setActiveTab('unassign');
+  };
 
   // ── Basket helpers ──
   const isInBasket = (listId: string, phone: string) => basket.has(`${listId}|${phone}`);
@@ -274,6 +215,7 @@ export default function AssignerPage() {
   const invalidateAfterAssign = (touchedListIds: string[]) => {
     queryClient.invalidateQueries({ queryKey: ['segments'] });
     queryClient.invalidateQueries({ queryKey: ['segment'] });
+    queryClient.invalidateQueries({ queryKey: ['assignment-summary'] });
     queryClient.invalidateQueries({ queryKey: ['online-agents'] });
     queryClient.invalidateQueries({ queryKey: ['my-queue-summary'] });
   };
@@ -330,121 +272,6 @@ export default function AssignerPage() {
     }
   };
 
-  const assignedPendings = assignedPendingData?.orders ?? [];
-  const pendingAllSelected = assignedPendings.length > 0 && inspectPendingSelected.length === assignedPendings.length;
-  const assignedMembers = assignedMemberData?.members ?? [];
-  const assignedTotal = assignedMemberData?.total ?? 0;
-  const assignedTotalPages = Math.max(1, Math.ceil(assignedTotal / PAGE_SIZE));
-  const assignedAllOnPageSelected = assignedMembers.length > 0 && assignedMembers.every(m => inspectMemberSelected.includes(m.customer_phone));
-
-  const toggleInspectPending = (id: string) =>
-    setInspectPendingSelected(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
-  const toggleInspectPendingAll = () =>
-    setInspectPendingSelected(pendingAllSelected ? [] : assignedPendings.map(o => o.id));
-
-  const toggleInspectMember = (phone: string) =>
-    setInspectMemberSelected(prev => prev.includes(phone) ? prev.filter(x => x !== phone) : [...prev, phone]);
-  const toggleInspectMembersAll = () =>
-    setInspectMemberSelected(assignedAllOnPageSelected ? [] : assignedMembers.map(m => m.customer_phone));
-
-  const unassignInspectPendings = async () => {
-    if (inspectPendingSelected.length === 0) return;
-    setInspectPendingBusy(true);
-    try {
-      const res: any = await apiBulkUnassignOrders(inspectPendingSelected);
-      toast({ title: t('assigner.pendingsUnassigned', { count: res?.unassigned ?? inspectPendingSelected.length }) });
-      setInspectPendingSelected([]);
-      queryClient.invalidateQueries({ queryKey: ['assigned-pending'] });
-      queryClient.invalidateQueries({ queryKey: ['unassigned-pending'] });
-      queryClient.invalidateQueries({ queryKey: ['online-agents'] });
-    } catch (err: any) {
-      toast({ title: t('assigner.unassignFailed'), description: err?.message, variant: 'destructive' });
-    } finally {
-      setInspectPendingBusy(false);
-    }
-  };
-
-  // One-click unassign for a single pending order in the per-agent inspector
-  const unassignSingleInspectPending = async (orderId: string) => {
-    setInspectPendingBusy(true);
-    try {
-      const res: any = await apiBulkUnassignOrders([orderId]);
-      toast({ title: t('assigner.pendingUnassigned') });
-      setInspectPendingSelected(prev => prev.filter(id => id !== orderId));
-      queryClient.invalidateQueries({ queryKey: ['assigned-pending'] });
-      queryClient.invalidateQueries({ queryKey: ['unassigned-pending'] });
-      queryClient.invalidateQueries({ queryKey: ['online-agents'] });
-    } catch (err: any) {
-      toast({ title: t('assigner.unassignFailed'), description: err?.message, variant: 'destructive' });
-    } finally {
-      setInspectPendingBusy(false);
-    }
-  };
-
-  const unassignAllInspectPendings = async () => {
-    if (assignedPendings.length === 0) return;
-    setInspectPendingBusy(true);
-    try {
-      const ids = assignedPendings.map(o => o.id);
-      const res: any = await apiBulkUnassignOrders(ids);
-      toast({ title: t('assigner.pendingsUnassignedFor', { count: res?.unassigned ?? ids.length, name: inspectAgent?.full_name }) });
-      setInspectPendingSelected([]);
-      queryClient.invalidateQueries({ queryKey: ['assigned-pending'] });
-      queryClient.invalidateQueries({ queryKey: ['unassigned-pending'] });
-      queryClient.invalidateQueries({ queryKey: ['online-agents'] });
-    } catch (err: any) {
-      toast({ title: t('assigner.unassignFailed'), description: err?.message, variant: 'destructive' });
-    } finally {
-      setInspectPendingBusy(false);
-    }
-  };
-
-  const unassignInspectMembers = async () => {
-    if (!inspectListId || inspectMemberSelected.length === 0) return;
-    setInspectMemberBusy(true);
-    try {
-      await apiAssignSegmentMembers(inspectListId, inspectMemberSelected, null);
-      toast({ title: t('assigner.customersUnassigned', { count: inspectMemberSelected.length }) });
-      setInspectMemberSelected([]);
-      invalidateAfterAssign([inspectListId]);
-    } catch (err: any) {
-      toast({ title: t('assigner.unassignFailed'), description: err?.message, variant: 'destructive' });
-    } finally {
-      setInspectMemberBusy(false);
-    }
-  };
-
-  // One-click unassign for a single customer while viewing an agent's assignments in the inspector
-  const unassignSingleInspectMember = async (m: SegmentMember) => {
-    if (!inspectListId) return;
-    setInspectMemberBusy(true);
-    try {
-      await apiAssignSegmentMembers(inspectListId, [m.customer_phone], null);
-      toast({ title: t('assigner.unassignedCustomer', { name: m.customer_name || m.customer_phone }) });
-      setInspectMemberSelected(prev => prev.filter(p => p !== m.customer_phone));
-      invalidateAfterAssign([inspectListId]);
-    } catch (err: any) {
-      toast({ title: t('assigner.unassignFailed'), description: err?.message, variant: 'destructive' });
-    } finally {
-      setInspectMemberBusy(false);
-    }
-  };
-
-  const unassignInspectListAll = async () => {
-    if (!inspectAgent || !inspectListId) return;
-    setInspectMemberBusy(true);
-    try {
-      const res: any = await apiBulkUnassignSegment(inspectListId, inspectAgent.user_id);
-      toast({ title: t('assigner.customersUnassigned', { count: res?.unassigned ?? 0 }) });
-      setInspectMemberSelected([]);
-      invalidateAfterAssign([inspectListId]);
-    } catch (err: any) {
-      toast({ title: t('assigner.unassignFailed'), description: err?.message, variant: 'destructive' });
-    } finally {
-      setInspectMemberBusy(false);
-    }
-  };
-
   return (
     <AppLayout title={t('nav.assigner')}>
       <div className="grid gap-6 lg:grid-cols-[1fr_320px] min-w-0">
@@ -468,8 +295,8 @@ export default function AssignerPage() {
                   <Layers className="h-5 w-5 text-primary-foreground" />
                 </div>
                 <div>
-                  <p className="text-xs text-muted-foreground">{t('assigner.unassignedInLists')}</p>
-                  <p className="text-xl font-bold">{totalUnassignedInLists.toLocaleString()}</p>
+                  <p className="text-xs text-muted-foreground">{t('assigner.assignableInLists')}</p>
+                  <p className="text-xl font-bold">{totalAssignableInLists.toLocaleString()}</p>
                 </div>
               </CardContent>
             </Card>
@@ -486,10 +313,14 @@ export default function AssignerPage() {
             </Card>
           </div>
 
-          <Tabs defaultValue="prediction_lists">
+          <Tabs value={activeTab} onValueChange={setActiveTab}>
             <TabsList className="mb-3">
               <TabsTrigger value="prediction_lists">Prediction Lists ({segments.length})</TabsTrigger>
               <TabsTrigger value="pendings">Pendings ({orders.length})</TabsTrigger>
+              <TabsTrigger value="unassign" className="gap-1.5">
+                <UserX className="h-3.5 w-3.5" />
+                {t('assigner.unassignTab')} ({((assignmentSummary?.totals.open_total ?? 0) + (assignmentSummary?.totals.pendings_total ?? 0)).toLocaleString()})
+              </TabsTrigger>
             </TabsList>
 
             {/* ── Tab: Prediction Lists ── */}
@@ -525,6 +356,32 @@ export default function AssignerPage() {
 
             {/* ── Tab: Pendings ── */}
             <TabsContent value="pendings" className="space-y-4 mt-0">
+              {/* Who already holds pendings — the table below only shows the
+                  UNASSIGNED pool, so without this strip an assigned lead
+                  simply vanished from the page. Chip → Unassign tab, focused
+                  on that agent with the pendings sub-row open. */}
+              {(assignmentSummary?.totals.pendings_total ?? 0) > 0 && (
+                <div className="flex flex-wrap items-center gap-2 rounded-xl border bg-card/80 backdrop-blur-sm p-3 shadow-sm">
+                  <span className="text-xs text-muted-foreground whitespace-nowrap">
+                    {t('assigner.pendingsUnassignedCount', { count: orders.length })}
+                    {' · '}
+                    {t('assigner.pendingsAssignedCount', { count: assignmentSummary?.totals.pendings_total ?? 0 })}
+                  </span>
+                  {(assignmentSummary?.agents ?? [])
+                    .filter(a => a.pendings_total > 0)
+                    .map(a => (
+                      <button
+                        key={a.agent_id}
+                        type="button"
+                        onClick={() => openUnassignFor(a.agent_id, a.full_name, 'pendings')}
+                        className="inline-flex items-center gap-1.5 rounded-full border bg-sky-500/10 border-sky-500/30 px-2.5 py-1 text-xs text-sky-700 dark:text-sky-400 hover:bg-sky-500/20"
+                      >
+                        <span className="font-medium">{a.full_name}</span>
+                        <span className="font-bold">{a.pendings_total.toLocaleString()}</span>
+                      </button>
+                    ))}
+                </div>
+              )}
               <div className="flex items-center gap-3 rounded-xl border bg-card/80 backdrop-blur-sm p-3 shadow-sm">
                 <Select value={selectedAgent} onValueChange={setSelectedAgent}>
                   <SelectTrigger className="w-56 h-9 text-sm rounded-lg"><SelectValue placeholder={t('assigner.selectAgent')} /></SelectTrigger>
@@ -549,7 +406,20 @@ export default function AssignerPage() {
                   {assignMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <UserPlus className="h-3.5 w-3.5" />}
                   {t('assigner.assignCount', { count: selectedOrders.length })}
                 </Button>
-                <span className="ml-auto text-xs text-muted-foreground">{orders.length} pending</span>
+                <Select value={sourceFilter} onValueChange={(v) => { setSourceFilter(v); setSelectedOrders([]); }}>
+                  <SelectTrigger className="w-40 h-9 text-sm rounded-lg ml-auto"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">{t('assigner.allSources')}</SelectItem>
+                    <SelectItem value="affiliate">{t('ordersPage.sourceAffiliate')}</SelectItem>
+                    <SelectItem value="opencart">{t('ordersPage.sourceSite')}</SelectItem>
+                    <SelectItem value="inbound_lead">{t('ordersPage.sourceWebhook')}</SelectItem>
+                    <SelectItem value="prediction_lead">{t('ordersPage.sourceLead')}</SelectItem>
+                    <SelectItem value="manual">{t('ordersPage.sourceManual')}</SelectItem>
+                  </SelectContent>
+                </Select>
+                <span className="text-xs text-muted-foreground whitespace-nowrap">
+                  {filteredOrders.length}{sourceFilter !== 'all' ? ` / ${orders.length}` : ''}
+                </span>
               </div>
 
               <div className="hidden md:block rounded-xl border bg-card shadow-sm overflow-hidden">
@@ -560,7 +430,7 @@ export default function AssignerPage() {
                     <thead>
                       <tr className="border-b bg-muted/30">
                         <th className="px-4 py-3 w-10">
-                          <Checkbox checked={orders.length > 0 && selectedOrders.length === orders.length} onCheckedChange={toggleAllOrders} aria-label={t('missedCalls.selectAll')} />
+                          <Checkbox checked={allFilteredSelected} onCheckedChange={toggleAllOrders} aria-label={t('missedCalls.selectAll')} />
                         </th>
                         <th className="text-left px-4 py-3 font-medium text-muted-foreground">{t('search.name')}</th>
                         <th className="text-left px-4 py-3 font-medium text-muted-foreground">{t('search.phone')}</th>
@@ -570,7 +440,7 @@ export default function AssignerPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {orders.map(order => (
+                      {filteredOrders.map(order => (
                         <tr key={order.id}
                           className={cn('border-b last:border-0 hover:bg-muted/20 transition-colors cursor-pointer', selectedOrders.includes(order.id) && 'bg-primary/5')}
                           onClick={() => toggleOrder(order.id)}>
@@ -584,7 +454,8 @@ export default function AssignerPage() {
                           </td>
                           <td className="px-4 py-3">
                             <Badge variant="secondary" className="text-[10px]">
-                              {order.source_type === 'inbound_lead' ? t('ordersPage.sourceWebhook')
+                              {order.source_type === 'affiliate' ? t('ordersPage.sourceAffiliate')
+                                : order.source_type === 'inbound_lead' ? t('ordersPage.sourceWebhook')
                                 : order.source_type === 'prediction_lead' ? t('ordersPage.sourceLead')
                                 : order.source_type === 'opencart' ? t('ordersPage.sourceSite')
                                 : order.source_type === 'opencart_abandoned' ? t('ordersPage.sourceSiteAbandoned')
@@ -594,7 +465,7 @@ export default function AssignerPage() {
                           <td className="px-4 py-3 text-muted-foreground text-xs">{format(new Date(order.created_at), 'MMM d, HH:mm')}</td>
                         </tr>
                       ))}
-                      {orders.length === 0 && (
+                      {filteredOrders.length === 0 && (
                         <tr>
                           <td colSpan={6} className="p-0">
                             <EmptyState
@@ -616,9 +487,9 @@ export default function AssignerPage() {
               <div className="md:hidden space-y-2">
                 {ordersLoading ? (
                   <div className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
-                ) : orders.length === 0 ? (
+                ) : filteredOrders.length === 0 ? (
                   <EmptyState icon={<Inbox className="h-5 w-5" />} title={t('assigner.noPendingToAssign')} description={t('assigner.allCaughtUp')} size="sm" />
-                ) : orders.map(order => (
+                ) : filteredOrders.map(order => (
                   <MobileCard key={order.id} className={cn(selectedOrders.includes(order.id) && 'ring-1 ring-primary')} onClick={() => toggleOrder(order.id)}>
                     <div className="flex items-start gap-2">
                       <Checkbox className="mt-1 shrink-0" checked={selectedOrders.includes(order.id)} onCheckedChange={() => toggleOrder(order.id)} onClick={e => e.stopPropagation()} />
@@ -628,7 +499,8 @@ export default function AssignerPage() {
                           subtitle={order.customer_phone}
                           badge={
                             <Badge variant="secondary" className="text-[10px]">
-                              {order.source_type === 'inbound_lead' ? t('ordersPage.sourceWebhook')
+                              {order.source_type === 'affiliate' ? t('ordersPage.sourceAffiliate')
+                                : order.source_type === 'inbound_lead' ? t('ordersPage.sourceWebhook')
                                 : order.source_type === 'prediction_lead' ? t('ordersPage.sourceLead')
                                 : order.source_type === 'opencart' ? t('ordersPage.sourceSite')
                                 : order.source_type === 'opencart_abandoned' ? t('ordersPage.sourceSiteAbandoned')
@@ -644,6 +516,15 @@ export default function AssignerPage() {
                 ))}
               </div>
             </TabsContent>
+
+            {/* ── Tab: Unassign (cross-list, per agent or everyone) ── */}
+            <TabsContent value="unassign" className="space-y-4 mt-0">
+              <BulkUnassignPanel
+                onlineIds={onlineAgents.map(a => a.user_id)}
+                focus={unassignFocus}
+                onFocusHandled={() => setUnassignFocus(null)}
+              />
+            </TabsContent>
           </Tabs>
         </div>
 
@@ -652,8 +533,8 @@ export default function AssignerPage() {
           <Card className="border-none shadow-sm sticky top-4">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                <Users className="h-4 w-4 text-primary" /> Agents
-                <span className="ml-auto text-xs font-normal text-muted-foreground">{onlineAgents.length} online</span>
+                <Users className="h-4 w-4 text-primary" /> {t('assigner.agentsTitle')}
+                <span className="ml-auto text-xs font-normal text-muted-foreground">{t('assigner.nOnline', { count: onlineAgents.length })}</span>
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
@@ -666,253 +547,80 @@ export default function AssignerPage() {
                   size="sm"
                   className="border-0 bg-transparent py-4"
                 />
-              ) : agentsSorted.map(agent => (
+              ) : agentsSorted.map(agent => {
+                const membersOpen = agent.members_open ?? 0;
+                const membersAssigned = agent.members_assigned ?? 0;
+                const parked = agent.members_parked ?? 0;
+                return (
                 <button
                   key={agent.user_id}
                   type="button"
-                  onClick={() => { setInspectAgent(agent); setInspectTab('pendings'); }}
-                  className={cn('w-full text-left flex items-center gap-3 rounded-xl p-3 transition-colors hover:bg-muted/50', !agent.is_online && 'opacity-60', 'bg-muted/30')}
+                  onClick={() => openUnassignFor(agent.user_id, agent.full_name)}
+                  className={cn('w-full text-left rounded-xl p-3 space-y-2 transition-colors hover:bg-muted/50 bg-muted/30', !agent.is_online && 'opacity-60')}
                 >
-                  <div className="relative">
-                    <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10 text-sm font-bold text-primary">
-                      {agent.full_name.charAt(0).toUpperCase()}
+                  <div className="flex items-center gap-3">
+                    <div className="relative">
+                      <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10 text-sm font-bold text-primary">
+                        {agent.full_name.charAt(0).toUpperCase()}
+                      </div>
+                      <div className={cn('absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-card', agent.is_online ? 'bg-[hsl(var(--success))]' : 'bg-muted-foreground/40')} />
                     </div>
-                    <div className={cn('absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-card', agent.is_online ? 'bg-[hsl(var(--success))]' : 'bg-muted-foreground/40')} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold truncate">{agent.full_name}</p>
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                        {agent.is_online
+                          ? <span className="text-emerald-600 dark:text-emerald-400 font-medium">{t('assigner.online')}</span>
+                          : <span className="truncate">{t('assigner.seen', { time: lastSeenLabel(agent.last_seen_at) })}</span>}
+                        {agent.shift && (
+                          <>
+                            <span>•</span>
+                            <span className="flex items-center gap-0.5 shrink-0"><Clock className="h-3 w-3" />{agent.shift.start_time?.slice(0, 5)} - {agent.shift.end_time?.slice(0, 5)}</span>
+                          </>
+                        )}
+                      </div>
+                    </div>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">{agent.full_name}</p>
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <span>{agent.active_leads} open</span>
-                      <span>•</span>
-                      {agent.is_online ? <span className="text-emerald-600 font-medium">online</span> : <span>seen {lastSeenLabel(agent.last_seen_at)}</span>}
-                      {agent.shift && (
-                        <>
-                          <span>•</span>
-                          <span className="flex items-center gap-0.5"><Clock className="h-3 w-3" />{agent.shift.start_time?.slice(0, 5)} - {agent.shift.end_time?.slice(0, 5)}</span>
-                        </>
-                      )}
+                  <div className="grid grid-cols-2 gap-1.5 text-xs">
+                    <div className="rounded-lg border bg-background/60 px-2 py-1.5 leading-tight">
+                      <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{t('assigner.statusTile')}</div>
+                      <div className="font-semibold flex items-center gap-1.5">
+                        {agent.in_call ? (
+                          <>
+                            <span className="h-2 w-2 rounded-full bg-rose-500 animate-pulse shrink-0" />
+                            <span className="text-rose-600 dark:text-rose-400">{t('assigner.statusInCall')}</span>
+                          </>
+                        ) : agent.is_online ? (
+                          <>
+                            <span className="h-2 w-2 rounded-full bg-emerald-500 shrink-0" />
+                            <span className="text-emerald-600 dark:text-emerald-400">{t('assigner.statusAvailable')}</span>
+                          </>
+                        ) : (
+                          <>
+                            <span className="h-2 w-2 rounded-full bg-muted-foreground/40 shrink-0" />
+                            <span className="text-muted-foreground">{t('assigner.statusOffline')}</span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                    <div
+                      className="rounded-lg border bg-background/60 px-2 py-1.5 leading-tight"
+                      title={parked > 0 ? t('assigner.onHold', { count: parked.toLocaleString() }) : undefined}
+                    >
+                      <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{t('assigner.tileClients')}</div>
+                      <div className="font-semibold tabular-nums">
+                        {membersOpen.toLocaleString()}
+                        <span className="ml-1 font-normal text-muted-foreground">{t('assigner.ofAssigned', { total: membersAssigned.toLocaleString() })}</span>
+                      </div>
                     </div>
                   </div>
                 </button>
-              ))}
+                );
+              })}
             </CardContent>
           </Card>
         </div>
       </div>
 
-      <Sheet open={!!inspectAgent} onOpenChange={(open) => { if (!open) setInspectAgent(null); }}>
-        <SheetContent side="right" className="w-[min(860px,100vw)] sm:max-w-[860px] flex flex-col">
-          <SheetHeader className="shrink-0">
-            <SheetTitle>{inspectAgent?.full_name || 'Agent'}</SheetTitle>
-            <SheetDescription>
-              Review assignments and unassign pendings or list members.
-            </SheetDescription>
-          </SheetHeader>
-
-          {/* Make the main content (Tabs + everything inside) scrollable */}
-          <div className="flex-1 overflow-y-auto mt-6 pr-1">
-            <Tabs value={inspectTab} onValueChange={(v) => setInspectTab(v as 'pendings' | 'lists')} >
-            <TabsList>
-              <TabsTrigger value="pendings">Pendings ({assignedPendings.length})</TabsTrigger>
-              <TabsTrigger value="lists">{t('nav.predictionLists')}</TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="pendings" className="space-y-4 mt-4">
-              <div className="flex flex-wrap items-center gap-3 rounded-xl border bg-card p-3">
-                <Button size="sm" variant="outline" disabled={inspectPendingSelected.length === 0 || inspectPendingBusy} onClick={unassignInspectPendings}>
-                  {inspectPendingBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <UserX className="h-3.5 w-3.5" />}
-                  Unassign selected ({inspectPendingSelected.length})
-                </Button>
-                <Button size="sm" variant="destructive" disabled={assignedPendings.length === 0 || inspectPendingBusy} onClick={unassignAllInspectPendings}>
-                  {inspectPendingBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <UserX className="h-3.5 w-3.5" />}
-                  Unassign all ({assignedPendings.length})
-                </Button>
-                <span className="text-xs text-muted-foreground">for {inspectAgent?.full_name}</span>
-              </div>
-
-              <div className="hidden md:block rounded-xl border bg-card shadow-sm overflow-hidden">
-                {assignedPendingLoading ? (
-                  <div className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
-                ) : (
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b bg-muted/30">
-                        <th className="px-4 py-3 w-10">
-                          <Checkbox checked={pendingAllSelected} onCheckedChange={toggleInspectPendingAll} aria-label={t('missedCalls.selectAll')} />
-                        </th>
-                        <th className="text-left px-4 py-3 font-medium text-muted-foreground">{t('search.name')}</th>
-                        <th className="text-left px-4 py-3 font-medium text-muted-foreground">{t('search.phone')}</th>
-                        <th className="text-left px-4 py-3 font-medium text-muted-foreground">{t('ordersPage.colProduct')}</th>
-                        <th className="text-left px-4 py-3 font-medium text-muted-foreground">{t('predLists.colAssigned')}</th>
-                        <th className="text-left px-4 py-3 font-medium text-muted-foreground">{t('assigner.colReceived')}</th>
-                        <th className="px-4 py-3 w-10 text-center font-medium text-muted-foreground">{t('assigner.colAction')}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {assignedPendings.map(order => (
-                        <tr key={order.id}
-                          className={cn('border-b last:border-0 hover:bg-muted/20 transition-colors cursor-pointer', inspectPendingSelected.includes(order.id) && 'bg-primary/5')}
-                          onClick={() => toggleInspectPending(order.id)}>
-                          <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
-                            <Checkbox checked={inspectPendingSelected.includes(order.id)} onCheckedChange={() => toggleInspectPending(order.id)} />
-                          </td>
-                          <td className="px-4 py-3 font-medium">{order.customer_name || '—'}</td>
-                          <td className="px-4 py-3 font-mono text-xs">{order.customer_phone}</td>
-                          <td className="px-4 py-3">
-                            {order.product_name ? <Badge variant="outline" className="text-xs">{order.product_name}</Badge> : <span className="text-muted-foreground">—</span>}
-                          </td>
-                          <td className="px-4 py-3 text-muted-foreground text-xs">
-                            {order.assigned_at ? format(new Date(order.assigned_at), 'MMM d, HH:mm') : '—'}
-                          </td>
-                          <td className="px-4 py-3 text-muted-foreground text-xs">{format(new Date(order.created_at), 'MMM d, HH:mm')}</td>
-                          <td className="px-4 py-3 text-center" onClick={e => e.stopPropagation()}>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7 text-rose-600 hover:bg-rose-100 hover:text-rose-700"
-                              onClick={() => unassignSingleInspectPending(order.id)}
-                              title={t('assigner.unassignThisPending')}
-                              disabled={inspectPendingBusy}
-                            >
-                              <UserX className="h-3.5 w-3.5" />
-                            </Button>
-                          </td>
-                        </tr>
-                      ))}
-                      {assignedPendings.length === 0 && (
-                        <tr>
-                          <td colSpan={7} className="p-0">
-                            <EmptyState
-                              icon={<Users className="h-5 w-5" />}
-                              title={t('assigner.noPendingForAgent')}
-                              description={t('assigner.pendingForAgentDesc')}
-                              size="sm"
-                              className="border-0 bg-transparent hover:shadow-none py-8"
-                            />
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                )}
-              </div>
-
-              {/* Cards — mobile */}
-              <div className="md:hidden space-y-2">
-                {assignedPendingLoading ? (
-                  <div className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
-                ) : assignedPendings.length === 0 ? (
-                  <EmptyState icon={<Users className="h-5 w-5" />} title={t('assigner.noPendingForAgent')} description={t('assigner.pendingForAgentDesc')} size="sm" />
-                ) : assignedPendings.map(order => (
-                  <MobileCard key={order.id} className={cn(inspectPendingSelected.includes(order.id) && 'ring-1 ring-primary')} onClick={() => toggleInspectPending(order.id)}>
-                    <div className="flex items-start gap-2">
-                      <Checkbox className="mt-1 shrink-0" checked={inspectPendingSelected.includes(order.id)} onCheckedChange={() => toggleInspectPending(order.id)} onClick={e => e.stopPropagation()} />
-                      <div className="min-w-0 flex-1">
-                        <MobileCardHeader
-                          title={order.customer_name || '—'}
-                          subtitle={order.customer_phone}
-                          badge={order.product_name ? <Badge variant="outline" className="text-xs">{order.product_name}</Badge> : undefined}
-                        />
-                      </div>
-                    </div>
-                    <MobileCardField label={t('predLists.colAssigned')} value={order.assigned_at ? format(new Date(order.assigned_at), 'MMM d, HH:mm') : '—'} />
-                    <MobileCardField label={t('assigner.colReceived')} value={format(new Date(order.created_at), 'MMM d, HH:mm')} />
-                    <div className="pt-1">
-                      <Button
-                        variant="outline" size="sm" className="w-full gap-1.5 text-rose-600"
-                        onClick={(e) => { e.stopPropagation(); unassignSingleInspectPending(order.id); }}
-                        disabled={inspectPendingBusy}
-                      >
-                        <UserX className="h-3.5 w-3.5" /> Unassign
-                      </Button>
-                    </div>
-                  </MobileCard>
-                ))}
-              </div>
-            </TabsContent>
-
-            <TabsContent value="lists" className="space-y-4 mt-4">
-              <div className="flex flex-wrap items-center gap-3 rounded-xl border bg-card p-3">
-                <Select value={inspectListId} onValueChange={(v) => { setInspectListId(v); setInspectListPage(1); setInspectMemberSelected([]); }}>
-                  <SelectTrigger className="w-[260px] h-9 text-sm rounded-lg"><SelectValue placeholder={t('assigner.selectList')} /></SelectTrigger>
-                  <SelectContent>
-                    {(() => {
-                      const active = segments.filter(s => s.is_active);
-                      const agentOnes = active.filter(s => agentAssignedListIds.includes(s.id));
-                      const others = active.filter(s => !agentAssignedListIds.includes(s.id));
-
-                      return (
-                        <>
-                          {agentOnes.length > 0 && (
-                            <>
-                              <div className="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                                Assigned to this agent {agentListsLoading ? '(checking...)' : `(${agentOnes.length})`}
-                              </div>
-                              {agentOnes
-                                .sort((a, b) => a.display_order - b.display_order)
-                                .map(list => (
-                                  <SelectItem key={list.id} value={list.id}>
-                                    {list.name}
-                                    <span className="ml-1 text-[10px] text-emerald-600">· assigned</span>
-                                  </SelectItem>
-                                ))}
-                              {others.length > 0 && <div className="my-1 border-t" />}
-                            </>
-                          )}
-                          {others
-                            .sort((a, b) => a.display_order - b.display_order)
-                            .map(list => (
-                              <SelectItem key={list.id} value={list.id}>{list.name}</SelectItem>
-                            ))}
-                          {active.length === 0 && <SelectItem value="__none" disabled>{t('assigner.noLists')}</SelectItem>}
-                        </>
-                      );
-                    })()}
-                  </SelectContent>
-                </Select>
-                <Select value={inspectListCompleted} onValueChange={(v) => { setInspectListCompleted(v as 'all' | 'no'); setInspectListPage(1); }}>
-                  <SelectTrigger className="w-[180px] h-9 text-sm rounded-lg"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="no">{t('assigner.notCalled')}</SelectItem>
-                    <SelectItem value="all">{t('assigner.allStates')}</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Button size="sm" variant="outline" disabled={inspectMemberSelected.length === 0 || inspectMemberBusy} onClick={unassignInspectMembers}>
-                  {inspectMemberBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <UserX className="h-3.5 w-3.5" />}
-                  Unassign selected ({inspectMemberSelected.length})
-                </Button>
-                <Button size="sm" variant="ghost" disabled={!inspectListId || inspectMemberBusy} onClick={unassignInspectListAll} className="text-rose-700 hover:bg-rose-50">
-                  <UserX className="h-3.5 w-3.5" /> Unassign all in list
-                </Button>
-                <span className="ml-auto text-xs text-muted-foreground">{assignedTotal.toLocaleString()} assigned</span>
-              </div>
-
-              {inspectListId ? (
-                <SegmentMemberTable
-                  members={assignedMembers}
-                  isSelected={(phone) => inspectMemberSelected.includes(phone)}
-                  onToggle={(m) => toggleInspectMember(m.customer_phone)}
-                  onToggleAll={toggleInspectMembersAll}
-                  allOnPageSelected={assignedAllOnPageSelected}
-                  page={inspectListPage}
-                  totalPages={assignedTotalPages}
-                  onPageChange={setInspectListPage}
-                  loading={assignedMemberLoading}
-                  compact
-                  onUnassignSingle={unassignSingleInspectMember}
-                />
-              ) : (
-                <div className="rounded-xl border border-dashed bg-card p-8 text-center text-sm text-muted-foreground">
-                  {agentAssignedListIds.length === 0 && !agentListsLoading
-                    ? t('assigner.noListAssignments', { name: inspectAgent?.full_name || t('assigner.thisAgent') })
-                    : t('assigner.chooseListHint')}
-                </div>
-              )}
-            </TabsContent>
-          </Tabs>
-          </div>
-        </SheetContent>
-      </Sheet>
 
       <CrossListBasketBar
         items={[...basket.values()]}
@@ -954,11 +662,22 @@ function PredictionListRow({ list, agents, isInBasket, toggleBasketMember, setBa
   const [assignedFilter, setAssignedFilter] = useState('all');
   const [completedFilter, setCompletedFilter] = useState('no');
 
-  const unassigned = list.member_count - list.assigned_count;
-  // Static lists (Trashed, Due to Reorder, and any operator-made informational
-  // list) are never distributed — hide the distribute bar and make the table
-  // read-only. Falls back to the legacy name check for safety pre-migration.
-  const informational = list.is_static === true || list.name === 'Trashed';
+  // Truthful numbers: "open" = not done (the list's real workload — the
+  // operator's rule: always show how many NOT-done clients a list holds);
+  // "assignable" = open AND unassigned = exactly the pool the Distribute
+  // (unassigned scope) endpoint pulls. Fallbacks cover cached old payloads.
+  const openCount = list.open_count ?? Math.max(0, list.member_count - (list.completed_count ?? 0));
+  const assignable = list.distributable_count ?? Math.max(0, list.member_count - list.assigned_count);
+  const doneCount = Math.max(0, list.member_count - openCount);
+  // Static lists (Due to Reorder, Cancelled Pendings, and any operator-made
+  // informational list) are engine-protected and never distributed — hide the
+  // distribute bar and make the table read-only.
+  // EXCEPTION (operator 2026-07-09): "FULL MONAD LIST" + "Trash List" ARE
+  // assignable — managers distribute them to agents for re-marketing / follow-up.
+  // They stay is_static=true, so the prediction engine still never touches their
+  // membership; only the Assigner treats them as distributable.
+  const ASSIGNABLE_STATIC = ['FULL MONAD LIST', 'Trash List'];
+  const informational = list.is_static === true && !ASSIGNABLE_STATIC.includes(list.name);
 
   const { data, isLoading } = useQuery<{ members: SegmentMember[]; total: number }>({
     queryKey: ['segment', list.id, page, assignedFilter, completedFilter],
@@ -980,14 +699,16 @@ function PredictionListRow({ list, agents, isInBasket, toggleBasketMember, setBa
 
   const distributePreview = useMemo(() => {
     if (picked.length === 0) return null;
-    const eligible = scope === 'unassigned' ? unassigned : list.member_count;
+    // Auto-assign always skips done members, so the eligible pool is the OPEN
+    // one — unassigned-only or all-open on reassign. Keeps preview == toast.
+    const eligible = scope === 'unassigned' ? assignable : openCount;
     const cap = amount === 'whole' ? eligible
       : amount === 'half' ? Math.ceil(eligible / 2)
       : Math.min(parseInt(customN) || 0, eligible);
-    if (cap <= 0) return 'nothing to distribute';
+    if (cap <= 0) return t('assigner.nothingToDistribute');
     if (picked.length === 1) return `${cap.toLocaleString()} → 1 agent`;
     return `~${Math.ceil(cap / picked.length)} each to ${picked.length} agents`;
-  }, [picked, scope, amount, customN, unassigned, list.member_count]);
+  }, [picked, scope, amount, customN, assignable, openCount, t]);
 
   const distribute = async () => {
     if (picked.length === 0) return;
@@ -1032,19 +753,29 @@ function PredictionListRow({ list, agents, isInBasket, toggleBasketMember, setBa
           <div className="font-semibold text-sm truncate">{list.name}</div>
           <div className="text-xs text-muted-foreground truncate">{list.description}</div>
         </div>
-        <div className="flex items-center gap-3 text-xs shrink-0">
-          <Badge variant="outline" className="text-[10px]">{list.member_count.toLocaleString()} total</Badge>
-          {informational
-            ? <Badge variant="secondary" className="text-[10px]">{t('assigner.informational')}</Badge>
-            : unassigned > 0
-            ? <Badge className="text-[10px] bg-amber-500/15 text-amber-700 border-amber-500/30 hover:bg-amber-500/15">{unassigned.toLocaleString()} unassigned</Badge>
-            : <Badge className="text-[10px] bg-emerald-500/15 text-emerald-700 border-emerald-500/30 hover:bg-emerald-500/15">all assigned</Badge>}
+        <div className="flex items-center gap-2 text-xs shrink-0">
+          {informational ? (
+            <>
+              <Badge variant="outline" className="text-[10px]">{t('assigner.nTotal', { count: list.member_count.toLocaleString() })}</Badge>
+              <Badge variant="secondary" className="text-[10px]">{t('assigner.informational')}</Badge>
+            </>
+          ) : (
+            <>
+              {assignable > 0
+                ? <Badge className="text-[10px] bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/30 hover:bg-amber-500/15">{t('assigner.nToCall', { count: assignable.toLocaleString() })}</Badge>
+                : openCount > 0
+                ? <Badge className="text-[10px] bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/15">{t('assigner.allAssigned')}</Badge>
+                : null}
+              {doneCount > 0 && <Badge variant="secondary" className="text-[10px]">{t('assigner.nDone', { count: doneCount.toLocaleString() })}</Badge>}
+              <Badge variant="outline" className="text-[10px]">{t('assigner.nTotal', { count: list.member_count.toLocaleString() })}</Badge>
+            </>
+          )}
         </div>
       </button>
 
       {expanded && (
         <div className="border-t bg-muted/20 p-4 space-y-4">
-          {/* ── Distribute bar (hidden for informational lists like "Trashed") ── */}
+          {/* ── Distribute bar (hidden for informational lists like "Trash List") ── */}
           {informational ? (
             <div className="rounded-lg border border-dashed bg-card/60 p-3 text-xs text-muted-foreground">
               {t('assigner.notDistributable')}
@@ -1113,6 +844,16 @@ function PredictionListRow({ list, agents, isInBasket, toggleBasketMember, setBa
               </Select>
               <span className="ml-auto text-xs text-muted-foreground">{total.toLocaleString()} matching{!informational && ' · tick rows to add to basket'}</span>
             </div>
+            {/* The default view hides done members — when that empties the page,
+                say so instead of a dead-end "no members match". */}
+            {!isLoading && total === 0 && doneCount > 0 && completedFilter === 'no' && (assignedFilter === 'all' || assignedFilter === 'none') && (
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
+                <span>{t('assigner.hiddenDone', { count: doneCount.toLocaleString() })}</span>
+                <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setCompletedFilter('all')}>
+                  {t('assigner.showAll')}
+                </Button>
+              </div>
+            )}
             <SegmentMemberTable
               members={members}
               isSelected={(phone) => isInBasket(list.id, phone)}

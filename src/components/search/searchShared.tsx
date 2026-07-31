@@ -15,7 +15,8 @@ import { formatDate } from '@/i18n/dates';
 import { statusLabel } from '@/types';
 import { formatEur, formatLev } from '@/lib/currency';
 import { cleanNoteForDisplay } from '@/lib/notes';
-import { cn, formatProductWithQuantity } from '@/lib/utils';
+import { cn } from '@/lib/utils';
+import { formatOrderProducts } from '@/lib/monadonSubstitutes';
 import { STATUS_TONE, deliveryLabel, fullAddress, orderTotal, deriveCustomerSummary } from '@/lib/searchFormat';
 
 // Customer Info card — personal details from the most recent order plus lifetime
@@ -160,9 +161,7 @@ export function OrdersResultTable({ orders, orderHistory }: { orders: any[]; ord
               <tbody>
                 {orders.map((order) => {
                   const items = order.order_items || [];
-                  const productLabel = items.length > 0
-                    ? items.map((i: any) => formatProductWithQuantity(i.product_name, i.quantity)).join(', ')
-                    : (order.product_name ? formatProductWithQuantity(order.product_name, order.quantity || 1) : '—');
+                  const productLabel = formatOrderProducts(order);
                   const total = orderTotal(order);
                   const orderNotes = notesByOrder?.[order.id] || [];
                   const latestNote = orderNotes[0];

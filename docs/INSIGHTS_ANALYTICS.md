@@ -15,7 +15,7 @@
 | (CEO KPIs on Dashboard) | `ceo-dashboard-stats` | admin/manager | Revenue, profit, funnel, agent rankings, risk alerts |
 | Management Insights | `management-insights` | admin/manager | The deep dive: sales by product/city/delivery/source, returns, cancels, calls, profit, stock cover |
 | Agent Performance | `agent-performance` | admin/manager | Per‑agent conversion/shipment/collection/return + profit |
-| Operations Center | `operations-center` | admin/manager | Live "right now": today's KPIs + who's online + activity |
+| Operations Center | `operations-center` | admin/manager | Live "right now": today's KPIs + who's online and who's on a call + activity |
 
 Pages: [Dashboard.tsx](../src/pages/Dashboard.tsx), [ManagementInsightsPage.tsx](../src/pages/ManagementInsightsPage.tsx),
 [AgentPerformancePage.tsx](../src/pages/AgentPerformancePage.tsx), [OperationsPage.tsx](../src/pages/OperationsPage.tsx).
@@ -111,6 +111,13 @@ The live board: today's order KPIs (from `created_at`) + today's status‑change
 returned/paid today + revenue) + per‑agent online status (from `shift_login_logs`) with active‑lead counts
 and today's activity. Plus `agents/online` (presence‑heartbeat based, 2‑min window) feeds the live "who's here".
 
+`operations-center` (and `agents/online`) also return **`in_call`** per agent, surfaced as an "In call" badge
+on the online‑agents rows: `in_call` = agent is online **and** `profiles.voip_state ∈ {dialing, in_call}`
+**and** `profiles.voip_state_at` is younger than 3 minutes. **Caveat:** this is **self‑reported by the agent's
+browser softphone** through `presence/heartbeat` — it is *not* derived from the PBX. A crashed tab, a hard
+refresh mid‑call or a non‑softphone call will not be reflected, so treat it as a live indicator, not as a
+call‑time metric (use `call_logs` for that).
+
 ---
 
 ## 10. Shifts & time tracking (feeds ops + payroll context)
@@ -119,6 +126,9 @@ Tables `shifts`, `shift_assignments`, `shift_templates`, `shift_login_logs`, `sh
 check‑in (`login-log`) / check‑out (`logout-log`, also fired on sign‑out), start/end **breaks**, and
 `shifts/statistics` + `shifts/login-activity` for reporting. Presence (`profiles.last_seen_at` via
 `presence/heartbeat`) is separate from shift login — it's "tab open right now", used by Operations/agents‑online.
+A **third** signal rides the same heartbeat: `profiles.voip_state`/`voip_state_at` = "on a call right now"
+(3‑min staleness guard). So: shift login = *on shift today*, presence = *tab open this minute*, softphone
+state = *on a call right now*.
 
 ---
 

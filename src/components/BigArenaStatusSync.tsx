@@ -6,6 +6,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/contexts/AuthContext';
 import { apiBigArenaSync } from '@/lib/api';
+import { isFulfillmentPanelFile } from '@/lib/bigarenaStock';
 import { STATUS_COLORS } from '@/types';
 import * as XLSX from 'xlsx';
 import {
@@ -142,15 +143,12 @@ export function BigArenaStatusSync({ onSuccess, compact = false }: BigArenaStatu
         rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false }) as unknown[];
 
         // Guard: detect the BigArena Fulfillment/Stock Panel export (product inventory)
-        // vs the Order Tracking/Status export the parser is designed for.
+        // vs the Order Tracking/Status export the parser is designed for. That file
+        // has its own home now — the BigArena Stock button on Warehouse → Inventory.
         if (rows.length > 0) {
-          const headerText = (rows[0] as any[]).map(c => String(c || '')).join(' ').toLowerCase();
-          if (
-            headerText.includes('наименование') &&
-            headerText.includes('информация') &&
-            (headerText.includes('количество') || headerText.includes('наличност'))
-          ) {
-            setError('This file looks like the BigArena "Fulfillment Panel" (product stock / inventory) export, not the order tracking or status export. The status sync tool only works with order list exports that contain "Поръчка" / "Ref:" numbers and delivery statuses. Please export the correct order tracking view from BigArena.');
+          const headerText = (rows[0] as any[]).map(c => String(c || '')).join(' ');
+          if (isFulfillmentPanelFile(headerText)) {
+            setError('This file is the BigArena "Fulfillment Panel" (product stock) export, not the order tracking one. To update stock levels, use the "BigArena Stock" button on Warehouse → Inventory. This tool only accepts order list exports containing "Поръчка" / "Ref:" numbers and delivery statuses.');
             setParsed([]);
             setIsParsing(false);
             return;

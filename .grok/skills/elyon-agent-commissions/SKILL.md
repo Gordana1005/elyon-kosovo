@@ -82,4 +82,23 @@ Any query feeding the calculator MUST select: `status` and `order_items(price_pe
 
 All payout/bonus figures shown to humans use the dual EUR/LEV helpers — see [[elyon-currency]].
 
+## Packages sold vs awaiting (2026-07)
+
+- **`packages_sold`** = units on **`status = paid` only** (COD collected). Never include confirmed/shipped.
+- **`packages_awaiting`** = units on confirmed / shipped / delivered.
+- **`packages_returned`** = units on returned orders (report next to returned *order* count).
+- Earnings windows prefer **`paid_at`** (fallback `created_at` if null).
+
+Shared helpers (module-level in `api/index.ts`): `unitsOf`, `packagesSoldOf`, `packagesAwaitingOf`, `packagesReturnedOf`, `paidRevenueOf`, `inPaidWindow`.
+
+Surfaces that must agree: `/api/agent-performance`, `/api/dashboard-stats`, `/api/management-insights` (agent `packages_sold`), Discord `perf.ts`, Insights → Agents, Pure Profit agent table, My Performance dashboard.
+
+## Settlement ledger (mark paid)
+
+Tables: `agent_payouts` + `agent_payout_items`. History is **never deleted** — void only.
+
+- Unpaid = paid packages **not** on a `status=paid` settlement item.
+- Admin UI: Insights → **Payout** tab. Endpoints under `/api/agent-payouts/*`.
+- Agents see own earnings on Dashboard + self-scoped Agents tab (`performance` module view).
+
 **This rule has shifted before and may shift again (a separate pending strategy may come later). Treat this skill as the single source of truth and update it in the same change that updates `packageBonusRate` / `orderPackageBonus`.**

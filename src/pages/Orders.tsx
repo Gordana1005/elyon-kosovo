@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, Fragment } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AppLayout } from '@/layouts/AppLayout';
 import { StatusBadge } from '@/components/StatusBadge';
+import { SmartPagination } from '@/components/SmartPagination';
 import { ALL_STATUSES, statusLabel, STATUS_COLORS, OrderStatus } from '@/types';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -16,11 +17,11 @@ import { format, addDays } from 'date-fns'; // raw format: fulfilment CSV + mach
 import { formatDate } from '@/i18n/dates';
 import {
   Download, ChevronLeft, ChevronRight, ChevronDown, Filter, Search, Loader2,
-  CalendarIcon, X, User, Plus, MoreVertical, History, Lock, Copy, Euro, Package,
+  CalendarIcon, X, User, Plus, MoreVertical, History, Lock, Copy, CopyPlus, Euro, Package,
 } from 'lucide-react';
 import { Check } from 'lucide-react';
 import { MobileCard, MobileCardHeader, MobileCardField, MobileCardActions } from '@/components/ui/mobile-card';
-import { apiGetOrders, apiGetAgents, apiGetProducts, apiBulkStatusUpdate } from '@/lib/api';
+import { apiGetOrders, apiGetAgents, apiGetProducts, apiBulkStatusUpdate, apiDuplicateOrder } from '@/lib/api';
 import { Checkbox } from '@/components/ui/checkbox';
 import { formatEur, formatLev, eurToLev } from '@/lib/currency';
 import { toCsv, downloadCsv } from '@/lib/csv';
@@ -35,12 +36,17 @@ import { usePermissions } from '@/contexts/PermissionsContext';
 import { OrderModal, OrderModalData } from '@/components/OrderModal';
 import { CreateOrderModal } from '@/components/CreateOrderModal';
 import { CustomerHistoryDialog } from '@/components/CustomerHistoryDialog';
+import { OrderCallsPanel } from '@/components/OrderCallsPanel';
 import { ActiveViewBadge } from '@/components/ActiveViewBadge';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
 import { EmptyState } from '@/components/EmptyState';
 
 const PAGE_SIZE = 20;
+
+// Statuses whose expanded row shows the Delivery Details section; the inline
+// Calls panel sits beside it there, and stands alone for every other status.
+const DELIVERY_STATUSES = ['confirmed', 'shipped', 'delivered', 'paid', 'returned'];
 
 interface ApiOrder {
   id: string;
@@ -63,6 +69,8 @@ interface ApiOrder {
   created_at: string;
   source_type?: string;
   source_lead_id?: string | null;
+  duplicated_from?: string | null;
+  duplicated_from_display?: string | null;
   notes?: string | null;
   delivery_type?: string | null;
   home_courier?: string | null;
@@ -104,10 +112,12 @@ function orderToModalData(order: ApiOrder): OrderModalData {
 export default function Orders() {
   const { t } = useTranslation(); // also subscribes status chips/labels to language switches
   const { user } = useAuth();
-  const { canAction } = usePermissions();
+  const { canAction, canSeePrivacy } = usePermissions();
   // Roles without orders-edit permission (e.g. investor managers) open orders
   // read-only. The server also rejects their mutations — this just hides the controls.
   const canEditOrders = canAction('orders', 'edit');
+  // Inline Calls panel on expanded rows — recording-permission roles only.
+  const showCallsPanel = canSeePrivacy('can_hear_recordings') || canSeePrivacy('can_hear_own_recordings');
   const isAdmin = user?.isAdmin || user?.isManager;
   const isAgent = !isAdmin;
   // Backend gates POST /orders/bulk-status-update to admin/manager/warehouse,
@@ -117,6 +127,7 @@ export default function Orders() {
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [selectedStatuses, setSelectedStatuses] = useState<OrderStatus[]>([]);
+  const [sourceFilter, setSourceFilter] = useState('all');
   const [agentFilter, setAgentFilter] = useState('all');
   const [myOrdersOnly, setMyOrdersOnly] = useState(isAgent); // agents default to my orders
   const [dateFrom, setDateFrom] = useState<Date | undefined>();
@@ -188,6 +199,23 @@ export default function Orders() {
     if (saved) fetchOrders();
   };
 
+  // Duplicate order (admin/manager only) — server creates a copy with the next
+  // ORD number and status 'duplicated'; agents never see it.
+  const [duplicatingId, setDuplicatingId] = useState<string | null>(null);
+  const handleDuplicateOrder = async (order: ApiOrder) => {
+    if (duplicatingId) return;
+    setDuplicatingId(order.id);
+    try {
+      const dup = await apiDuplicateOrder(order.id);
+      toast({ title: t('ordersPage.duplicateCreated', { id: dup.display_id }) });
+      fetchOrders();
+    } catch (e: any) {
+      toast({ title: e.message || 'Error', variant: 'destructive' });
+    } finally {
+      setDuplicatingId(null);
+    }
+  };
+
   const toggleRowExpansion = (orderId: string) => {
     setExpandedIds(prev => {
       const next = new Set(prev);
@@ -205,7 +233,7 @@ export default function Orders() {
     return () => clearTimeout(t);
   }, [search]);
 
-  useEffect(() => { setPage(1); }, [debouncedSearch, selectedStatuses, agentFilter, myOrdersOnly, dateFrom, dateTo, priceMin, priceMax]);
+  useEffect(() => { setPage(1); }, [debouncedSearch, selectedStatuses, sourceFilter, agentFilter, myOrdersOnly, dateFrom, dateTo, priceMin, priceMax]);
 
   const { data: agentsData } = useQuery({
     queryKey: ['agents'],
@@ -238,6 +266,7 @@ export default function Orders() {
       : (myOrdersOnly && user?.id ? user.id : (agentFilter !== 'all' ? agentFilter : undefined));
     apiGetOrders({
       status: selectedStatuses.length > 0 ? selectedStatuses.join(',') : undefined,
+      source: sourceFilter !== 'all' ? sourceFilter : undefined,
       search: debouncedSearch || undefined,
       agent_id: effectiveAgentId,
       from: dateFrom ? format(dateFrom, "yyyy-MM-dd'T'00:00:00") : undefined,
@@ -257,7 +286,7 @@ export default function Orders() {
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { fetchOrders(); }, [page, selectedStatuses, debouncedSearch, agentFilter, myOrdersOnly, dateFrom, dateTo, priceMin, priceMax]);
+  useEffect(() => { fetchOrders(); }, [page, selectedStatuses, sourceFilter, debouncedSearch, agentFilter, myOrdersOnly, dateFrom, dateTo, priceMin, priceMax]);
 
   // Status filtering (single or multi-select) is now done server-side, so the
   // page already contains exactly the orders that match — and total/pagination
@@ -315,13 +344,27 @@ export default function Orders() {
     return formatProductWithQuantity(resolveToCleanCatalogueName(pn), order.quantity || 1) || '—';
   };
 
+  // Human text for the rich reason panel on cancelled/trashed rows (desktop
+  // expanded row + mobile card). Trashed orders carry a STRUCTURED reason in
+  // orders.trash_reason (translated with the same trashReason.* labels as the
+  // picker) + optional free-text note; cancelled ones keep the legacy
+  // free-text chain.
+  const orderReasonText = (order: any): string | null => {
+    if (order.status === 'trashed' && order.trash_reason) {
+      const label = t(`trashReason.${order.trash_reason}`, { defaultValue: String(order.trash_reason).replace(/_/g, ' ') });
+      const extra = (order.trash_reason_notes || '').trim();
+      return extra ? `${label} — ${extra}` : label;
+    }
+    return order.cancellation_reason_notes || order.notes || order.cancellation_reason || null;
+  };
+
   const totalPages = Math.ceil(total / PAGE_SIZE);
   const toggleStatus = (s: OrderStatus) => {
     setSelectedStatuses(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s]);
   };
-  const hasActiveFilters = search.trim() || selectedStatuses.length > 0 || agentFilter !== 'all' || (myOrdersOnly && isAdmin) || dateFrom || dateTo || priceMin != null || priceMax != null;
+  const hasActiveFilters = search.trim() || selectedStatuses.length > 0 || sourceFilter !== 'all' || agentFilter !== 'all' || (myOrdersOnly && isAdmin) || dateFrom || dateTo || priceMin != null || priceMax != null;
   const clearAllFilters = () => {
-    setSearch(''); setSelectedStatuses([]); setAgentFilter('all'); if (isAdmin) setMyOrdersOnly(false); setDateFrom(undefined); setDateTo(undefined);
+    setSearch(''); setSelectedStatuses([]); setSourceFilter('all'); setAgentFilter('all'); if (isAdmin) setMyOrdersOnly(false); setDateFrom(undefined); setDateTo(undefined);
     setPriceMin(null); setPriceMax(null); setPriceMinDraft(''); setPriceMaxDraft('');
   };
 
@@ -632,6 +675,7 @@ export default function Orders() {
         'PRODUCT': items,
         'CONFIRMED BY': o.confirmed_by_name || o.last_action_by || o.assigned_agent_name || '',
         'SOURCE': o.source_type === 'monadon_legacy' ? 'MONADLIST'
+          : o.source_type === 'affiliate' ? 'Affiliate'
           : o.source_type === 'opencart' ? 'naturatherapy.bg'
           : o.source_type === 'opencart_abandoned' ? 'naturatherapy.bg (abandoned)'
           : o.source_type === 'inbound_lead' ? 'Webhook'
@@ -687,12 +731,45 @@ export default function Orders() {
               </PopoverTrigger>
               <PopoverContent className="w-56 p-2" align="start">
                 <div className="space-y-1">
-                  {ALL_STATUSES.map(s => (
+                  {(isAdmin ? [...ALL_STATUSES, 'duplicated' as OrderStatus] : ALL_STATUSES).map(s => (
                     <button key={s} onClick={() => toggleStatus(s)} className={cn('flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors', selectedStatuses.includes(s) ? 'bg-primary/10 text-primary font-medium' : 'hover:bg-muted text-foreground')}>
                       <div className={cn('h-3.5 w-3.5 rounded border-2 flex items-center justify-center transition-colors', selectedStatuses.includes(s) ? 'border-primary bg-primary' : 'border-muted-foreground/30')}>
                         {selectedStatuses.includes(s) && <Check className="h-2.5 w-2.5 text-primary-foreground" />}
                       </div>
                       <span className={cn('inline-flex items-center rounded-full border px-3 py-0 text-[11px] font-semibold leading-4', STATUS_CHIP_COLORS[s])}>{statusLabel(s)}</span>
+                    </button>
+                  ))}
+                </div>
+              </PopoverContent>
+            </Popover>
+
+            {/* Source filter — isolate affiliate/lead clients from prediction-list clients */}
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline" size="sm" className="h-9 gap-1.5 rounded-lg text-sm font-normal">
+                  <Filter className="h-3.5 w-3.5" /> {t('ordersPage.colSource')}
+                  {sourceFilter !== 'all' && <span className="ml-1 h-2 w-2 rounded-full bg-primary" />}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-48 p-2" align="start">
+                <div className="space-y-1">
+                  {([
+                    ['all', t('ordersPage.allSources')],
+                    ['affiliate', t('ordersPage.sourceAffiliate')],
+                    ['opencart', t('ordersPage.sourceSite')],
+                    ['inbound_lead', t('ordersPage.sourceWebhook')],
+                    ['prediction_lead', t('ordersPage.sourceLead')],
+                    ['monadon_legacy', 'MONADLIST'],
+                  ] as [string, string][]).map(([val, label]) => (
+                    <button
+                      key={val}
+                      onClick={() => setSourceFilter(val)}
+                      className={cn('flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors', sourceFilter === val ? 'bg-primary/10 text-primary font-medium' : 'hover:bg-muted text-foreground')}
+                    >
+                      <div className={cn('h-3.5 w-3.5 rounded-full border-2 flex items-center justify-center', sourceFilter === val ? 'border-primary' : 'border-muted-foreground/30')}>
+                        {sourceFilter === val && <div className="h-1.5 w-1.5 rounded-full bg-primary" />}
+                      </div>
+                      {label}
                     </button>
                   ))}
                 </div>
@@ -1006,7 +1083,18 @@ export default function Orders() {
                     />
                   </td>
                   <td className="px-4 py-3"><StatusBadge status={order.status} /></td>
-                  <td className="px-4 py-3 font-mono text-xs font-semibold">{order.display_id}</td>
+                  <td className="px-4 py-3 font-mono text-xs font-semibold">
+                    {order.display_id}
+                    {order.duplicated_from && (
+                      <Badge
+                        variant="outline"
+                        className="ml-1.5 text-[9px] px-1 py-0 border-indigo-400 text-indigo-600 dark:text-indigo-400 cursor-pointer whitespace-nowrap"
+                        onClick={(e) => { e.stopPropagation(); if (order.duplicated_from_display) setSearch(order.duplicated_from_display); }}
+                      >
+                        {t('ordersPage.duplicateOf', { id: order.duplicated_from_display || '?' })}
+                      </Badge>
+                    )}
+                  </td>
                   <td className="px-4 py-3">
                     <span>{order.customer_name}</span>
                     {getPhoneDupCount(order.customer_phone) > 1 && (
@@ -1033,8 +1121,9 @@ export default function Orders() {
                     ) : <span className="text-muted-foreground">—</span>}
                   </td>
                   <td className="px-4 py-3">
-                    <Badge variant={order.source_type === 'monadon_legacy' ? 'destructive' : order.source_type === 'prediction_lead' || order.source_type === 'inbound_lead' || order.source_type === 'opencart' || order.source_type === 'opencart_abandoned' ? 'secondary' : 'outline'} className="text-[10px]">
+                    <Badge variant={order.source_type === 'monadon_legacy' ? 'destructive' : order.source_type === 'prediction_lead' || order.source_type === 'inbound_lead' || order.source_type === 'opencart' || order.source_type === 'opencart_abandoned' || order.source_type === 'affiliate' ? 'secondary' : 'outline'} className="text-[10px]">
                       {order.source_type === 'monadon_legacy' ? 'MONADLIST'
+                        : order.source_type === 'affiliate' ? t('ordersPage.sourceAffiliate')
                         : order.source_type === 'prediction_lead' ? t('ordersPage.sourceLead')
                         : order.source_type === 'inbound_lead' ? t('ordersPage.sourceWebhook')
                         : order.source_type === 'opencart' ? t('ordersPage.sourceSite')
@@ -1065,6 +1154,11 @@ export default function Orders() {
                         <DropdownMenuItem onClick={() => tryOpenOrder(order)}>
                           <Lock className="h-3.5 w-3.5 mr-2" /> {t('ordersPage.openOrder')}
                         </DropdownMenuItem>
+                        {isAdmin && (
+                          <DropdownMenuItem disabled={duplicatingId !== null} onClick={() => handleDuplicateOrder(order)}>
+                            <CopyPlus className="h-3.5 w-3.5 mr-2" /> {t('ordersPage.duplicateOrder')}
+                          </DropdownMenuItem>
+                        )}
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </td>
@@ -1123,28 +1217,44 @@ export default function Orders() {
                                 {order.status === 'cancelled' ? t('ordersPage.cancellationReason') : t('ordersPage.trashReason')}
                               </div>
                               <div className="text-sm bg-rose-50 dark:bg-rose-950/30 p-3 rounded-md border border-rose-200 dark:border-rose-900 whitespace-pre-line">
-                                {order.cancellation_reason_notes || order.notes || order.cancellation_reason || t('ordersPage.noReasonRecorded')}
+                                {orderReasonText(order) || t('ordersPage.noReasonRecorded')}
                               </div>
                             </div>
                           )}
 
-                          {['confirmed', 'shipped', 'delivered', 'paid', 'returned'].includes(order.status) && (
-                            <div className="md:col-span-2 lg:col-span-3 pt-3 border-t">
-                              <div className="text-[10px] font-semibold uppercase tracking-wider text-emerald-600 mb-1.5">{t('ordersPage.deliveryDetails')}</div>
-                              <div className="text-sm space-y-1">
-                                <div>
-                                  <span className="text-muted-foreground">{t('ordersPage.sentBy')}</span>{' '}
-                                  {(() => {
-                                    const dt = order.delivery_type;
-                                    if (dt === 'speedy_office') return t('ordersPage.speedyOffice');
-                                    if (dt === 'econt_office') return t('ordersPage.econtOffice');
-                                    const hc = order.home_courier === 'speedy' ? 'Speedy'
-                                      : order.home_courier === 'econt' ? 'Econt' : null;
-                                    return hc ? t('ordersPage.homeDoor', { courier: hc }) : (dt ? dt.replace(/_/g, ' ') : t('ordersPage.notSpecified'));
-                                  })()}
-                                  {order.courier_office_name && ` → ${order.courier_office_name}`}
+                          {DELIVERY_STATUSES.includes(order.status) && (
+                            <div className="md:col-span-2 lg:col-span-3 pt-3 border-t grid grid-cols-1 lg:grid-cols-3 gap-x-8 gap-y-4">
+                              <div>
+                                <div className="text-[10px] font-semibold uppercase tracking-wider text-emerald-600 mb-1.5">{t('ordersPage.deliveryDetails')}</div>
+                                <div className="text-sm space-y-1">
+                                  <div>
+                                    <span className="text-muted-foreground">{t('ordersPage.sentBy')}</span>{' '}
+                                    {(() => {
+                                      const dt = order.delivery_type;
+                                      if (dt === 'speedy_office') return t('ordersPage.speedyOffice');
+                                      if (dt === 'econt_office') return t('ordersPage.econtOffice');
+                                      const hc = order.home_courier === 'speedy' ? 'Speedy'
+                                        : order.home_courier === 'econt' ? 'Econt' : null;
+                                      return hc ? t('ordersPage.homeDoor', { courier: hc }) : (dt ? dt.replace(/_/g, ' ') : t('ordersPage.notSpecified'));
+                                    })()}
+                                    {order.courier_office_name && ` → ${order.courier_office_name}`}
+                                  </div>
                                 </div>
                               </div>
+                              {showCallsPanel && (
+                                <div className="lg:col-span-2">
+                                  <OrderCallsPanel orderId={order.id} />
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Calls panel for statuses without a delivery section
+                              (pending/call_again/cancelled/trashed — hearing what
+                              went wrong is exactly the point). */}
+                          {showCallsPanel && !DELIVERY_STATUSES.includes(order.status) && (
+                            <div className="md:col-span-2 lg:col-span-3 pt-3 border-t">
+                              <OrderCallsPanel orderId={order.id} />
                             </div>
                           )}
 
@@ -1209,6 +1319,7 @@ export default function Orders() {
         ) : filteredOrders.map(order => {
           const isExpanded = expandedIds.has(order.id);
           const sourceLabel = order.source_type === 'monadon_legacy' ? 'MONADLIST'
+            : order.source_type === 'affiliate' ? 'Affiliate'
             : order.source_type === 'prediction_lead' ? 'Lead'
             : order.source_type === 'inbound_lead' ? 'Webhook'
             : order.source_type === 'opencart' ? 'Site'
@@ -1242,7 +1353,19 @@ export default function Orders() {
                   />
                 </div>
               </div>
-              <MobileCardField label={t('ordersPage.colOrderId')} value={<span className="font-mono">{order.display_id}</span>} />
+              <MobileCardField
+                label={t('ordersPage.colOrderId')}
+                value={
+                  <span className="font-mono">
+                    {order.display_id}
+                    {order.duplicated_from && (
+                      <Badge variant="outline" className="ml-1.5 text-[9px] px-1 py-0 border-indigo-400 text-indigo-600 dark:text-indigo-400" onClick={(e) => { e.stopPropagation(); if (order.duplicated_from_display) setSearch(order.duplicated_from_display); }}>
+                        {t('ordersPage.duplicateOf', { id: order.duplicated_from_display || '?' })}
+                      </Badge>
+                    )}
+                  </span>
+                }
+              />
               <MobileCardField label={t('ordersPage.colProduct')} value={productLabel(order)} />
               <MobileCardField label={t('ordersPage.colQty')} value={order.quantity || 1} />
               <MobileCardField label={t('createOrder.total')} value={<>{formatEur(order.price)} <span className="text-muted-foreground font-normal">({formatLev(order.price)})</span></>} />
@@ -1274,11 +1397,12 @@ export default function Orders() {
                   {(order as any).ship_after_date && (
                     <div className="text-xs"><span className="text-muted-foreground">{t('ordersPage.shipAfterField')}</span> {new Date((order as any).ship_after_date).toLocaleDateString()}</div>
                   )}
-                  {(order.status === 'cancelled' || order.status === 'trashed') && ((order as any).cancellation_reason_notes || (order as any).notes || (order as any).cancellation_reason) && (
+                  {(order.status === 'cancelled' || order.status === 'trashed') && orderReasonText(order) && (
                     <div className="text-xs bg-rose-50 dark:bg-rose-950/30 p-2 rounded-md border border-rose-200 dark:border-rose-900 whitespace-pre-line">
-                      {(order as any).cancellation_reason_notes || (order as any).notes || (order as any).cancellation_reason}
+                      {orderReasonText(order)}
                     </div>
                   )}
+                  {showCallsPanel && <OrderCallsPanel orderId={order.id} />}
                 </div>
               )}
             </MobileCard>
@@ -1290,13 +1414,7 @@ export default function Orders() {
       {totalPages > 1 && (
         <div className="mt-4 flex items-center justify-between">
           <p className="text-sm text-muted-foreground">{t('ordersPage.pageOf', { page, totalPages, total })}</p>
-          <div className="flex items-center gap-1">
-            <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="flex h-8 w-8 items-center justify-center rounded-lg border hover:bg-muted disabled:opacity-40 transition-colors"><ChevronLeft className="h-4 w-4" /></button>
-            {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => i + 1).map(p => (
-              <button key={p} onClick={() => setPage(p)} className={cn('flex h-8 w-8 items-center justify-center rounded-lg text-sm font-medium transition-colors', p === page ? 'bg-primary text-primary-foreground' : 'border hover:bg-muted')}>{p}</button>
-            ))}
-            <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages} className="flex h-8 w-8 items-center justify-center rounded-lg border hover:bg-muted disabled:opacity-40 transition-colors"><ChevronRight className="h-4 w-4" /></button>
-          </div>
+          <SmartPagination page={page} totalPages={totalPages} onPageChange={setPage} />
         </div>
       )}
 

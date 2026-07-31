@@ -1,8 +1,14 @@
-# Elyon CRM — KOSOVO edition (Natura Therapy XK)
+# Elyon CRM — MACEDONIA edition (Natura Therapy MK)
 
-This repository is the **Kosovo** instance of the Elyon CRM — a hard fork of the Bulgarian
+This repository is the **Macedonian** instance of the Elyon CRM — a hard fork of the Bulgarian
 system, run as a completely separate operation. It has its OWN infrastructure and shares
 **nothing at runtime** with Bulgaria.
+
+> **Naming note:** the Supabase ref, Vercel project and GitHub repo are still called
+> `elyon-kosovo`. The deployment was originally stood up for Kosovo on 2026-06-30 and was
+> re-aimed at Macedonia on 2026-07-31. The infrastructure IDs were deliberately kept (renaming
+> them buys nothing and breaks the deploy links). **The market is Macedonia.** Anywhere you see
+> "kosovo" in an infrastructure identifier, read it as "this project".
 
 ## 🛑 GOLDEN RULE — never touch the Bulgarian system
 This is the #1 rule. A mistake here already caused a live Bulgarian outage once (2026-06-30).
@@ -12,51 +18,108 @@ This is the #1 rule. A mistake here already caused a live Bulgarian outage once 
 - The Bulgarian repo folder `C:\Users\Mile\Desktop\elyoncrm`
 - The Bulgarian Vercel project `elyoncrm` (`prj_965V2iBg793RmiJJw9m6Tl3djllX`)
 
-Everything here targets **Kosovo only** (see Infra below). If you ever see `sxymaloycddnoxudxaqp`
-or `elyoncall.com` in a command you're about to run → **STOP.** That is the live BG system.
+Everything here targets **Macedonia only** (see Infra below). If you ever see
+`sxymaloycddnoxudxaqp` or `elyoncall.com` in a command you're about to run → **STOP.**
+That is the live BG system.
+
+**The token in `.env` can write to BOTH projects.** Nothing but the command line protects
+Bulgaria. Before ANY state-changing command (db push, functions deploy, secrets set, vercel
+deploy), run the tripwire:
+
+```
+node scripts/assert-mk-target.mjs
+```
+
+It checks `supabase/config.toml`, `.env`, `.vercel/project.json` and the remote row counts, and
+exits non-zero if anything points at Bulgaria.
 
 ## ⚠️ CLI safety (this is how the BG incident happened — read it)
 The shell's working directory **silently resets between tool calls**. NEVER rely on the current
 directory to choose which project a command acts on. For ANY state-changing command, pass the
 target **explicitly** and verify it before running:
-- **Vercel:** `vercel <cmd> --cwd "C:\Users\Mile\Desktop\elyon-kosovo" --scope gordanas-projects-a53c0208`
+- **Vercel:** `vercel <cmd> --cwd "D:\Dev\archives\elyon-kosovo" --scope gordanas-projects-a53c0208`
 - **Supabase:** confirm `supabase/config.toml` `project_id = "bmfxhgznttcnnlqloqzp"` before any link/push/deploy
-- **Git:** `git -C "C:\Users\Mile\Desktop\elyon-kosovo" …`
+- **Git:** `git -C "D:\Dev\archives\elyon-kosovo" …`
 - Read the tool's echoed target (e.g. "to Project X"); if it's ever `elyoncrm`/BG → abort immediately.
+- **Never pass a `--project-ref` copied out of `docs/`** — those pages were inherited from Bulgaria.
 - **Vercel env vars:** prefer the Vercel REST API (JSON body) over `vercel env add` stdin — PowerShell
   piping injects a UTF-8 BOM ("non ISO-8859-1 code point" login error) and bash `printf` w/o newline
   sets empty. Always verify with `vercel env pull`.
 
-## Infra (Kosovo only)
+## Infra (Macedonia only)
 - **Supabase:** ref `bmfxhgznttcnnlqloqzp` → https://bmfxhgznttcnnlqloqzp.supabase.co
 - **Vercel:** project `elyon-kosovo`, scope `gordanas-projects-a53c0208` → https://elyon-kosovo.vercel.app (GitHub-connected → auto-deploys on push to `main`)
 - **GitHub:** `Gordana1005/elyon-kosovo`
 - **Secrets:** `docs/VAULT.md` (gitignored) — keys, webhook secret, admin logins
 - **Status / done / TODO:** `KOSOVO-FORK-STATUS.md` (repo root)
+- **Migrations:** the DB password was never recorded, so `supabase db push` cannot open a direct
+  Postgres connection. Use `node scripts/apply-migration-mk.mjs <file.sql>` (Management API, same
+  `postgres` role). Record the DB password in VAULT §1 to restore the normal `db push` path.
 
-## Per-market rules (Kosovo ≠ Bulgaria) — these OVERRIDE the copied BG docs/skills
+## Per-market rules (Macedonia ≠ Bulgaria) — these OVERRIDE the copied BG docs/skills
 `.grok/skills/` and `docs/` were copied from Bulgaria and still describe BG specifics in places.
 **Where they conflict with the list below, THIS LIST WINS** (and update the skill/doc):
-- **Currency: EUR-only.** Kosovo is euro-native. NO lev, NO 1.95583 peg, NO dual display. `formatLev`/`formatPriceInline` are neutralized to EUR. (`elyon-currency` skill is updated for XK.)
-- **Timezone:** `Europe/Belgrade` (Pristina, CET) — not Europe/Sofia.
-- **Phone:** country code **+383** — not +359. Last-8 matching is unchanged.
-- **Language:** default UI is Albanian (`sq`); en/bg kept as fallbacks.
-- **Login email domain:** `elyon-xk.local` (placeholder — see TODO).
-- **Couriers/cities:** still BG (Speedy/Econt + `bg_settlements`) — **TODO:** replace with Kosovo.
+- **Currency: MKD only in the UI.** Prices are STORED in EUR; the denar is derived at display
+  time from a **frozen** `MKD_PER_EUR` constant. The denar is a managed NBRM peg, not a legally
+  fixed rate like the lev — **never "update" the constant**, because that silently re-prices every
+  historical order, closed payout and already-collected COD. If the market moves, re-price the
+  catalogue in EUR instead. No lev, no 1.95583, no dual display.
+- **Timezone:** `Europe/Skopje` (CET/CEST) — not Europe/Sofia (EET, one hour ahead).
+- **Phone:** country code **+389** — not +359. Last-8 matching is unchanged.
+- **Language:** default UI is Macedonian (`mk`); en/sq/bg also shipped.
+- **VAT:** 18% standard. ⚠️ Confirm with the accountant whether supplements fall under the
+  preferential 5%/10% band — `VAT_RATE` feeds every profit report.
+- **Login email domain:** `elyon-mk.local` (placeholder — see TODO).
+- **Couriers/cities:** still BG (Speedy/Econt + `bg_settlements`) — **TODO:** replace with
+  Macedonian carriers. ⚠️ **The fulfilment CSV must not be used for real shipments until a
+  Macedonian carrier confirms the column contract** (it is BigArena's Bulgarian 3PL format).
 - **Telephony:** deferred (Phase 2). `VITE_USE_REAL_VOIP=false`; PBX/DID values are BG placeholders.
-- Search the code for `TODO(kosovo)` to find every unfinished real-value spot.
+  The VOIP minutes bundle is seeded at 0 — there is no MK carrier contract.
+- Search the code for `TODO(mk)` to find every unfinished real-value spot.
 
-## Skills system (`.grok/skills/`)
-Same first-class skills system as BG — check `/skills` before non-trivial work on money, phones,
-warehouse, stock, webhooks, or fulfilment. **But apply the Kosovo per-market overrides above** —
-several skills still teach BG rules (lev peg, +359). When a skill conflicts with the overrides,
-the overrides win; fix the skill. Add new skills with project scope.
+## Grok Skills System
+
+**This project has a first-class skills system** located in `.grok/skills/`. Check `/skills`
+before non-trivial work on money, phones, warehouse, stock, webhooks, or fulfilment.
+**But apply the Macedonian per-market overrides above** — several skills still teach BG rules
+(lev peg, +359, Sofia). When a skill conflicts with the overrides, the overrides win; fix the skill.
+
+- `elyon-currency` — ⚠️ inherited BG/Kosovo rules. The currency override above wins.
+- `elyon-phone-normalization` — Last-8-digits search + E.164 storage + pollution protection.
+- `elyon-fulfilment-csv` — ⚠️ describes a Bulgarian warehouse serving a Skopje call centre; for MK that relationship inverts. Rewrite before relying on it.
+- `elyon-warehouse-incoming` — The full daily warehouse workflow and stock safety.
+- `elyon-webhook-and-lead-ingestion` — Inbound pipeline, HMAC, per-product slugs.
+- `elyon-stock-and-bigarena` — Stock movements, import rules, and historical operator decisions.
+- `elyon-agent-commissions` — Per-package agent bonuses on every PAID order (only gate is paid; source irrelevant), tiered 1/2/3€ by unit price, no minimum, credited to the confirmer. Read before touching any payout/commission math.
+- `elyon-notifications` — The bell, the 6 notification types, the English-in-DB + `meta.i18n` translation contract, owner = confirmer, and the unpaid-delivery chase job.
+- `elyon-segments-and-prediction` — The name-construction engine (v3.6), the exclusivity rule, holding pens (Current Cancels 14d, NEWCOMERS 21d), carry-over, and the nightly recompute. Law for anything touching prediction lists.
+- `elyon-assigner` — Distribution + the Unassign tab, agent workload truth, and the live agent status tile.
+- `elyon-voip-and-pbx` — The A1 trunk, Asterisk/FreePBX, the WebRTC softphone and recordings. BG-specific; MK telephony is deferred.
+- `elyon-i18n` — EN/BG/SQ/MK: every user-visible string goes through i18n in all four locales, no exceptions.
+- `elyon-security` — RLS, HMAC, permissions, audit and secrets. Never write an `authenticated`-wide read policy.
+- `elyon-affiliates` — The CPA/partner system and the hard wall that keeps external logins out of staff surfaces.
+- `elyon-logistics-costs` — Courier rate card, return round-trip loss, and Pure Profit actuals.
+
+New skills should be added to `.grok/skills/` whenever you find yourself re-explaining the same
+complicated rule or workflow. Use `/skillify` right after completing a complex piece of work;
+prefer **project scope** so the skill is committed to the repo.
+
+## Engine regression check
+The segment engine resolves its target list by **exact name match**, and it deletes existing
+memberships *before* resolving. A drifted list name therefore wipes members silently, with no
+error. After any migration bundle, run:
+
+```
+node scripts/engine-fixture-mk.mjs
+```
 
 ## Memory
-This Kosovo workspace has its OWN memory store, separate from Bulgaria. `MEMORY.md` is loaded each
-session. Keep only Kosovo facts there; never write BG facts into this project's memory, and never
-let a recalled BG fact send you to touch the BG system.
+This Macedonian workspace has its OWN memory store, separate from Bulgaria. `MEMORY.md` is loaded
+each session. Keep only Macedonian facts there; never write BG facts into this project's memory,
+and never let a recalled BG fact send you to touch the BG system.
 
 ---
-*Kosovo fork stood up 2026-06-30 from `deploy-kit/`. This file is the Kosovo constitution
-(Claude.md + Skills + Memory = the Elyon Agent OS, Kosovo instance).*
+
+*Fork stood up 2026-06-30 from `deploy-kit/`; re-aimed from Kosovo to Macedonia and brought to
+Bulgarian code parity on 2026-07-31 (28 migrations + ~33 new files). This file is the Macedonian
+constitution (Claude.md + Skills + Memory = the Elyon Agent OS, Macedonian instance).*

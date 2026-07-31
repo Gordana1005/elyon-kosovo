@@ -46,7 +46,7 @@ For reboots, OS rebuild, password resets, noVNC console: log in at alphavps.com 
 | sshd | 22/tcp | Key-only, fail2ban guarded |
 | Apache (httpd) | 80, 443/tcp | FreePBX UI; 80 → 443 redirect; HSTS 6 mo |
 | Asterisk (chan_pjsip) | 5060/udp+tcp, 5061/tcp | SIP signalling (UDP/TCP/TLS) |
-| Asterisk WSS | 8089/tcp | WebRTC endpoint — `wss://pbx.elyoncall.com:8089/ws` |
+| Asterisk WSS | 8089/tcp (localhost) | WebRTC endpoint. Agents connect to **`wss://pbx.elyoncall.com/ws`** on **443**, which Apache reverse-proxies to `127.0.0.1:8089` (`timeout=7200`). The `:8089` form is historical — do not use it. |
 | RTP media | 10000–20000/udp | Audio streams |
 | MariaDB | 3306 (local only) | FreePBX state |
 | php-fpm | unix socket | PHP runtime for Apache |

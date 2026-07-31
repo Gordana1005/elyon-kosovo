@@ -3,8 +3,8 @@
 > **Read me first.** This folder is the complete operating manual for Elyon CRM: how every part
 > works, what connects to what, where the weak spots are, what's live vs. pending, and how to hand
 > the whole thing to someone else (or resell it). It was written from a full read of the source on
-> **2026-05-23** — when the docs and the code disagree, the code wins, and the [Audit](AUDIT_FINDINGS.md)
-> lists the places they currently disagree.
+> **2026-05-23** and last refreshed against the code on **2026-07-28** — when the docs and the code
+> disagree, the code wins, and the [Audit](AUDIT_FINDINGS.md) lists the places they currently disagree.
 
 Elyon CRM is a Bulgarian e‑commerce **call‑centre CRM**. Agents in Strumica, North Macedonia call
 Bulgarian customers on Bulgarian mobile numbers, talk them through nutritional‑supplement orders, and
@@ -13,7 +13,7 @@ cash — lives in this system.
 
 - **Frontend:** React + Vite on Vercel → `https://elyoncall.com`
 - **Backend:** one Supabase Edge Function (`api`) → `…/functions/v1/api`
-- **Database:** Postgres on Supabase (project `sxymaloycddnoxudxaqp`), RLS everywhere
+- **Database:** Postgres on Supabase (project `bmfxhgznttcnnlqloqzp`), RLS everywhere
 - **Telephony:** Asterisk + FreePBX on a Sofia VPS (`pbx.elyoncall.com`), A1 "Business Voice" SIP trunk **live in production**; browser softphone (sip.js), recordings, VOIP Health dashboard
 
 ---
@@ -63,7 +63,7 @@ conversion, returns, and per‑agent performance.
 
 ---
 
-## Status at a glance (2026‑06‑19)
+## Status at a glance (2026‑07‑28)
 
 | Area | State |
 |---|---|
@@ -75,6 +75,7 @@ conversion, returns, and per‑agent performance.
 | In‑browser softphone (real audio) | ✅ Live — `RealVoipEngine` (sip.js) behind `VoipContext`; per‑agent extensions + caller‑ID |
 | Call recordings | ✅ Live — Asterisk MixMonitor; browsable on the Recordings page (signed URLs) |
 | VOIP Health dashboard + missed‑call inbox | ✅ Live (`/voip-health`) |
+| Live agent call status ("In call" on Assigner + Operations Center) | ✅ Live — `profiles.voip_state`, reported by the browser softphone via `presence/heartbeat` (not PBX‑derived) |
 
 See [AUDIT_FINDINGS.md](AUDIT_FINDINGS.md) for the bug/risk list and [CALLING_PLAN_SIP.md](CALLING_PLAN_SIP.md)
 for the telephony roadmap.

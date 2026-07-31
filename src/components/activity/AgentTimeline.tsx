@@ -17,6 +17,19 @@ const ZOOM_LEVELS = [90, 150, 240, 380, 600, 960];
 const DEFAULT_ZOOM_IDX = 2; // 240 px/hour ≈ 3× the fit-to-width density
 const LABEL_PX = 184;       // left rail (name + totals) width
 
+// ── Band colours ──
+// Idle and break are the two full-height bands, so they must never read alike.
+// `--muted` is 95% lightness in light mode (i.e. white on a white card), so idle
+// uses muted-FOREGROUND at low alpha instead — a real gray in both themes.
+const IDLE_FILL = 'hsl(var(--muted-foreground) / 0.22)';
+// Break is purple, striped purple-on-purple (no transparent gaps) so the band
+// stays unmistakably purple whatever sits underneath it.
+const BREAK_PURPLE = '271 81% 56%';
+const breakStripes = (strong: number, soft: number, px: number) =>
+  `repeating-linear-gradient(45deg, hsl(${BREAK_PURPLE} / ${strong}) 0 ${px}px, hsl(${BREAK_PURPLE} / ${soft}) ${px}px ${px * 2}px)`;
+const BREAK_TRACK = breakStripes(0.85, 0.45, 5);
+const BREAK_SWATCH = breakStripes(0.95, 0.5, 3);
+
 /** Minutes to ADD to UTC to get Sofia local time at `at` (+120 / +180, DST-aware). */
 function sofiaOffsetMinutes(at: Date): number {
   const parts = new Intl.DateTimeFormat('en-US', {
@@ -128,11 +141,11 @@ export function AgentTimeline({ data, isToday }: AgentTimelineProps) {
           <LegendSwatch color={amber} label={t('activity.connecting')} />
           <LegendSwatch color={red} label={t('activity.noAnswer')} />
           <span className="inline-flex items-center gap-1.5">
-            <span className="h-3 w-3 rounded-sm border border-border/60 bg-muted/60" />
+            <span className="h-3 w-3 rounded-sm border border-border/60" style={{ background: IDLE_FILL }} />
             {t('activity.idleOnShift')}
           </span>
           <span className="inline-flex items-center gap-1.5">
-            <span className="h-3 w-3 rounded-sm" style={{ background: `repeating-linear-gradient(45deg, ${amber}66 0 4px, transparent 4px 8px)` }} />
+            <span className="h-3 w-3 rounded-sm" style={{ background: BREAK_SWATCH }} />
             {t('activity.onBreak')}
           </span>
         </div>
@@ -242,8 +255,8 @@ function AgentRow({ agent, hours, halfHours, leftPct, widthPct, minutesOfDay, hh
           return (
             <div
               key={`sh-${i}`}
-              className="absolute inset-y-0 bg-muted/60 border-x border-border/40"
-              style={{ left: `${leftPct(s)}%`, width: `${widthPct(s, e)}%` }}
+              className="absolute inset-y-0 border-x border-border/40"
+              style={{ left: `${leftPct(s)}%`, width: `${widthPct(s, e)}%`, background: IDLE_FILL }}
             />
           );
         })}
@@ -258,23 +271,16 @@ function AgentRow({ agent, hours, halfHours, leftPct, widthPct, minutesOfDay, hh
         ))}
 
         {/* Breaks */}
-        {agent.breaks.map((b, i) => {
-          const s = minutesOfDay(b.start);
-          const e = b.end ? minutesOfDay(b.end) : (nowMin ?? s);
-          if (e <= s) return null;
-          return (
-            <div
-              key={`br-${i}`}
-              className="absolute inset-y-0"
-              style={{
-                left: `${leftPct(s)}%`,
-                width: `${widthPct(s, e)}%`,
-                minWidth: '2px',
-                background: `repeating-linear-gradient(45deg, ${amber}59 0 5px, transparent 5px 10px)`,
-              }}
-            />
-          );
-        })}
+        {agent.breaks.map((b, i) => (
+          <BreakSegment
+            key={`br-${i}`}
+            brk={b}
+            leftPct={leftPct}
+            widthPct={widthPct}
+            minutesOfDay={minutesOfDay}
+            nowMin={nowMin}
+          />
+        ))}
 
         {/* Calls */}
         {agent.calls.map((c) => (
@@ -297,6 +303,52 @@ function AgentRow({ agent, hours, halfHours, leftPct, widthPct, minutesOfDay, hh
         )}
       </div>
     </div>
+  );
+}
+
+interface BreakSegmentProps {
+  brk: { start: string; end: string | null };
+  leftPct: (m: number) => number;
+  widthPct: (a: number, b: number) => number;
+  minutesOfDay: (iso: string) => number;
+  nowMin: number | null;
+}
+
+/**
+ * A pause band. Deliberately the same height/inset/rounding as a call segment
+ * so the row reads as one strip of blocks, and hoverable like one so the
+ * operator can read when the break ran and how long it lasted.
+ */
+function BreakSegment({ brk, leftPct, widthPct, minutesOfDay, nowMin }: BreakSegmentProps) {
+  const { t } = useTranslation();
+  const s = minutesOfDay(brk.start);
+  const live = !brk.end && nowMin != null;
+  const e = brk.end ? minutesOfDay(brk.end) : (nowMin ?? s);
+  if (e <= s) return null;
+
+  return (
+    <Tooltip delayDuration={60}>
+      <TooltipTrigger asChild>
+        <div
+          className="absolute inset-y-1.5 cursor-default rounded-[3px] hover:z-10 hover:ring-2 hover:ring-foreground/25"
+          style={{
+            left: `${leftPct(s)}%`,
+            width: `${widthPct(s, e)}%`,
+            minWidth: '4px',
+            background: BREAK_TRACK,
+          }}
+        />
+      </TooltipTrigger>
+      <TooltipContent side="top" className="text-xs">
+        <div className="font-semibold">{t('activity.onBreak')}</div>
+        <div className="mt-0.5 font-mono text-muted-foreground">
+          {minutesToHHMMSS(s)} → {live ? '…' : minutesToHHMMSS(e)}
+        </div>
+        <div className="mt-0.5">
+          {fmtDur((e - s) * 60)}{live ? ` · ${t('activity.live')}` : ''}
+        </div>
+      </TooltipContent>
+    </Tooltip>
   );
 }
 

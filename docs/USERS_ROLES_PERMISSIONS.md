@@ -9,7 +9,8 @@
 ## 1. Accounts
 
 - **Auth:** Supabase email/password. A user = a row in `auth.users` + a `profiles` row (`full_name`,
-  `email`, `is_active`, `last_seen_at`) auto‑created by the `handle_new_user` trigger on signup.
+  `email`, `is_active`, `language`, `last_seen_at`, `voip_state`, `voip_state_at`) auto‑created by the
+  `handle_new_user` trigger on signup.
 - **Create users:** `POST /users/create` (admin/manager, rate‑limited 10/min) creates the auth user,
   profile, and role(s). UI: [../src/pages/UsersPage.tsx](../src/pages/UsersPage.tsx). Bootstrap script:
   `scripts/create-admin-users.mjs` (the 3 founding admins); `scripts/create-agents-2026-05.mjs` created
@@ -102,9 +103,10 @@ the Dashboard.)
 | Breaks | `shift_breaks` via `POST /shifts/break/start|end`, `GET /shifts/break/active` |
 | Reporting | `GET /shifts/statistics`, `GET /shifts/login-activity` |
 | "Here right now" | `profiles.last_seen_at` via `presence/heartbeat` (45 s while tab visible); `agents/online` uses a 2‑min window |
+| "On a call right now" | `profiles.voip_state` (`idle`, `dialing`, `in_call`, `wrapping`, `ending`) + `profiles.voip_state_at`, reported by the agent's **browser softphone** through the same `POST /presence/heartbeat` (optional `{voip_state}` body; re‑sent on every 45 s beat while non‑idle). `agents/online` + `operations-center` expose `in_call` = online **and** state ∈ {`dialing`,`in_call`} **and** `voip_state_at` younger than 3 min. Migration `20260908000000_profiles_voip_state.sql` |
 
-Shift login is "I'm on shift today"; presence is "my tab is open this minute". Operations Center and
-agents‑online combine both. Pages: [ShiftsManagementPage.tsx](../src/pages/ShiftsManagementPage.tsx) (admin),
+Shift login is "I'm on shift today"; presence is "my tab is open this minute"; softphone state is "I'm on a
+call right now". Operations Center and agents‑online combine all three. Pages: [ShiftsManagementPage.tsx](../src/pages/ShiftsManagementPage.tsx) (admin),
 [MyShiftsPage.tsx](../src/pages/MyShiftsPage.tsx) (agent).
 
 ---

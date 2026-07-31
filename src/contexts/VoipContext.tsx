@@ -2,7 +2,8 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, Re
 import { apiErrorText } from '@/i18n/apiErrors';
 import i18n from '@/i18n';
 import { useAuth } from '@/contexts/AuthContext';
-import { apiLogCall, apiGetVoipCredentials, type CancellationReason, type ConnectionState } from '@/lib/api';
+import { apiLogCall, apiGetVoipCredentials, apiPresenceHeartbeat, type CancellationReason, type ConnectionState } from '@/lib/api';
+import { setBusCallState } from '@/lib/voip/callStateBus';
 import { useToast } from '@/hooks/use-toast';
 import type { CallOutcome } from '@/components/OrderModal';
 import { PBX_CONFIG } from '@/lib/voip/pbxConfig';
@@ -129,6 +130,22 @@ export function VoipProvider({ children }: { children: ReactNode }) {
   // Guards the auto-no_answer effect so a never-connected call is finalized once.
   const autoNoAnswerRef = useRef(false);
 
+  // Report softphone state to the server (profiles.voip_state) so managers see
+  // a live "In call" status on the Assigner/Ops-Center agent cards. The bus is
+  // read by AuthContext's 45s presence beat to keep long calls fresh. The
+  // initial-mount skip is load-bearing: a SECOND CRM tab opened during a live
+  // call must not report 'idle' and clobber the calling tab's state — 'idle'
+  // is only ever written by the tab that actually ends a call.
+  const voipStateReportedRef = useRef(false);
+  useEffect(() => {
+    setBusCallState(state);
+    if (!voipStateReportedRef.current) {
+      voipStateReportedRef.current = true;
+      return;
+    }
+    void apiPresenceHeartbeat({ voip_state: state }).catch(() => {});
+  }, [state]);
+
   // === Real WebRTC Engine (A1 Phase 0) ===
   // When PBX_CONFIG.useRealVoip is true, we use the real SIP.js engine.
   // The interface stays the same so the entire UI (CallsPage, ActiveCallWidget, etc.) is unaffected.
@@ -155,13 +172,17 @@ export function VoipProvider({ children }: { children: ReactNode }) {
 
     realEngineRef.current.onError = (error, context) => {
       console.error(`[VoipContext] RealVoipEngine error (${context}):`, error);
-      if (context === 'congestion' || context === 'call-rejected') {
-        toast({
-          title: context === 'congestion' ? i18n.t('voip.allLinesBusy') : i18n.t('voip.callFailed'),
-          description: apiErrorText(error),
-          variant: 'destructive',
-        });
-      }
+      // Map call-result SIP rejections to accurate, translated toasts. 486/480 are
+      // the CALLEE's phone (busy / switched off) — NOT a shortage of our lines, so
+      // they get a calm info toast, never "all lines busy". 503/600 = real congestion.
+      const toasts: Record<string, { title: string; description: string; variant?: 'default' | 'destructive' }> = {
+        'congestion':         { title: i18n.t('voip.allLinesBusy'),      description: i18n.t('voip.allLinesBusyDesc'),      variant: 'destructive' },
+        'callee-busy':        { title: i18n.t('voip.numberBusy'),        description: i18n.t('voip.numberBusyDesc') },
+        'callee-unavailable': { title: i18n.t('voip.numberUnavailable'), description: i18n.t('voip.numberUnavailableDesc') },
+        'call-rejected':      { title: i18n.t('voip.callFailed'),        description: apiErrorText(error), variant: 'destructive' },
+      };
+      const t = toasts[context];
+      if (t) toast({ title: t.title, description: t.description, variant: t.variant });
     };
   }
 
@@ -188,7 +209,9 @@ export function VoipProvider({ children }: { children: ReactNode }) {
   // (extension + secret) from the backend, inject them, then register. No shared
   // secret is bundled; each logged-in agent registers as their own extension.
   useEffect(() => {
-    if (!PBX_CONFIG.useRealVoip || !realEngineRef.current || !user) return;
+    // External affiliates have no extension and would 403 on the hard wall —
+    // skip the credential fetch so their console stays clean.
+    if (!PBX_CONFIG.useRealVoip || !realEngineRef.current || !user || user.isExternalAffiliate) return;
     let cancelled = false;
     (async () => {
       try {
@@ -335,7 +358,7 @@ export function VoipProvider({ children }: { children: ReactNode }) {
           }
         }
       } catch (err: any) {
-        toast({ title: i18n.t('voip.failedToLog'), description: err?.message || i18n.t('common.unknownError'), variant: 'destructive' });
+        toast({ title: i18n.t('voip.failedToLog'), description: apiErrorText(err), variant: 'destructive' });
       }
     }
     if (ending && !opts?.skipQueueSignal) {

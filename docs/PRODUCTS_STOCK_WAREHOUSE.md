@@ -61,7 +61,27 @@ Rules:
 
 ## 3. Inventory imports (BigArena)
 
-`scripts/import-products-bigarena.mjs` (**idempotent**) pulls the BigArena fulfilment‑panel XLSX and
+**Stock sync from the UI (primary path).** Warehouse → **Inventory** → **BigArena Stock**
+accepts the fulfilment‑panel export (CSV *or* XLSX) straight from BigArena and makes CRM stock
+match the warehouse. Flow: parse client‑side → preview every diff → `POST /api/products/bigarena-stock-sync`.
+
+- CRM `stock_quantity` = **"Свободна наличност" (free)** only. Reserved units are already
+  committed to orders, so they are shown in the preview but never added in.
+- Match order is **SKU → barcode → normalized name**, computed identically on the client
+  (preview) and the server (apply) — the server re‑matches and never trusts a client id.
+- Rows sharing a barcode are **merged by summing** free stock (e.g. `NT0108` + `000982`,
+  barcode `5310416000743`) — same rule as the script.
+- Products in the file but **not in the CRM are only reported**, never created. Add real new
+  ones by hand from Products; most are legacy duplicate SKUs.
+- Every change writes `inventory_logs` with `reason=bigarena_import`,
+  `movement_type=bigarena_sync`, the operator's `user_id` and the file name in `notes`.
+  Visible under Warehouse → Movements, filter "BigArena Sync".
+- Idempotent: re‑uploading the same file reports 0 updated.
+- Roles: admin, manager, warehouse. Rate limited to 5 uploads/min, max 500 rows/upload.
+- Parser + matcher: [`src/lib/bigarenaStock.ts`](../src/lib/bigarenaStock.ts)
+  (unit tests in `bigarenaStock.test.ts`); UI: `src/components/BigArenaStockSync.tsx`.
+
+**CLI fallback.** `scripts/import-products-bigarena.mjs` (**idempotent**) pulls the BigArena fulfilment‑panel XLSX and
 upserts products by SKU (then name fallback), merging duplicate barcodes by **summing** stock. Heuristic:
 **stock > 10 inserts new; stock ≤ 10 updates only.** Every change → `inventory_logs reason=bigarena_import`.
 `scripts/reconcile-panel-pdf.mjs` reconciles the catalogue against a fresh panel PDF. See [IMPORT_EXPORT.md](IMPORT_EXPORT.md).

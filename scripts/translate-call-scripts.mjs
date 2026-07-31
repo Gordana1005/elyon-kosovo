@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // ============================================================================
-// Loads AI-drafted EN + SQ translations of the product Call Scripts into the
-// `call_scripts.translations` jsonb column, for operator review in-app.
+// Loads AI-drafted EN + SQ + MK translations of the product Call Scripts into
+// the `call_scripts.translations` jsonb column, for operator review in-app.
 //
 // The Bulgarian base columns (title/description/script_text/helpers) are the
 // source of truth and are NEVER touched here. We only fill row.translations:

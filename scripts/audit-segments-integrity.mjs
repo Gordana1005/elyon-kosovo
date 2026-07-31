@@ -16,7 +16,7 @@
 //   8. Nightly pg_cron job present + member data fresh (<26h).
 //   9. Nobody parked in Current Cancels longer than the configured window.
 //  10. Current Returns membership exactly matches "newest order is a return".
-//  11. Trashed membership matches "newest order is a wrong-number/person trash".
+//  11. Trash List membership matches "newest order is a trash (any reason)".
 //  12. "Due to Reorder" members are genuinely due (only when reorder is enabled).
 
 import { readFileSync } from 'node:fs';
@@ -37,7 +37,11 @@ function loadEnv() {
 }
 
 const env = loadEnv();
-const ref = env.VITE_SUPABASE_PROJECT_ID || 'sxymaloycddnoxudxaqp';
+// Fail closed: never fall back to a hardcoded ref. This token can write to the
+// Bulgarian project too, so an unset env var must stop the script, not silently
+// retarget it.
+const ref = env.VITE_SUPABASE_PROJECT_ID;
+if (!ref) { console.error('VITE_SUPABASE_PROJECT_ID missing (set it in .env)'); process.exit(1); }
 const token = env.SUPABASE_ACCESS_TOKEN;
 if (!token) { console.error('SUPABASE_ACCESS_TOKEN missing (set it in .env)'); process.exit(1); }
 
@@ -180,14 +184,14 @@ const [d] = await q(`
     ) as returns_violations,
     (select count(*) from
        (select customer_phone, max(created_at) as max_all,
-               max(created_at) filter (where status = 'trashed' and trash_reason in ('wrong_number','wrong_person')) as max_wt
+               max(created_at) filter (where status = 'trashed') as max_t
         from orders where source_type is distinct from 'monadon_legacy'
         group by customer_phone) pd
-     where (pd.max_wt is not null and pd.max_wt = pd.max_all)
+     where (pd.max_t is not null and pd.max_t = pd.max_all)
         is distinct from exists(
           select 1 from prediction_segment_members m
           join prediction_segment_lists l on l.id = m.list_id
-          where l.name = 'Trashed' and m.customer_phone = pd.customer_phone)
+          where l.name = 'Trash List' and m.customer_phone = pd.customer_phone)
     ) as trashed_violations,
     (select max(m.updated_at) from prediction_segment_members m
        join prediction_segment_lists l on l.id = m.list_id and l.is_static = false) as freshest`);
@@ -201,7 +205,7 @@ check('No Monadon phones in calling lists', d.legacy_in_rule_lists === 0 && d.fu
 check('Real Last-order price on paid buckets', d.paid_bucket_zero_price === 0, `${d.paid_bucket_zero_price} zero-price`);
 check(`Nobody parked in Current Cancels > ${cancelsDays}d`, d.cancels_overdue === 0, `${d.cancels_overdue} overdue`);
 check('Current Returns matches "newest order is a return"', d.returns_violations === 0, `${d.returns_violations} mismatches`);
-check('Trashed matches "newest order is wrong-number/person trash"', d.trashed_violations === 0, `${d.trashed_violations} mismatches`);
+check('Trash List matches "newest order is a trash (any reason)"', d.trashed_violations === 0, `${d.trashed_violations} mismatches`);
 
 const freshHours = (Date.now() - new Date(d.freshest).getTime()) / 3600000;
 check('Member data fresh (< 26h)', freshHours < 26, `freshest ${freshHours.toFixed(1)}h ago`);

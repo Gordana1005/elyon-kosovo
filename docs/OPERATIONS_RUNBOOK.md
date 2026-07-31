@@ -11,7 +11,7 @@
 |---|---|---|
 | Frontend | Vercel | project `elyoncrm` (`prj_965V2iBg793RmiJJw9m6Tl3djllX`), org `team_vvGANvn1DSdgZZAIUBkcCSWh` |
 | Domains | Namecheap → Vercel | `elyoncall.com` + `www`; legacy `elyoncrm.vercel.app` |
-| DB + Edge Function + Auth | Supabase | project ref `sxymaloycddnoxudxaqp` |
+| DB + Edge Function + Auth | Supabase | project ref `bmfxhgznttcnnlqloqzp` |
 | PBX | AlphaVPS Sofia | `pbx.elyoncall.com` → `104.152.48.222` |
 | Repo | GitHub (private) | `github.com/Gordana1005/elyoncrm`, default branch `main` |
 
@@ -46,12 +46,12 @@ The function is **not** redeployed by a frontend push — deploy it explicitly a
 ```bash
 # PowerShell — load the access token from .env, then deploy
 $env:SUPABASE_ACCESS_TOKEN = (Select-String '^SUPABASE_ACCESS_TOKEN=' .env).Line.Split('=')[1].Trim('"')
-npx supabase functions deploy api --project-ref sxymaloycddnoxudxaqp
+npx supabase functions deploy api --project-ref bmfxhgznttcnnlqloqzp
 ```
 ```bash
 # bash equivalent
 SUPABASE_ACCESS_TOKEN=$(grep '^SUPABASE_ACCESS_TOKEN=' .env | cut -d= -f2 | tr -d '"') \
-  npx supabase functions deploy api --project-ref sxymaloycddnoxudxaqp
+  npx supabase functions deploy api --project-ref bmfxhgznttcnnlqloqzp
 ```
 > The CLI reads the token from the **environment**, not from `.env` automatically. A stale `supabase login`
 > session for a *different* account causes a 403 ("account does not have the necessary privileges").
@@ -70,8 +70,8 @@ npx supabase gen types typescript --linked > src/integrations/supabase/types.ts
 
 ### Edge‑Function secrets
 ```bash
-npx supabase secrets set WEBHOOK_SECRET=… --project-ref sxymaloycddnoxudxaqp
-npx supabase secrets list --project-ref sxymaloycddnoxudxaqp
+npx supabase secrets set WEBHOOK_SECRET=… --project-ref bmfxhgznttcnnlqloqzp
+npx supabase secrets list --project-ref bmfxhgznttcnnlqloqzp
 ```
 The function also reads `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY` from its env
 (Supabase provides the first two; ensure `SUPABASE_ANON_KEY` and `WEBHOOK_SECRET` are set).
@@ -99,6 +99,28 @@ without blocking. Vercel deploys independently of CI.
 | Smoke test prod | `npm run smoke` |
 
 Full script reference: [IMPORT_EXPORT.md](IMPORT_EXPORT.md).
+
+### Unpaid‑delivery chase (returns prevention)
+
+Every morning between 09:00 and 11:00 Sofia, pg_cron job `unpaid-delivery-chase` reminds each
+agent about their own deliveries that shipped ≥ N days ago and are **still unpaid** (= the client
+has not collected the parcel and it is heading for a return), and gives every superadmin one
+digest. Reminders repeat daily until the order becomes paid/returned or ages past the stop
+threshold. Nothing to run by hand.
+
+**It only knows what the BigArena tracking upload told it.** If that daily upload is skipped,
+collected orders still look unpaid and the counts overstate the problem — the admin digest
+therefore reports how many hours old the last sync was. Alerts are deliberately *not* muted when
+the sync is stale, because muting would hide real returns.
+
+| Task | How |
+|---|---|
+| Retune the window | UI: Settings → **Unpaid Delivery Chase** (admin only). "Remind after" 1–30 days, "Stop reminding after" ≥ that, max 999. Stored in `app_settings`; the job picks it up on the next run — no deploy. |
+| See what would be sent, without sending | `SELECT public.notify_unpaid_shipped_orders(true, true);` → returns the number of agent reminders, writes nothing |
+| Send now (outside the morning window) | `SELECT public.notify_unpaid_shipped_orders(true);` — safe to repeat, one ping per order per day |
+| Did it run? | `SELECT * FROM cron.job_run_details WHERE jobid = (SELECT jobid FROM cron.job WHERE jobname='unpaid-delivery-chase') ORDER BY start_time DESC LIMIT 5;` |
+| What was sent | `SELECT alert_date, count(*) FROM order_unpaid_alerts GROUP BY 1 ORDER BY 1 DESC LIMIT 7;` |
+| **Pause it** | `SELECT cron.unschedule('unpaid-delivery-chase');` — stops everything instantly; the table, column and UI go inert. Re‑enable by re‑running the schedule block in migration `20260905000100`. |
 
 ---
 

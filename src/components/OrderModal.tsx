@@ -41,6 +41,7 @@ import { cleanNoteForDisplay } from '@/lib/notes';
 import { DeliveryMethodPicker, type DeliveryValue } from '@/components/DeliveryMethodPicker';
 import { resolveDeliveryPrefill, composeHomeAddress } from '@/lib/address';
 import { CancellationReasonPicker } from '@/components/CancellationReasonPicker';
+import { cancelReasonRequiresNote } from '@/lib/cancellationReasons';
 import type { CancellationReason } from '@/lib/api';
 import { format } from 'date-fns'; // machine 'yyyy-MM-dd' payloads only
 import { formatDate } from '@/i18n/dates';
@@ -410,6 +411,10 @@ export function OrderModal({ open, onClose, data, contextType, readOnly = false 
           || (selectedStatus === 'cancelled' && data?.status !== 'cancelled'));
     if (needsCancelReason && !cancellationReason) {
       toast({ title: t('orderModal.cancelReasonRequired'), description: t('orderModal.cancelReasonRequiredDesc'), variant: 'destructive' });
+      return;
+    }
+    if (needsCancelReason && cancelReasonRequiresNote(cancellationReason) && !cancellationReasonNotes.trim()) {
+      toast({ title: t('orderModal.cancelNoteRequired'), description: t('orderModal.cancelNoteRequiredDesc'), variant: 'destructive' });
       return;
     }
     // Validate required fields for confirm status

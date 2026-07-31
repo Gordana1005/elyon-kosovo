@@ -152,7 +152,8 @@ tail -f /var/log/httpd/pbx_error.log
 ## Health & Observability (added 2026-06-18)
 
 A superadmin **VOIP Health** page (`/voip-health`) + app-wide alert banner now surface the live
-state of the phone system: server (disk/memory/load), **lines in use vs the 10-line A1 cap**, A1
+state of the phone system: server (disk/memory/load), **lines in use vs the A1 trunk's channel
+cap** (live from the PBX — never hardcode it), A1
 trunk reachability, recording coverage (answered calls with no recording + why), call-quality
 (one-way audio — the "agent couldn't hear the client" symptom), fail2ban bans, recent errors, and
 outbound minutes. It is fed by three PBX-side pieces: a signed live collector

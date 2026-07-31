@@ -1,4 +1,13 @@
 ====================================================================
+!! HISTORICAL DRAFT — SUPERSEDED by docs/telephony/RUNBOOK.md §2 !!
+This was written BEFORE the trunk went live and never matched reality:
+  • "Maximum Channels: 20" was never true (4 → 10 → 25 on 2026-07-27;
+    authoritative value is trunks.maxchans / OUTMAXCHANS_1).
+  • "Registration: Send" is wrong — A1 uses IP authentication, and
+    `pjsip show registrations` correctly reports "No objects found".
+Kept only as a record of the original build sheet. Do not configure
+anything from this file; read the RUNBOOK.
+====================================================================
 A1 BULGARIA SIP TRUNK — what to fill in via FreePBX GUI
    Connectivity → Trunks → Add Trunk → "Add SIP (chan_pjsip) Trunk"
 ====================================================================

@@ -4,6 +4,7 @@
 //   3. TV access — the shareable /tv/leaderboard?key=… link + token rotation
 // The board itself is the separate daily game layer; it does NOT touch payroll.
 import { useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Trophy, Loader2, Copy, RefreshCw, Trash2, Plus, Tv, Users, SlidersHorizontal } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -11,17 +12,20 @@ import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
+import { apiErrorText } from '@/i18n/apiErrors';
 import {
   apiGetAgents,
   apiGetLeaderboardAdmin, apiSetLeaderboardRoster, apiSetLeaderboardRule, apiManageLeaderboardToken,
   type LeaderboardBonusRule, type LeaderboardMetric, type LeaderboardTier, type LeaderboardMode,
 } from '@/lib/api';
 
-const METRIC_META: Record<LeaderboardMetric, { label: string; hint: string; unit: string }> = {
-  confirmed_count: { label: 'Order milestones', hint: 'Bonus by number of confirmed orders today', unit: 'orders' },
-  avg_order_value: { label: 'Average order value', hint: 'Bonus by avg order €. Applies ONLY to agents with 10+ orders.', unit: '€' },
-  conversion_rate: { label: 'Conversion (unused)', hint: 'Not used for bonus', unit: '%' },
-  revenue_target: { label: 'Team daily revenue targets', hint: 'Bonus when the TEAM’s combined daily revenue crosses each target (€) — shared by every active agent.', unit: '€' },
+// Labels/hints resolved at render via t(); `unit` stays a raw discriminator
+// (never shown as-is) that picks which tier-column header to render.
+const METRIC_META: Record<LeaderboardMetric, { labelKey: string; hintKey: string; unit: string }> = {
+  confirmed_count: { labelKey: 'settings.lbMetricConfirmed', hintKey: 'settings.lbMetricConfirmedHint', unit: 'orders' },
+  avg_order_value: { labelKey: 'settings.lbMetricAvgOrder', hintKey: 'settings.lbMetricAvgOrderHint', unit: '€' },
+  conversion_rate: { labelKey: 'settings.lbMetricConversion', hintKey: 'settings.lbMetricConversionHint', unit: '%' },
+  revenue_target: { labelKey: 'settings.lbMetricRevenueTarget', hintKey: 'settings.lbMetricRevenueTargetHint', unit: '€' },
 };
 // Which bonus metrics each motion uses (per-package commission is automatic on both).
 const METRICS_BY_MODE: Record<LeaderboardMode, LeaderboardMetric[]> = {
@@ -29,9 +33,13 @@ const METRICS_BY_MODE: Record<LeaderboardMode, LeaderboardMetric[]> = {
   pending: ['confirmed_count', 'avg_order_value'],
 };
 
+const modeLabelKey = (m: LeaderboardMode) =>
+  m === 'prediction' ? 'settings.lbModePrediction' : 'settings.lbModePending';
+
 interface AgentRow { user_id: string; full_name: string; email: string; roles: string[] }
 
 export function LeaderboardTab() {
+  const { t } = useTranslation();
   const { toast } = useToast();
   const qc = useQueryClient();
   const [mode, setMode] = useState<LeaderboardMode>('prediction');
@@ -52,23 +60,20 @@ export function LeaderboardTab() {
       <div className="flex items-start justify-between">
         <div>
           <h2 className="text-lg font-semibold flex items-center gap-2">
-            <Trophy className="h-4 w-4 text-primary" /> Live TV Leaderboard
+            <Trophy className="h-4 w-4 text-primary" /> {t('settings.lbTitle')}
           </h2>
-          <p className="text-sm text-muted-foreground">
-            Two boards: <strong>Prediction</strong> (cold lists → daily revenue targets) and <strong>Pending</strong>
-            (warm orders → conversion). Neither affects the real paid commission.
-          </p>
+          <p className="text-sm text-muted-foreground">{t('settings.lbDesc')}</p>
         </div>
         <div className="flex shrink-0 rounded-lg border bg-muted/40 p-1">
-          <Button variant={mode === 'prediction' ? 'default' : 'ghost'} size="sm" onClick={() => setMode('prediction')}>Prediction</Button>
-          <Button variant={mode === 'pending' ? 'default' : 'ghost'} size="sm" onClick={() => setMode('pending')}>Pending</Button>
+          <Button variant={mode === 'prediction' ? 'default' : 'ghost'} size="sm" onClick={() => setMode('prediction')}>{t('settings.lbModePrediction')}</Button>
+          <Button variant={mode === 'pending' ? 'default' : 'ghost'} size="sm" onClick={() => setMode('pending')}>{t('settings.lbModePending')}</Button>
         </div>
       </div>
 
       {(cfgQ.isLoading || agentsQ.isLoading) ? (
-        <div className="flex items-center gap-2 py-10 text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Loading…</div>
+        <div className="flex items-center gap-2 py-10 text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> {t('common.loading')}</div>
       ) : cfgQ.error ? (
-        <div className="py-10 text-destructive">Failed to load leaderboard settings.</div>
+        <div className="py-10 text-destructive">{t('settings.lbLoadFailed')}</div>
       ) : (
         <>
           <RosterSection mode={mode} agents={agents} roster={cfgQ.data!.roster} day={cfgQ.data!.roster_date}
@@ -85,6 +90,7 @@ export function LeaderboardTab() {
 function RosterSection({ mode, agents, roster, day, onSaved, toast }: {
   mode: LeaderboardMode; agents: AgentRow[]; roster: string[]; day: string; onSaved: () => void; toast: any;
 }) {
+  const { t } = useTranslation();
   const [selected, setSelected] = useState<Set<string>>(new Set(roster));
   const [saving, setSaving] = useState(false);
   useEffect(() => { setSelected(new Set(roster)); }, [roster]);
@@ -99,10 +105,13 @@ function RosterSection({ mode, agents, roster, day, onSaved, toast }: {
     setSaving(true);
     try {
       await apiSetLeaderboardRoster(mode, [...selected]);
-      toast({ title: 'Roster saved', description: `${selected.size} agent(s) on today's ${mode} board.` });
+      toast({
+        title: t('settings.lbRosterSaved'),
+        description: t('settings.lbRosterSavedDesc', { n: selected.size, mode: t(modeLabelKey(mode)) }),
+      });
       onSaved();
     } catch (e: any) {
-      toast({ title: 'Save failed', description: e?.message || 'Unknown error', variant: 'destructive' });
+      toast({ title: t('settings.lbSaveFailed'), description: apiErrorText(e), variant: 'destructive' });
     } finally { setSaving(false); }
   };
 
@@ -110,13 +119,13 @@ function RosterSection({ mode, agents, roster, day, onSaved, toast }: {
     <section className="space-y-3">
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="font-medium flex items-center gap-2"><Users className="h-4 w-4 text-primary" /> Today's {mode} roster <span className="text-xs text-muted-foreground">({day})</span></h3>
-          <p className="text-sm text-muted-foreground">Only the selected agents appear on the {mode} board today. Leave empty to auto-show everyone active.</p>
+          <h3 className="font-medium flex items-center gap-2"><Users className="h-4 w-4 text-primary" /> {t('settings.lbRosterTitle', { mode: t(modeLabelKey(mode)) })} <span className="text-xs text-muted-foreground">({day})</span></h3>
+          <p className="text-sm text-muted-foreground">{t('settings.lbRosterDesc', { mode: t(modeLabelKey(mode)) })}</p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => setSelected(new Set(agents.map((a) => a.user_id)))}>All</Button>
-          <Button variant="outline" size="sm" onClick={() => setSelected(new Set())}>None</Button>
-          <Button size="sm" onClick={save} disabled={saving}>{saving && <Loader2 className="h-4 w-4 animate-spin mr-1" />}Save roster</Button>
+          <Button variant="outline" size="sm" onClick={() => setSelected(new Set(agents.map((a) => a.user_id)))}>{t('common.all')}</Button>
+          <Button variant="outline" size="sm" onClick={() => setSelected(new Set())}>{t('settings.lbNone')}</Button>
+          <Button size="sm" onClick={save} disabled={saving}>{saving && <Loader2 className="h-4 w-4 animate-spin mr-1" />}{t('settings.lbSaveRoster')}</Button>
         </div>
       </div>
       <div className="grid grid-cols-2 gap-2 md:grid-cols-3">
@@ -130,7 +139,7 @@ function RosterSection({ mode, agents, roster, day, onSaved, toast }: {
             </button>
           );
         })}
-        {agents.length === 0 && <div className="col-span-full py-6 text-center text-sm text-muted-foreground">No call agents found.</div>}
+        {agents.length === 0 && <div className="col-span-full py-6 text-center text-sm text-muted-foreground">{t('settings.lbNoAgents')}</div>}
       </div>
     </section>
   );
@@ -138,14 +147,13 @@ function RosterSection({ mode, agents, roster, day, onSaved, toast }: {
 
 // ── 2. Bonus rules ───────────────────────────────────────────────────────────
 function RulesSection({ mode, rules, onSaved, toast }: { mode: LeaderboardMode; rules: LeaderboardBonusRule[]; onSaved: () => void; toast: any }) {
-  const desc = mode === 'prediction'
-    ? <>Total = automatic <strong>per-package commission</strong> (€1/€2/€3 per package, reversed on returns) <strong>plus</strong> a shared <strong>team-target</strong> bonus: when the whole team's combined daily revenue crosses a target, <strong>every active agent</strong> earns that tier. No conversion/avg bonus — cold lists can't aim for %.</>
-    : <>Total = automatic <strong>per-package commission</strong> (€1/€2/€3 per package, reversed on returns) <strong>plus</strong> these milestone bonuses (highest tier reached). The average-order bonus only applies to agents with <strong>10+ orders</strong>.</>;
+  const { t } = useTranslation();
+  const desc = mode === 'prediction' ? t('settings.lbRulesDescPrediction') : t('settings.lbRulesDescPending');
   const metrics = METRICS_BY_MODE[mode];
   return (
     <section className="space-y-3">
       <div>
-        <h3 className="font-medium flex items-center gap-2"><SlidersHorizontal className="h-4 w-4 text-primary" /> {mode === 'prediction' ? 'Revenue targets' : 'Daily bonus tiers'}</h3>
+        <h3 className="font-medium flex items-center gap-2"><SlidersHorizontal className="h-4 w-4 text-primary" /> {mode === 'prediction' ? t('settings.lbRevenueTargets') : t('settings.lbBonusTiers')}</h3>
         <p className="text-sm text-muted-foreground">{desc}</p>
       </div>
       <div className={`grid gap-3 ${metrics.length > 1 ? 'lg:grid-cols-2' : ''}`}>
@@ -159,6 +167,7 @@ function RulesSection({ mode, rules, onSaved, toast }: { mode: LeaderboardMode; 
 }
 
 function RuleCard({ mode, rule, onSaved, toast }: { mode: LeaderboardMode; rule: LeaderboardBonusRule; onSaved: () => void; toast: any }) {
+  const { t } = useTranslation();
   const meta = METRIC_META[rule.metric];
   const [tiers, setTiers] = useState<LeaderboardTier[]>(rule.tiers);
   const [active, setActive] = useState<boolean>(rule.is_active);
@@ -166,7 +175,7 @@ function RuleCard({ mode, rule, onSaved, toast }: { mode: LeaderboardMode; rule:
   useEffect(() => { setTiers(rule.tiers); setActive(rule.is_active); }, [rule]);
 
   const upd = (i: number, field: 'min' | 'bonus', v: string) =>
-    setTiers((prev) => prev.map((t, idx) => idx === i ? { ...t, [field]: Number(v) || 0 } : t));
+    setTiers((prev) => prev.map((tier, idx) => idx === i ? { ...tier, [field]: Number(v) || 0 } : tier));
   const addTier = () => setTiers((prev) => [...prev, { min: 0, bonus: 0 }]);
   const delTier = (i: number) => setTiers((prev) => prev.filter((_, idx) => idx !== i));
 
@@ -175,10 +184,10 @@ function RuleCard({ mode, rule, onSaved, toast }: { mode: LeaderboardMode; rule:
     try {
       const sorted = [...tiers].sort((a, b) => a.min - b.min);
       await apiSetLeaderboardRule(mode, { metric: rule.metric, tiers: sorted, is_active: active });
-      toast({ title: 'Saved', description: meta.label });
+      toast({ title: t('common.saved'), description: t(meta.labelKey) });
       onSaved();
     } catch (e: any) {
-      toast({ title: 'Save failed', description: e?.message || 'Unknown error', variant: 'destructive' });
+      toast({ title: t('settings.lbSaveFailed'), description: apiErrorText(e), variant: 'destructive' });
     } finally { setSaving(false); }
   };
 
@@ -186,27 +195,27 @@ function RuleCard({ mode, rule, onSaved, toast }: { mode: LeaderboardMode; rule:
     <div className={`rounded-lg border bg-card p-3 ${active ? '' : 'opacity-60'}`}>
       <div className="mb-2 flex items-center justify-between">
         <div>
-          <div className="font-medium text-sm">{meta.label}</div>
-          <div className="text-xs text-muted-foreground">{meta.hint}</div>
+          <div className="font-medium text-sm">{t(meta.labelKey)}</div>
+          <div className="text-xs text-muted-foreground">{t(meta.hintKey)}</div>
         </div>
         <Switch checked={active} onCheckedChange={setActive} />
       </div>
       <div className="space-y-1.5">
         <div className="grid grid-cols-[1fr_1fr_auto] gap-1.5 text-[11px] uppercase tracking-wide text-muted-foreground">
-          <span>≥ {meta.unit === '€' ? 'value (€)' : meta.unit === '%' ? 'rate (%)' : meta.unit}</span>
-          <span>bonus (€)</span><span />
+          <span>{meta.unit === '€' ? t('settings.lbColMinValue') : meta.unit === '%' ? t('settings.lbColMinRate') : t('settings.lbColMinOrders')}</span>
+          <span>{t('settings.lbColBonus')}</span><span />
         </div>
-        {tiers.map((t, i) => (
+        {tiers.map((tier, i) => (
           <div key={i} className="grid grid-cols-[1fr_1fr_auto] gap-1.5">
-            <Input type="number" value={t.min} onChange={(e) => upd(i, 'min', e.target.value)} className="h-8" />
-            <Input type="number" value={t.bonus} onChange={(e) => upd(i, 'bonus', e.target.value)} className="h-8" />
+            <Input type="number" value={tier.min} onChange={(e) => upd(i, 'min', e.target.value)} className="h-8" />
+            <Input type="number" value={tier.bonus} onChange={(e) => upd(i, 'bonus', e.target.value)} className="h-8" />
             <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => delTier(i)}><Trash2 className="h-4 w-4" /></Button>
           </div>
         ))}
-        <Button variant="outline" size="sm" className="w-full" onClick={addTier}><Plus className="h-4 w-4 mr-1" /> Add tier</Button>
+        <Button variant="outline" size="sm" className="w-full" onClick={addTier}><Plus className="h-4 w-4 mr-1" /> {t('settings.lbAddTier')}</Button>
       </div>
       <Button size="sm" className="mt-3 w-full" onClick={save} disabled={saving}>
-        {saving && <Loader2 className="h-4 w-4 animate-spin mr-1" />}Save
+        {saving && <Loader2 className="h-4 w-4 animate-spin mr-1" />}{t('common.save')}
       </Button>
     </div>
   );
@@ -214,45 +223,46 @@ function RuleCard({ mode, rule, onSaved, toast }: { mode: LeaderboardMode; rule:
 
 // ── 3. TV access tokens ──────────────────────────────────────────────────────
 function TokensSection({ tokens, onChanged, toast }: { tokens: any[]; onChanged: () => void; toast: any }) {
+  const { t } = useTranslation();
   const [busy, setBusy] = useState(false);
   const origin = typeof window !== 'undefined' ? window.location.origin : '';
 
   const act = async (body: Parameters<typeof apiManageLeaderboardToken>[0]) => {
     setBusy(true);
     try { await apiManageLeaderboardToken(body); onChanged(); }
-    catch (e: any) { toast({ title: 'Failed', description: e?.message || 'Unknown error', variant: 'destructive' }); }
+    catch (e: any) { toast({ title: t('settings.lbActionFailed'), description: apiErrorText(e), variant: 'destructive' }); }
     finally { setBusy(false); }
   };
-  const copy = (url: string) => { navigator.clipboard?.writeText(url); toast({ title: 'Copied', description: 'TV link copied to clipboard.' }); };
+  const copy = (url: string) => { navigator.clipboard?.writeText(url); toast({ title: t('settings.lbCopied'), description: t('settings.lbCopiedDesc') }); };
 
-  const active = tokens.filter((t) => t.is_active);
+  const active = tokens.filter((tok) => tok.is_active);
 
   return (
     <section className="space-y-3">
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="font-medium flex items-center gap-2"><Tv className="h-4 w-4 text-primary" /> TV access link</h3>
-          <p className="text-sm text-muted-foreground">Open this URL on the office TV (no login needed). Rotate to instantly invalidate the old link.</p>
+          <h3 className="font-medium flex items-center gap-2"><Tv className="h-4 w-4 text-primary" /> {t('settings.lbTvLink')}</h3>
+          <p className="text-sm text-muted-foreground">{t('settings.lbTvLinkDesc')}</p>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={() => act({ action: 'rotate', label: 'Office TV' })} disabled={busy}>
-            <RefreshCw className="h-4 w-4 mr-1" /> Rotate
+            <RefreshCw className="h-4 w-4 mr-1" /> {t('settings.lbRotate')}
           </Button>
           <Button size="sm" onClick={() => act({ action: 'create', label: 'TV' })} disabled={busy}>
-            <Plus className="h-4 w-4 mr-1" /> New link
+            <Plus className="h-4 w-4 mr-1" /> {t('settings.lbNewLink')}
           </Button>
         </div>
       </div>
       <div className="space-y-2">
-        {active.length === 0 && <div className="rounded-lg border bg-card p-4 text-sm text-muted-foreground">No active link. Create one above.</div>}
-        {active.map((t) => {
-          const url = `${origin}/tv/leaderboard?key=${t.token}`;
+        {active.length === 0 && <div className="rounded-lg border bg-card p-4 text-sm text-muted-foreground">{t('settings.lbNoLink')}</div>}
+        {active.map((tok) => {
+          const url = `${origin}/tv/leaderboard?key=${tok.token}`;
           return (
-            <div key={t.id} className="flex items-center gap-2 rounded-lg border bg-card p-2">
-              <Badge variant="secondary" className="shrink-0">{t.label || 'TV'}</Badge>
+            <div key={tok.id} className="flex items-center gap-2 rounded-lg border bg-card p-2">
+              <Badge variant="secondary" className="shrink-0">{tok.label || 'TV'}</Badge>
               <Input readOnly value={url} className="h-8 font-mono text-xs" onFocus={(e) => e.currentTarget.select()} />
               <Button variant="outline" size="icon" className="h-8 w-8 shrink-0" onClick={() => copy(url)}><Copy className="h-4 w-4" /></Button>
-              <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => act({ action: 'revoke', id: t.id })} disabled={busy}><Trash2 className="h-4 w-4" /></Button>
+              <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => act({ action: 'revoke', id: tok.id })} disabled={busy}><Trash2 className="h-4 w-4" /></Button>
             </div>
           );
         })}

@@ -1,17 +1,18 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { EmptyState } from '@/components/EmptyState';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { formatDate, formatDistanceToNow } from '@/i18n/dates';
-import { Lock, AlertTriangle, ArrowRight, Phone, Loader2, Plus, Users } from 'lucide-react';
+import { Lock, AlertTriangle, ArrowRight, Phone, Loader2, Plus, Users, UserSearch } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { AppLayout } from '@/layouts/AppLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useAuth } from '@/contexts/AuthContext';
 import {
-  apiGetMyPersonalHolds, apiGetExpiringHolds,
+  apiGetMyPersonalHolds, apiGetExpiringHolds, apiGetAllPersonalHolds, apiGetAgents,
   apiReleasePersonalHold, apiExtendPersonalHold, apiGetAppSettings,
   type PersonalHold,
 } from '@/lib/api';
@@ -55,10 +56,16 @@ export default function PersonalListPage() {
                 <AlertTriangle className="h-3.5 w-3.5" /> {t('personalListPage.expiringReview')}
               </TabsTrigger>
             )}
+            {isAdminOrManager && (
+              <TabsTrigger value="agents" className="gap-1.5">
+                <UserSearch className="h-3.5 w-3.5" /> {t('personalListPage.agentsLists')}
+              </TabsTrigger>
+            )}
           </TabsList>
 
           <TabsContent value="mine"><MyHoldsTab /></TabsContent>
           {isAdminOrManager && <TabsContent value="expiring"><ExpiringTab /></TabsContent>}
+          {isAdminOrManager && <TabsContent value="agents"><AgentsListsTab /></TabsContent>}
         </Tabs>
       </div>
     </AppLayout>
@@ -122,6 +129,100 @@ function ExpiringTab() {
   );
 }
 
+function AgentsListsTab() {
+  const { t } = useTranslation();
+  const [selectedAgent, setSelectedAgent] = useState('');
+
+  const { data: agents } = useQuery({
+    queryKey: ['agents'],
+    queryFn: apiGetAgents,
+    staleTime: 5 * 60_000,
+  });
+  const { data: allHolds, isLoading } = useQuery({
+    queryKey: ['all-personal-holds'],
+    queryFn: apiGetAllPersonalHolds,
+  });
+
+  // Group every active hold under the agent that owns it.
+  const byAgent = useMemo(() => {
+    const m = new Map<string, PersonalHold[]>();
+    for (const h of allHolds ?? []) {
+      const arr = m.get(h.agent_id);
+      if (arr) arr.push(h); else m.set(h.agent_id, [h]);
+    }
+    return m;
+  }, [allHolds]);
+
+  // Full roster (with per-agent counts) + any agent that owns holds but is
+  // missing from the roster (deactivated / other role) so no held customer is
+  // ever hidden. Sorted most-held first, then by name.
+  const roster = useMemo(() => {
+    const rows: { user_id: string; name: string; count: number }[] = [];
+    const seen = new Set<string>();
+    for (const a of (agents ?? []) as Array<{ user_id: string; full_name: string }>) {
+      rows.push({ user_id: a.user_id, name: a.full_name, count: byAgent.get(a.user_id)?.length ?? 0 });
+      seen.add(a.user_id);
+    }
+    for (const [aid, hs] of byAgent) {
+      if (!seen.has(aid)) rows.push({ user_id: aid, name: hs[0]?.agent_name ?? aid, count: hs.length });
+    }
+    return rows.sort((x, y) => y.count - x.count || x.name.localeCompare(y.name));
+  }, [agents, byAgent]);
+
+  const totalCustomers = allHolds?.length ?? 0;
+  const activeAgents = useMemo(() => roster.filter(r => r.count > 0).length, [roster]);
+  const selectedHolds = selectedAgent ? (byAgent.get(selectedAgent) ?? []) : [];
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <UserSearch className="h-4 w-4" /> {t('personalListPage.agentsLists')}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="px-3 sm:px-6 space-y-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <Select value={selectedAgent} onValueChange={setSelectedAgent}>
+            <SelectTrigger className="w-64 h-9 text-sm rounded-lg">
+              <SelectValue placeholder={t('personalListPage.selectAgent')} />
+            </SelectTrigger>
+            <SelectContent>
+              {roster.map(a => (
+                <SelectItem key={a.user_id} value={a.user_id}>
+                  <span className="flex items-center gap-2">
+                    {a.name}
+                    <span className="text-[10px] text-muted-foreground">· {a.count}</span>
+                  </span>
+                </SelectItem>
+              ))}
+              {roster.length === 0 && <SelectItem value="__none" disabled>—</SelectItem>}
+            </SelectContent>
+          </Select>
+          {totalCustomers > 0 && (
+            <span className="text-xs text-muted-foreground">
+              {t('personalListPage.agentsSummary', { agents: activeAgents, customers: totalCustomers })}
+            </span>
+          )}
+        </div>
+
+        {isLoading ? (
+          <div className="text-sm text-muted-foreground py-4">{t('common.loading')}</div>
+        ) : !selectedAgent ? (
+          <EmptyState
+            title={t('personalListPage.selectAgent')}
+            description={t('personalListPage.pickAgentPrompt')}
+            size="sm"
+          />
+        ) : selectedHolds.length === 0 ? (
+          <EmptyState title={t('personalListPage.agentNoHolds')} size="sm" />
+        ) : (
+          <HoldsTable holds={selectedHolds} mode="admin" />
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 function HoldsTable({ holds, mode }: { holds: PersonalHold[]; mode: 'mine' | 'admin' }) {
   const { t } = useTranslation();
   const { toast } = useToast();
@@ -132,6 +233,7 @@ function HoldsTable({ holds, mode }: { holds: PersonalHold[]; mode: 'mine' | 'ad
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ['my-personal-holds'] });
     qc.invalidateQueries({ queryKey: ['expiring-personal-holds'] });
+    qc.invalidateQueries({ queryKey: ['all-personal-holds'] });
     qc.invalidateQueries({ queryKey: ['expiring-holds-count'] });
     qc.invalidateQueries({ queryKey: ['personal-hold'] });
   };

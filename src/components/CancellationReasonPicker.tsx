@@ -3,7 +3,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
 import type { CancellationReason } from '@/lib/api';
-import { getCancelReasonOptions } from '@/lib/cancellationReasons';
+import { getCancelReasonOptions, cancelReasonRequiresNote } from '@/lib/cancellationReasons';
 
 interface Props {
   value: CancellationReason | null;
@@ -17,6 +17,7 @@ interface Props {
 export function CancellationReasonPicker({ value, notes, onChange, onNotesChange, className, disabled }: Props) {
   const { t } = useTranslation();
   const reasons = getCancelReasonOptions();
+  const requireNote = cancelReasonRequiresNote(value);
   return (
     <div className={cn('space-y-2', className)}>
       <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
@@ -44,12 +45,13 @@ export function CancellationReasonPicker({ value, notes, onChange, onNotesChange
       <div>
         <Label htmlFor="cancel-notes" className="text-[11px] text-muted-foreground">
           {t('cancelPicker.customerSaidLabel')}
+          {requireNote && <span className="text-rose-600"> *</span>}
         </Label>
         <Textarea
           id="cancel-notes"
           value={notes}
           onChange={e => onNotesChange(e.target.value)}
-          placeholder={t('cancelPicker.notesPlaceholder')}
+          placeholder={requireNote ? t('cancelPicker.otherRequiredPlaceholder') : t('cancelPicker.notesPlaceholder')}
           maxLength={1000}
           disabled={disabled}
           className="mt-1 min-h-[60px] text-xs"

@@ -30,7 +30,11 @@ function loadEnv() {
 }
 
 const env = loadEnv();
-const ref = env.VITE_SUPABASE_PROJECT_ID || 'sxymaloycddnoxudxaqp';
+// Fail closed: never fall back to a hardcoded ref. This token can write to the
+// Bulgarian project too, so an unset env var must stop the script, not silently
+// retarget it.
+const ref = env.VITE_SUPABASE_PROJECT_ID;
+if (!ref) { console.error('VITE_SUPABASE_PROJECT_ID missing (set it in .env)'); process.exit(1); }
 const token = env.SUPABASE_ACCESS_TOKEN;
 if (!token) { console.error('SUPABASE_ACCESS_TOKEN missing (set it in .env)'); process.exit(1); }
 
@@ -53,10 +57,10 @@ if (!exists?.ok) {
 }
 
 // Compare only ENGINE-MANAGED lists. The engine writes is_static=false lists plus
-// the additive static lists Trashed / Due to Reorder; it never touches the
+// the additive static lists Trash List / Due to Reorder; it never touches the
 // externally-imported static lists (FULL MONAD LIST, Cancelled Pendings), which
 // therefore exist in live but not in the fresh shadow table — not a discrepancy.
-const ENGINE = `(l.is_static = false OR l.name IN ('Trashed','Due to Reorder'))`;
+const ENGINE = `(l.is_static = false OR l.name IN ('Trash List','Due to Reorder'))`;
 const [tot] = await q(`
   select
     (select count(*) from prediction_segment_members m join prediction_segment_lists l on l.id=m.list_id where ${ENGINE}) as live_total,

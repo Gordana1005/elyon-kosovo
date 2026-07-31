@@ -1,6 +1,6 @@
 # How the Prediction Segments System Works Now (Engine v3 — 2026-06-10)
 
-**Purpose**: the single operator-friendly explanation of the live engine. Everything below was verified against the production database on 2026-06-10 after the v3 repair (`supabase/migrations/20260629000000_restore_segment_engine_v3.sql`).
+**Purpose**: the single operator-friendly explanation of the live engine. Everything below was verified against the production database on 2026-06-10 after the v3 repair (`supabase/migrations/20260629000000_restore_segment_engine_v3.sql`). *Revised 2026-07-28: added the "Manual Unassign" section (full-detach semantics); the engine itself is unchanged.*
 
 > **Non-technical?** Read the plain-words version first: [PREDICTION_LISTS_PLAIN_GUIDE.md](PREDICTION_LISTS_PLAIN_GUIDE.md) — written for agents, managers and new team members.
 
@@ -63,6 +63,21 @@ Final list name = `recency + ' ' + value + ' ' + frequency`, e.g. **"4-6m 26+ (3
 - `paid_count`, `lifetime_value`, `avg_package_price` (= lifetime / paid_count, EUR — display always via `src/lib/currency.ts` helpers, dual EUR/LEV).
 - `assigned_agent_*`, `last_call_*`, `is_completed`, `in_call_again_until`, `call_again_since` — **agent work survives band moves** (the engine carries it onto the new row). A NEW purchase resets `is_completed`/call-again (fresh lifecycle). Moving into **"Current Cancels" or any "NEWCOMERS" list always strips the carried-over assignment** (both are unassigned holding pens) — a fresh buyer is never auto-assigned; only a manager's deliberate assignment sticks, and it follows them forward when they later age into the `21d` band (engine v3.1, 2026-06-18).
 
+## Manual Unassign (manager-driven — not the engine)
+
+Besides the two holding pens above, the **only** other way `assigned_agent_*` is cleared is a deliberate manager action. Every path nulls exactly three columns — `assigned_agent_id`, `assigned_agent_name`, `assigned_at` — and nothing else. `is_completed`, `last_call_*`, `in_call_again_until`, `call_logs`, recordings and sales credit (`confirmed_by_*`) always survive.
+
+| Path | Scope | Clears already-called (`is_completed=true`) rows? |
+|---|---|---|
+| `POST /assigner/unassign-all` — default | one agent or all agents, optionally narrowed by `list_ids` | **No** (frees only `is_completed=false`) — original 2026-07-22 contract, still the API default |
+| `POST /assigner/unassign-all` with `include_done: true` | same | **Yes** — the Assigner's Unassign tab always sends this (2026-07-28) |
+| `POST /segments/:id/bulk-unassign` | one list (`scope='all'` or one agent) | **Yes** (never had an `is_completed` filter) |
+| `POST /segments/:id/assign` with `agent_id: null` | specific phones | **Yes** — powers the per-client unassign in the Unassign tab |
+
+Why `include_done` exists: there is **no list→agent table**. "Agent X holds list Y" is derived from member rows via `assignment_matrix()`, so a single leftover already-called row kept an otherwise-empty list glued to the agent's profile. Clearing done rows is what makes the pair disappear.
+
+A manual unassign is **not** a recompute: the nightly job will not put the agent back. The customer simply sits unassigned in the same list until someone distributes them again.
+
 ## When Recompute Runs
 
 1. **Instantly** on every order INSERT / DELETE / UPDATE of status, price or phone (triggers `trg_orders_segments_*` on `orders`).
@@ -71,10 +86,15 @@ Final list name = `recency + ' ' + value + ' ' + frequency`, e.g. **"4-6m 26+ (3
 
 The Prediction Lists page header shows **"Engine data as of …"** (max member `updated_at`) so you can always see the engine is alive.
 
-## Static Lists (the engine never touches these)
+## Static Lists
 
+**Externally-imported (the engine never touches these):**
 - **Cancelled Pendings** — hand-curated callback list.
 - **FULL MONAD LIST** — the 1,555 imported Monadon customers with their legacy product info. Monadon orders (`source_type='monadon_legacy'`) are excluded from paid_count, lifetime, recency, name detection — everything.
+
+**Engine-written additive statics (`is_static=true`, but the engine maintains membership):**
+- **Trash List** (engine v3.5, 2026-07-07; renamed from "Trashed") — every customer whose **newest order was trashed, for ANY reason**, with a **Reason** column (`trigger_trash_reason`: wrong number / wrong person / **unreachable** / rude / uncooperative / other). UNASSIGNED, informational, self-cleaning. Dead-number reasons (wrong number / wrong person / unreachable) are also removed from every calling list; other reasons stay callable but still show here. `not_reachable` ("Unreachable") is set both by an agent's manual pick and by the server auto-trash after 9 consecutive no-answers (see docs/CALLS.md §5b).
+- **Current Returns** — newest order is a return (see above).
 
 ## Health Check (run any time)
 

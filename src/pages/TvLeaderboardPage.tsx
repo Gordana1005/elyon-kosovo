@@ -6,8 +6,11 @@
 // switcher lets you review previous days. EUR-only.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { ChevronLeft, ChevronRight, Trophy, Maximize2, Minimize2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
+import i18n, { SUPPORTED_LANGUAGES } from '@/i18n';
+import { formatDate } from '@/i18n/dates';
 import { apiGetLeaderboard, type LeaderboardResponse, type LeaderboardRow, type LeaderboardMode } from '@/lib/api';
 import { formatEur } from '@/lib/currency';
 
@@ -20,12 +23,14 @@ const addDays = (ymd: string, delta: number) => {
   return new Date(Date.UTC(y, m - 1, d + delta)).toISOString().slice(0, 10);
 };
 
+// Module-level, so it reaches for the i18n singleton directly. The page itself
+// subscribes via useTranslation(), so a language switch re-renders and re-calls it.
 function dayLabel(day: string, offset: number) {
-  if (offset === 0) return 'Today';
-  if (offset === 1) return 'Yesterday';
+  if (offset === 0) return i18n.t('tvBoard.today');
+  if (offset === 1) return i18n.t('tvBoard.yesterday');
   const [y, m, d] = day.split('-').map(Number);
-  const dt = new Date(Date.UTC(y, m - 1, d));
-  return dt.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
+  // Local midnight (not UTC) so the weekday never slips a day on a TV west of UTC.
+  return formatDate(new Date(y, m - 1, d), 'EEE d MMM');
 }
 
 function initials(name: string) {
@@ -65,8 +70,18 @@ const rankAccent: Record<number, string> = {
 };
 
 export default function TvLeaderboardPage() {
+  const { t } = useTranslation();
   const [params] = useSearchParams();
   const key = params.get('key') || '';
+  const langParam = params.get('lang') || '';
+
+  // Public board — no login, so there is no profiles.language to read. ?lang=bg
+  // pins the board's language per TV; without it the localStorage default wins.
+  useEffect(() => {
+    if (langParam && (SUPPORTED_LANGUAGES as string[]).includes(langParam) && i18n.language !== langParam) {
+      void i18n.changeLanguage(langParam);
+    }
+  }, [langParam]);
 
   // Mode is seeded from ?mode= (so a TV can be pinned) but also togglable on screen.
   const [mode, setMode] = useState<LeaderboardMode>(params.get('mode') === 'pending' ? 'pending' : 'prediction');
@@ -93,7 +108,7 @@ export default function TvLeaderboardPage() {
   const celebrateTimer = useRef<number | null>(null);
 
   const load = useCallback(async (ofs: number) => {
-    if (!key) { setError('Missing access key'); setLoading(false); return; }
+    if (!key) { setError(i18n.t('tvBoard.missingKey')); setLoading(false); return; }
     try {
       const reqDay = ofs > 0 && anchorRef.current ? addDays(anchorRef.current, -ofs) : undefined;
       const res = await apiGetLeaderboard(key, reqDay, mode);
@@ -101,7 +116,7 @@ export default function TvLeaderboardPage() {
       setData(res);
       setError(null);
     } catch (e: any) {
-      setError(e?.message || 'Failed to load');
+      setError(e?.message || i18n.t('tvBoard.loadFailed'));
     } finally {
       setLoading(false);
     }
@@ -201,15 +216,18 @@ export default function TvLeaderboardPage() {
         <div className="flex items-center gap-[1.2vw]">
           <Trophy className="text-amber-300" style={{ width: '4vh', height: '4vh' }} />
           <div>
-            <div className="text-[3vh] font-bold leading-none tracking-tight">{isPred ? 'Prediction' : 'Pending'} Leaderboard</div>
+            <div className="text-[3vh] font-bold leading-none tracking-tight">{isPred ? t('tvBoard.titlePrediction') : t('tvBoard.titlePending')}</div>
             <div className="mt-[0.6vh] flex items-center gap-2 text-[1.6vh] text-slate-400">
               {offset === 0 && <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-emerald-400" />}
-              <span>{offset === 0 ? 'Live' : 'History'} · updated {data ? new Date(data.generated_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : '—'}</span>
+              <span>
+                {offset === 0 ? t('tvBoard.live') : t('tvBoard.history')} ·{' '}
+                {t('tvBoard.updated', { time: data ? new Date(data.generated_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : '—' })}
+              </span>
             </div>
           </div>
           <div className="ml-[0.6vw] flex rounded-lg border border-white/10 bg-white/5 p-[0.4vh]">
-            <button onClick={() => setMode('prediction')} className={pill(isPred)}>Prediction</button>
-            <button onClick={() => setMode('pending')} className={pill(!isPred)}>Pending</button>
+            <button onClick={() => setMode('prediction')} className={pill(isPred)}>{t('tvBoard.modePrediction')}</button>
+            <button onClick={() => setMode('pending')} className={pill(!isPred)}>{t('tvBoard.modePending')}</button>
           </div>
         </div>
 
@@ -231,7 +249,7 @@ export default function TvLeaderboardPage() {
 
         <div className="flex items-center gap-[1vw]">
           <div className="text-[4.4vh] font-bold leading-none tabular-nums">{now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</div>
-          <button onClick={toggleFullscreen} title={isFs ? 'Exit full screen' : 'Full screen'}
+          <button onClick={toggleFullscreen} title={isFs ? t('tvBoard.exitFullscreen') : t('tvBoard.fullscreen')}
             className="rounded-lg border border-white/10 bg-white/5 p-[1vh] text-slate-300 transition hover:bg-white/10">
             {isFs ? <Minimize2 style={{ width: '2.6vh', height: '2.6vh' }} /> : <Maximize2 style={{ width: '2.6vh', height: '2.6vh' }} />}
           </button>
@@ -240,20 +258,20 @@ export default function TvLeaderboardPage() {
 
       {/* KPI strip */}
       <div className="mb-[2vh] grid grid-cols-5 gap-[1vw]">
-        <StatCard label="Agents online" value={String(team.agents)} />
-        <StatCard label="Sales" value={String(team.confirmed)} />
+        <StatCard label={t('tvBoard.agentsOnline')} value={String(team.agents)} />
+        <StatCard label={t('tvBoard.sales')} value={String(team.confirmed)} />
         {isPred
-          ? <StatCard label="Revenue" value={formatEur(team.revenue)} />
-          : <StatCard label="Sold rate" value={`${team.sold.toFixed(1)}%`} />}
-        <StatCard label="Avg order" value={formatEur(team.avg)} />
-        <StatCard label="Bonus pool" value={formatEur(team.bonus)} />
+          ? <StatCard label={t('tvBoard.revenue')} value={formatEur(team.revenue)} />
+          : <StatCard label={t('tvBoard.soldRate')} value={`${team.sold.toFixed(1)}%`} />}
+        <StatCard label={t('tvBoard.avgOrder')} value={formatEur(team.avg)} />
+        <StatCard label={t('tvBoard.bonusPool')} value={formatEur(team.bonus)} />
       </div>
 
       {/* Team daily target (prediction only) — the shared goal for all agents */}
       {isPred && !loading && !error && data && (
         <div className="mb-[2vh] rounded-xl border border-emerald-400/20 bg-emerald-400/[0.06] px-[1.6vw] py-[1.4vh]">
           <div className="mb-[0.8vh] flex items-end justify-between">
-            <span className="text-[1.6vh] font-semibold uppercase tracking-[0.12em] text-emerald-300">Team daily target</span>
+            <span className="text-[1.6vh] font-semibold uppercase tracking-[0.12em] text-emerald-300">{t('tvBoard.teamTarget')}</span>
             <span className="text-[2.6vh] font-bold tabular-nums">
               {formatEur(data.team_revenue)} <span className="text-[1.9vh] text-slate-400">/ {formatEur(data.target)}</span>
               <span className="ml-[1vw] text-emerald-300">{data.team_target_pct.toFixed(0)}%</span>
@@ -266,14 +284,14 @@ export default function TvLeaderboardPage() {
       )}
 
       {/* States */}
-      {loading && <div className="mt-[18vh] text-center text-[2.6vh] text-slate-400">Loading…</div>}
+      {loading && <div className="mt-[18vh] text-center text-[2.6vh] text-slate-400">{t('common.loading')}</div>}
       {!loading && error && (
         <div className="mt-[18vh] text-center text-[2.6vh] text-rose-400">
-          {error === 'Unauthorized' ? 'Invalid or missing access key.' : error}
+          {error === 'Unauthorized' ? t('tvBoard.invalidKey') : error}
         </div>
       )}
       {!loading && !error && agents.length === 0 && (
-        <div className="mt-[18vh] text-center text-[2.6vh] text-slate-400">No agents were active on this day.</div>
+        <div className="mt-[18vh] text-center text-[2.6vh] text-slate-400">{t('tvBoard.noAgents')}</div>
       )}
 
       {/* Table */}
@@ -282,11 +300,11 @@ export default function TvLeaderboardPage() {
         return (
         <div className="flex-1 overflow-hidden rounded-2xl border border-white/10 bg-white/[0.02]">
           <div className={`grid ${gridCls} items-center px-[1.6vw] py-[1.3vh] text-[1.5vh] font-semibold uppercase tracking-[0.1em] text-slate-400`}>
-            <div>#</div><div>Agent</div>
-            <div className="text-center">{isPred ? 'Sales' : 'Confirmed'}</div>
-            <div className="text-center">{isPred ? 'Revenue' : 'Avg order'}</div>
-            {!isPred && <div className="text-center">Sold rate</div>}
-            <div className="text-right">Bonus</div>
+            <div>#</div><div>{t('tvBoard.colAgent')}</div>
+            <div className="text-center">{isPred ? t('tvBoard.sales') : t('tvBoard.colConfirmed')}</div>
+            <div className="text-center">{isPred ? t('tvBoard.revenue') : t('tvBoard.avgOrder')}</div>
+            {!isPred && <div className="text-center">{t('tvBoard.soldRate')}</div>}
+            <div className="text-right">{t('tvBoard.colBonus')}</div>
           </div>
           <div>
             {agents.map((a) => {
@@ -303,7 +321,7 @@ export default function TvLeaderboardPage() {
                   <div className="flex items-center gap-[0.9vw]">
                     <span className="inline-flex h-[4.6vh] w-[4.6vh] items-center justify-center rounded-full bg-indigo-500/20 text-[1.9vh] font-bold text-indigo-200">{initials(a.full_name)}</span>
                     <span className="truncate font-semibold">{a.full_name}</span>
-                    {a.is_super && <span className="rounded bg-white/10 px-[0.5vw] py-[0.3vh] text-[1.3vh] font-medium uppercase tracking-wide text-slate-400">admin</span>}
+                    {a.is_super && <span className="rounded bg-white/10 px-[0.5vw] py-[0.3vh] text-[1.3vh] font-medium uppercase tracking-wide text-slate-400">{t('tvBoard.adminBadge')}</span>}
                   </div>
                   {/* Sales / Confirmed */}
                   <div className="text-center font-bold tabular-nums">{a.confirmed_count}</div>

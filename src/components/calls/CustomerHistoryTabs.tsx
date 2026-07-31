@@ -10,7 +10,8 @@ import { OrderStatus } from '@/types';
 import { formatEur, formatLev } from '@/lib/currency';
 import { cleanNoteForDisplay } from '@/lib/notes';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { cn, formatProductWithQuantity } from '@/lib/utils';
+import { cn } from '@/lib/utils';
+import { formatOrderProducts } from '@/lib/monadonSubstitutes';
 import { EmptyState } from '@/components/EmptyState';
 import { hoverLift } from '@/lib/design-utils';
 import { cancelReasonLabel } from '@/lib/cancellationReasons';
@@ -139,9 +140,7 @@ function OrdersTable({ orders, onOpenOrder }: { orders: any[]; onOpenOrder?: (id
           <tbody>
             {orders.slice(0, 50).map(o => {
               const items = o.order_items || [];
-              const productLabel = items.length > 0
-                ? items.map((i: any) => formatProductWithQuantity(i.product_name, i.quantity)).join(', ')
-                : (o.product_name ? formatProductWithQuantity(o.product_name, o.quantity || 1) : '—');
+              const productLabel = formatOrderProducts(o);
               const total = items.reduce((s: number, i: any) => s + Number(i.total_price || 0), 0)
                 || Number(o.price || 0) * Number(o.quantity || 1);
               const reasonLabel = o.cancellation_reason

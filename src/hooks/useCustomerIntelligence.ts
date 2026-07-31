@@ -34,6 +34,7 @@ export interface CustomerIntelligence {
     date: string;
     agent: string | null;
     price: number;
+    source_type?: string;
     items: { product_name: string; quantity: number; price_per_unit: number; total_price: number }[];
     product_name_fallback?: string;
   }[];

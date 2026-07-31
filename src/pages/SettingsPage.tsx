@@ -581,11 +581,43 @@ function SystemRulesTab() {
   const [maxHolds, setMaxHolds] = useState<string>('');
   const [maxHoldsSaved, setMaxHoldsSaved] = useState<number | null>(null);
   const [savingMaxHolds, setSavingMaxHolds] = useState(false);
+
+  // Unpaid-delivery chase window — how long a shipped-but-unpaid order waits
+  // before the owning agent is reminded to call, and when to stop reminding.
+  // Read by the nightly notify_unpaid_shipped_orders() job.
+  const [chaseDays, setChaseDays] = useState<string>('');
+  const [chaseStop, setChaseStop] = useState<string>('');
+  const [chaseSaved, setChaseSaved] = useState<{ days: number; stop: number } | null>(null);
+  const [savingChase, setSavingChase] = useState(false);
+
   useEffect(() => {
     apiGetAppSettings()
-      .then((s) => { setMaxHolds(String(s.personal_list_max_holds)); setMaxHoldsSaved(s.personal_list_max_holds); })
+      .then((s) => {
+        setMaxHolds(String(s.personal_list_max_holds)); setMaxHoldsSaved(s.personal_list_max_holds);
+        setChaseDays(String(s.unpaid_chase_days)); setChaseStop(String(s.unpaid_chase_stop_days));
+        setChaseSaved({ days: Number(s.unpaid_chase_days), stop: Number(s.unpaid_chase_stop_days) });
+      })
       .catch(() => {});
   }, []);
+
+  const saveChase = async () => {
+    const d = Math.floor(Number(chaseDays));
+    const s = Math.floor(Number(chaseStop));
+    if (!Number.isFinite(d) || d < 1 || d > 30 || !Number.isFinite(s) || s < d || s > 999) {
+      toast({ title: t('common.error'), description: t('settings.unpaidChaseRange'), variant: 'destructive' as any });
+      return;
+    }
+    setSavingChase(true);
+    try {
+      await apiUpdateAppSettings({ unpaid_chase_days: d, unpaid_chase_stop_days: s });
+      setChaseSaved({ days: d, stop: s });
+      toast({ title: t('settings.unpaidChaseSaved', { days: d, stop: s }) });
+    } catch (err: any) {
+      toast({ title: t('common.error'), description: apiErrorText(err), variant: 'destructive' as any });
+    } finally {
+      setSavingChase(false);
+    }
+  };
   const saveMaxHolds = async () => {
     const n = Math.floor(Number(maxHolds));
     if (!Number.isFinite(n) || n < 1 || n > 1000) {
@@ -782,6 +814,53 @@ function SystemRulesTab() {
                 className="flex h-9 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {savingMaxHolds && <Loader2 className="h-4 w-4 animate-spin" />}
+                {t('common.save')}
+              </button>
+            )}
+          </div>
+          {!isAdmin && <p className="text-[11px] text-muted-foreground/70">{t('settings.personalListCapAdminOnly')}</p>}
+        </div>
+      </CollapsibleCard>
+
+      {/* Unpaid delivery chase */}
+      <CollapsibleCard title={t('settings.unpaidChase')} subtitle={t('settings.unpaidChaseSub')} expanded={expandedSection === 'unpaidChase'} onToggle={() => toggleSection('unpaidChase')}>
+        <div className="space-y-3">
+          <p className="text-xs text-muted-foreground">{t('settings.unpaidChaseDesc')}</p>
+          <div className="flex items-end gap-3 flex-wrap">
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1.5 block">{t('settings.unpaidChaseDaysLabel')}</label>
+              <Input
+                type="number"
+                min={1}
+                max={30}
+                value={chaseDays}
+                disabled={!isAdmin}
+                onChange={(e) => setChaseDays(e.target.value)}
+                className="w-28"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1.5 block">{t('settings.unpaidChaseStopLabel')}</label>
+              <Input
+                type="number"
+                min={1}
+                max={999}
+                value={chaseStop}
+                disabled={!isAdmin}
+                onChange={(e) => setChaseStop(e.target.value)}
+                className="w-28"
+              />
+            </div>
+            {isAdmin && (
+              <button
+                onClick={saveChase}
+                disabled={
+                  savingChase || chaseDays === '' || chaseStop === '' ||
+                  (Number(chaseDays) === chaseSaved?.days && Number(chaseStop) === chaseSaved?.stop)
+                }
+                className="flex h-9 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {savingChase && <Loader2 className="h-4 w-4 animate-spin" />}
                 {t('common.save')}
               </button>
             )}

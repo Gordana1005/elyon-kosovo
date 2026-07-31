@@ -51,25 +51,14 @@ const LEGACY_CREATED_AT = '2026-05-01T12:00:00Z'; // agreed as-if date (file has
 const SOURCE_TYPE = 'monadon_legacy';
 const LIST_NAME = 'FULL MONAD LIST';
 
-// Monadon product brand → our equivalent (editable; refine later). '' = leave blank.
-const PRODUCT_MAP = {
-  'TESTOY': 'Enduro',
-  'GO POTENT': 'Enduro',
-  'BEAUTY DERM': 'ELIXY Дневен крем снаил 50ml',
-  'HAIR GOLD MASK': 'ELIXY Шампон Алое вера 500мл',
-  'VARCOSIN': 'Osteofix',
-  'NAUTUBONE': 'Osteofix',
-  'PRO DROPS': 'Prostatol / Uro Protect',
-  'PRENUTRA': 'Femme',
-  'DERMAL': 'ELIXY Dnevna & Hyaluronic +35 50ml',
-  'DIATEA': 'Diabetol',
-  'PARAZOL': 'Hepatol',
-  'HYPERTEA': 'Hepatol',
-  'HYPER DROPS': 'Hepatol',
-  'ALOE VERA PREMIUM': 'Aloe Vera',
-  'QUICKLY FITNESS': 'Weight-loss (TBD)',
-  'APOLLOSS': 'Weight-loss (TBD)',
-};
+// Monadon product brand → our substitute. SINGLE SOURCE OF TRUTH:
+// src/lib/monadonSubstitutes.json — shared with the frontend display helper
+// (src/lib/monadonSubstitutes.ts) and scripts/refresh-monad-substitutes.mjs, so the
+// mapping never drifts across import / display / refresh. Keys are UPPERCASE base brands.
+const PRODUCT_MAP = Object.fromEntries(
+  JSON.parse(readFileSync(new URL('../src/lib/monadonSubstitutes.json', import.meta.url), 'utf8'))
+    .map((e) => [e.brand, e.substitute]),
+);
 const DROP_BRAND = 'ONE POWER ZOOM GLASSES';
 
 // ── Minimal RFC-4180-ish CSV parser (handles quotes, commas, CRLF) ──

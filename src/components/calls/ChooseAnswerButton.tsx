@@ -7,6 +7,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
 } from '@/components/ui/dialog';
 import { CancellationReasonPicker } from '@/components/CancellationReasonPicker';
+import { isCancelSelectionValid } from '@/lib/cancellationReasons';
 import type { CancellationReason } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { hoverLift, getStaggerStyle } from '@/lib/design-utils';
@@ -14,7 +15,11 @@ import { hoverLift, getStaggerStyle } from '@/lib/design-utils';
 // Stable keys; the KEY is stored structurally on the trashed order
 // (orders.trash_reason) and translated for display — exactly like
 // cancellation_reason. The optional free-text note goes to trash_reason_notes.
-const TRASH_REASON_KEYS = ['wrong_number', 'wrong_person', 'rude', 'uncooperative', 'other'];
+// 'not_reachable' is also the server-only auto-trash reason (9 consecutive
+// no-answers). Exposing it here lets an agent trash a client as Unreachable by
+// hand; the engine treats a not_reachable trash exactly like the auto path
+// (removed from every calling band, parked in the Trash List).
+const TRASH_REASON_KEYS = ['wrong_number', 'wrong_person', 'not_reachable', 'rude', 'uncooperative', 'other'];
 
 type Outcome = 'confirmed' | 'cancel' | 'trash' | 'call_again';
 
@@ -190,7 +195,7 @@ export function ChooseAnswerButton({ disabled, className, onConfirmed, onCancell
                 <Button
                   variant="destructive"
                   className="mt-auto w-full gap-1.5"
-                  disabled={!cancelReason || submitting}
+                  disabled={!isCancelSelectionValid(cancelReason, cancelNotes) || submitting}
                   onClick={() => cancelReason && run(() => onCancelled(cancelReason, cancelNotes.trim()))}
                 >
                   {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <X className="h-4 w-4" />}
@@ -225,14 +230,14 @@ export function ChooseAnswerButton({ disabled, className, onConfirmed, onCancell
                 <Textarea
                   value={trashNotes}
                   onChange={e => setTrashNotes(e.target.value)}
-                  placeholder={t('chooseAnswer.optionalNote')}
+                  placeholder={trashReason === 'other' ? t('chooseAnswer.otherRequiredPlaceholder') : t('chooseAnswer.optionalNote')}
                   className="min-h-[60px] text-xs"
                   maxLength={1000}
                 />
                 <Button
                   variant="secondary"
                   className="mt-auto w-full gap-1.5"
-                  disabled={!trashReason || submitting}
+                  disabled={!trashReason || (trashReason === 'other' && !trashNotes.trim()) || submitting}
                   onClick={() => trashReason && run(() => onTrashed(trashReason, trashNotes.trim()))}
                 >
                   {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}

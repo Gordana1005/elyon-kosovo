@@ -24,6 +24,13 @@ QueryClientProvider (staleTime 30s, refetchOnWindowFocus off, retry 1)
 Only `LoginPage` and `NotFound` are eager; **every other page is `React.lazy`** → its own chunk, loaded
 on first navigation. (Vite's automatic chunking is used deliberately — no manual `manualChunks`.)
 
+> **One cross‑context wire:** `VoipProvider` sits *below* `AuthProvider`, so it can't call up. Instead
+> `VoipContext` writes every softphone state transition into the dependency‑free module store
+> [../src/lib/voip/callStateBus.ts](../src/lib/voip/callStateBus.ts), which `AuthContext`'s presence
+> heartbeat reads and relays as `voip_state` → `profiles.voip_state` → the "In call" status shown on the
+> Assigner and Ops‑Center. Importing `VoipContext` from `AuthContext` directly would create a cycle — the
+> bus is what avoids it.
+
 ---
 
 ## 2. Routes → modules → pages
@@ -71,6 +78,10 @@ Each route is wrapped in `<ProtectedRoute moduleKey="…">`. The `moduleKey` tie
   that attach the Supabase JWT + anon `apikey` and call the Edge Function. TanStack Query keys are
   consistent (`['calls-page-orders', phone]`, `['customer-history', phone]`, etc.) so mutations can
   invalidate precisely.
+- **Lazy keys for expandable rows:** the Assigner's per‑agent drawer used to eager‑fetch via
+  `['assigned-pending']` and `['agent-assigned-members']` — **both keys are gone**. The Unassign tab now
+  fetches only what the operator expands: `['assigner-agent-list-members', agentId, listId, page]` and
+  `['assigner-agent-pendings', agentId]`, each `enabled` only once its row is open.
 - **Direct `supabase-js`** is used in only two places: `AuthContext` (session/login) and
   `PermissionsContext` (the `get_my_permissions` RPC). Everything else is the Edge Function.
 - Query defaults: `staleTime: 30s`, `refetchOnWindowFocus: false`, `retry: 1`.
@@ -83,7 +94,10 @@ Each route is wrapped in `<ProtectedRoute moduleKey="…">`. The `moduleKey` tie
 Supabase email/password. On session, loads `profiles` + `user_roles` into an `AuthUser` with boolean
 flags (`isAdmin`, `isManager`, `isAgent`, `isWarehouse`, `isAdsAdmin`, …) and a `role` (primary, for
 display). A **presence heartbeat** pings `presence/heartbeat` every 45 s while the tab is visible; sign‑out
-logs a shift logout first.
+logs a shift logout first. The beat also carries `{voip_state}` — read from
+[../src/lib/voip/callStateBus.ts](../src/lib/voip/callStateBus.ts) — but **only when the softphone is
+non‑idle**; idle beats deliberately omit the field so a second, idle tab can't clobber a live call. While a
+call is live the beat keeps running **even when the tab is hidden**.
 
 **Layer 2 — Permissions** ([../src/contexts/PermissionsContext.tsx](../src/contexts/PermissionsContext.tsx)):
 one `get_my_permissions` RPC returns three tables — `module_settings` (feature flags), `role_permissions`
@@ -156,7 +170,11 @@ Dashboard (today + lifetime KPIs) · Orders (master list, filters, Fulfilment CS
 (agent workspace) · PersonalListPage (claimed customers) · CallAgainPage (follow‑ups due) · AssignedPage
 (agent's assigned orders) · PredictionLeadsPage (agent's imported leads) · SearchPredictionPage (phone/name/order
 search → dossier) · SegmentsPage / SegmentDetailPage (27 rule lists + bulk assign) · AssignerPage (distribute
-pendings) · LeadDistributionPage (auto‑assign config ⚠️) · PredictionListsPage / Detail (XLSX lead lists) ·
+pendings — 3 tabs: Prediction Lists · Pendings · Unassign, plus a right‑hand agents panel; **no per‑agent
+drawer** any more, agent cards and Pendings chips jump to the Unassign tab and expand that agent's row.
+Unassign = one row per agent → expands to their lists and pending leads with per‑client unassign; bulk
+unassign fully detaches, clearing the agent stamp on already‑called members too. Each agent card carries a
+live Status tile — In call / Available / Offline) · LeadDistributionPage (auto‑assign config ⚠️) · PredictionListsPage / Detail (XLSX lead lists) ·
 InboundLeadsPage (raw webhook stream) · WebhookManagementPage (webhook admin) · ProductsPage (catalogue/stock)
 · WarehousePage (ship calendar + incoming) · ManagementInsightsPage (analytics) · OperationsPage (live ops) ·
 AgentPerformancePage (per‑agent) · UsersPage (accounts/roles) · ShiftsManagementPage / MyShiftsPage ·

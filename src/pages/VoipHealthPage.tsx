@@ -24,6 +24,13 @@ import {
 
 type Range = '24h' | '7d' | '30d';
 
+// Fallback only — the live cap comes from the PBX (`pbx.lines.max`, read from the
+// enforced dialplan global OUTMAXCHANS_1). Used until the first health pull lands.
+// 10, not the 25 A1 sold us: their Admission Control still admits only 10
+// (proven 2026-07-28). Showing a capacity the carrier won't honour is worse than
+// showing none.
+const MAX_LINES_FALLBACK = 10;
+
 function bytesH(n?: number | null): string {
   if (!n || n <= 0) return '—';
   const u = ['B', 'KB', 'MB', 'GB', 'TB'];
@@ -90,6 +97,8 @@ export default function VoipHealthPage() {
   const pbxOk = pbx?.ok !== false;
   const incidents = h?.incidents || [];
   const critical = incidents.filter((i) => i.level === 'critical');
+  const maxLines = pbx?.lines?.max ?? MAX_LINES_FALLBACK;
+  const cycle = minutes.data?.cycle;
 
   const rangeBtns: Range[] = ['24h', '7d', '30d'];
   const headerActions = (
@@ -132,9 +141,9 @@ export default function VoipHealthPage() {
               <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
                 <KpiCard
                   icon={PhoneCall} label={t('voipHealth.cards.activeLines')}
-                  value={`${pbx?.lines?.active ?? '—'} / ${pbx?.lines?.max ?? 10}`}
+                  value={`${pbx?.lines?.active ?? '—'} / ${maxLines}`}
                   sub={t('voipHealth.cards.linesSub')}
-                  tone={(pbx?.lines?.active ?? 0) >= (pbx?.lines?.max ?? 10) ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}
+                  tone={(pbx?.lines?.active ?? 0) >= maxLines ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}
                 />
                 <KpiCard
                   icon={Activity} label={t('voipHealth.cards.trunk')}
@@ -212,9 +221,9 @@ export default function VoipHealthPage() {
                   <CardContent className="space-y-3">
                     <div className="flex items-baseline gap-2">
                       <span className="text-3xl font-bold tabular-nums">{pbx?.lines?.active ?? 0}</span>
-                      <span className="text-muted-foreground">/ {pbx?.lines?.max ?? 10} {t('voipHealth.lines.linesLabel')}</span>
+                      <span className="text-muted-foreground">/ {maxLines} {t('voipHealth.lines.linesLabel')}</span>
                     </div>
-                    <Progress value={((pbx?.lines?.active ?? 0) / (pbx?.lines?.max ?? 10)) * 100} />
+                    <Progress value={((pbx?.lines?.active ?? 0) / maxLines) * 100} />
                     {pbx?.lines?.channels?.length ? (
                       <div className="divide-y rounded-md border text-sm">
                         {pbx.lines.channels.map((c, i) => (
@@ -263,7 +272,7 @@ export default function VoipHealthPage() {
                       <AreaChart data={history.data.snapshots}>
                         <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                         <XAxis dataKey="captured_at" tickFormatter={(v) => new Date(v).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} fontSize={11} />
-                        <YAxis allowDecimals={false} domain={[0, pbx?.lines?.max ?? 10]} fontSize={11} />
+                        <YAxis allowDecimals={false} domain={[0, maxLines]} fontSize={11} />
                         <Tooltip labelFormatter={(v) => new Date(v as string).toLocaleString()} />
                         <Area type="monotone" dataKey="active_lines" stroke={CHART_COLORS.primary} fill={CHART_COLORS.primary} fillOpacity={0.2} />
                       </AreaChart>
@@ -398,11 +407,72 @@ export default function VoipHealthPage() {
             {/* ── MINUTES ── */}
             <TabsContent value="minutes" className="space-y-4">
               <RangeBar range={range} setRange={setRange} rangeBtns={rangeBtns} t={t} />
-              <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
                 <KpiCard icon={Timer} label={t('voipHealth.minutes.total')} value={`${minutes.data?.total_minutes ?? '—'}`} tone="bg-violet-100 text-violet-700" />
                 <KpiCard icon={PhoneCall} label={t('voipHealth.minutes.talk')} value={`${minutes.data?.talk_minutes ?? '—'}`} tone="bg-emerald-100 text-emerald-700" />
-                <KpiCard icon={Activity} label={t('voipHealth.minutes.lineCap')} value={`${pbx?.lines?.max ?? 10}`} sub={t('voipHealth.minutes.a1Cap')} tone="bg-sky-100 text-sky-700" />
+                <KpiCard
+                  icon={Gauge} label={t('voipHealth.minutes.usedOfBundle')}
+                  value={cycle ? `${cycle.used_minutes.toLocaleString()} / ${cycle.included_minutes.toLocaleString()}` : '—'}
+                  sub={cycle ? t('voipHealth.minutes.pctUsed', { pct: cycle.pct_used }) : undefined}
+                  tone={cycle?.status === 'critical' ? 'bg-destructive/10 text-destructive'
+                    : cycle?.status === 'warn' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}
+                />
+                <KpiCard icon={Activity} label={t('voipHealth.minutes.lineCap')} value={`${maxLines}`} sub={t('voipHealth.minutes.a1Cap')} tone="bg-sky-100 text-sky-700" />
               </div>
+
+              {/* Bundle consumption for the CURRENT billing cycle. Independent of
+                  the range selector above, which only drives the charts. */}
+              {cycle && (
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base">{t('voipHealth.minutes.bundleTitle')}</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div className="flex flex-wrap items-baseline justify-between gap-2">
+                      <div className="flex items-baseline gap-2">
+                        <span className="text-3xl font-bold tabular-nums">{cycle.used_minutes.toLocaleString()}</span>
+                        <span className="text-muted-foreground">
+                          / {cycle.included_minutes.toLocaleString()} {t('voipHealth.minutes.minShort')}
+                        </span>
+                      </div>
+                      <span className="text-sm text-muted-foreground">
+                        {t('voipHealth.minutes.cycleRange', {
+                          start: new Date(cycle.start).toLocaleDateString(),
+                          end: new Date(cycle.end).toLocaleDateString(),
+                        })}
+                        {' · '}
+                        {t('voipHealth.minutes.daysRemaining', { days: cycle.days_remaining })}
+                      </span>
+                    </div>
+                    <Progress value={Math.min(100, cycle.pct_used)} />
+                    <div className="grid gap-3 sm:grid-cols-3">
+                      <div>
+                        <p className="text-xs text-muted-foreground">{t('voipHealth.minutes.projected')}</p>
+                        <p className={`text-lg font-semibold tabular-nums ${cycle.projected_pct >= 100 ? 'text-destructive' : ''}`}>
+                          {cycle.projected_minutes.toLocaleString()} ({cycle.projected_pct}%)
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">{t('voipHealth.minutes.metricLabel')}</p>
+                        <p className="text-lg font-semibold">
+                          {cycle.metric === 'talk' ? t('voipHealth.minutes.metricTalk') : t('voipHealth.minutes.metricTotal')}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">{t('voipHealth.minutes.totalWithRing')}</p>
+                        <p className="text-lg font-semibold tabular-nums">{cycle.used_total_minutes.toLocaleString()}</p>
+                      </div>
+                    </div>
+                    {cycle.projected_over_by > 0 && (
+                      <p className="flex items-center gap-2 text-sm text-destructive">
+                        <AlertTriangle className="h-4 w-4 shrink-0" />
+                        {t('voipHealth.minutes.projectedOver', { minutes: cycle.projected_over_by.toLocaleString() })}
+                      </p>
+                    )}
+                    <p className="text-xs text-muted-foreground">{t('voipHealth.minutes.notBilling')}</p>
+                  </CardContent>
+                </Card>
+              )}
 
               <div className="grid gap-4 lg:grid-cols-2">
                 <Card>

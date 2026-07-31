@@ -55,12 +55,12 @@ CREATE TABLE public.prediction_segment_members_pre_v4_backup AS
 DELETE FROM public.prediction_segment_members m
 USING public.prediction_segment_lists l
 WHERE m.list_id = l.id
-  AND (l.is_static = false OR l.name IN ('Trashed', 'Due to Reorder'));
+  AND (l.is_static = false OR l.name IN ('Trash List', 'Due to Reorder'));
 
 INSERT INTO public.prediction_segment_members
   SELECT s.* FROM public.prediction_segment_members_shadow s
   JOIN public.prediction_segment_lists l ON l.id = s.list_id
-  WHERE (l.is_static = false OR l.name IN ('Trashed', 'Due to Reorder'));
+  WHERE (l.is_static = false OR l.name IN ('Trash List', 'Due to Reorder'));
 
 -- 4. Flip the engine + repoint config-save to the real table.
 UPDATE public.segment_engine_config SET active_engine = 'v4' WHERE is_active = true;

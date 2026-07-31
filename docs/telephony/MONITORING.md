@@ -2,7 +2,7 @@
 
 > The superadmin-only **VOIP Health** page in the CRM (`/voip-health`, sidebar → *VOIP Health*)
 > shows the true state of the phone system: server (disk/memory/CPU), **lines in use vs the
-> 10-line A1 cap**, A1 trunk up/down, recording coverage (which answered calls have **no**
+> A1 trunk's channel cap** (read live from the PBX — never hardcoded), A1 trunk up/down, recording coverage (which answered calls have **no**
 > recording and why), call-quality (one-way audio), fail2ban attacks, recent errors, and
 > outbound minutes. A red/amber **alert banner** appears app-wide for the superadmin when
 > something trips a threshold.

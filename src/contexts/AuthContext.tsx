@@ -1,9 +1,9 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import type { Session, User } from '@supabase/supabase-js';
-import type { AppLanguage } from '@/i18n';
+import { SUPPORTED_LANGUAGES, type AppLanguage } from '@/i18n';
 
-export type AppRole = 'admin' | 'manager' | 'pending_agent' | 'prediction_agent' | 'warehouse' | 'ads_admin' | 'agent' | 'inbound_agent';
+export type AppRole = 'admin' | 'manager' | 'pending_agent' | 'prediction_agent' | 'warehouse' | 'ads_admin' | 'agent' | 'inbound_agent' | 'affiliate';
 
 export interface AuthUser {
   id: string;
@@ -18,6 +18,12 @@ export interface AuthUser {
   isAdsAdmin: boolean;
   isAgent: boolean;
   isInboundAgent: boolean;
+  /** External partner (webmaster) — sees only the affiliate portal. */
+  isAffiliate: boolean;
+  /** Affiliate with NO internal role — a pure external partner. Mirrors the
+   *  server's hard wall (api/index.ts `hasInternalRole`): may touch only the
+   *  portal. A hybrid affiliate+staff login is NOT external. */
+  isExternalAffiliate: boolean;
   /** Primary role for display purposes */
   role: AppRole;
   /** UI language preference from profiles.language; undefined until migration applied */
@@ -37,6 +43,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 function determinePrimaryRole(roles: AppRole[]): AppRole {
   if (roles.includes('admin')) return 'admin';
   if (roles.includes('manager')) return 'manager';
+  if (roles.includes('affiliate')) return 'affiliate';
   if (roles.includes('prediction_agent')) return 'prediction_agent';
   if (roles.includes('pending_agent')) return 'pending_agent';
   if (roles.includes('agent')) return 'agent';
@@ -91,8 +98,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isWarehouse: roles.includes('warehouse'),
         isAdsAdmin: roles.includes('ads_admin'),
         isInboundAgent: roles.includes('inbound_agent'),
+        isAffiliate: roles.includes('affiliate'),
+        isExternalAffiliate: roles.length > 0 && roles.every(r => r === 'affiliate'),
         role: determinePrimaryRole(roles),
-        language: profile?.language === 'bg' ? 'bg' : 'en',
+        // Validate against SUPPORTED_LANGUAGES — never hardcode the language
+        // list here. It was pinned to bg|en until 2026-07-22, which silently
+        // coerced Albanian users back to English on every fresh device.
+        language: SUPPORTED_LANGUAGES.includes(profile?.language as AppLanguage)
+          ? (profile!.language as AppLanguage)
+          : 'en',
       });
     } catch {
       setUser(null);
@@ -148,16 +162,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Presence heartbeat — while a session is active, ping the server every
   // 45s so agents/online can show real "here right now" status. Only fires
   // when the tab is visible, so a backgrounded/forgotten tab naturally
-  // ages out of "online" after the server's 2-minute window.
+  // ages out of "online" after the server's 2-minute window — EXCEPT while
+  // the softphone is live: a call keeps the beat (and voip_state) fresh even
+  // if the agent backgrounds the tab mid-call. The state is included only
+  // when non-idle so a second idle tab never overwrites the calling tab's
+  // reported state ('idle' is written solely by VoipContext on call end).
   useEffect(() => {
     if (!session?.user) return;
     let cancelled = false;
 
     const ping = async () => {
-      if (document.visibilityState !== 'visible') return;
       try {
+        const { getBusCallState } = await import('@/lib/voip/callStateBus');
+        const voipState = getBusCallState();
+        if (document.visibilityState !== 'visible' && voipState === 'idle') return;
         const { apiPresenceHeartbeat } = await import('@/lib/api');
-        if (!cancelled) await apiPresenceHeartbeat();
+        if (!cancelled) {
+          await apiPresenceHeartbeat(voipState !== 'idle' ? { voip_state: voipState } : undefined);
+        }
       } catch {
         // Non-critical — next tick retries.
       }

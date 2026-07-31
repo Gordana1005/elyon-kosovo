@@ -83,7 +83,7 @@ New skills should be added whenever the same complex rule or workflow needs to b
 **Supabase (Edge Functions + DB)**:
 - Always use the personal access token from `.env` (`SUPABASE_ACCESS_TOKEN`).
 - Preferred PowerShell pattern:
-  `$env:SUPABASE_ACCESS_TOKEN = (Select-String '^SUPABASE_ACCESS_TOKEN=' .env).Line.Split('=')[1].Trim('"'); npx supabase functions deploy api --project-ref sxymaloycddnoxudxaqp`
+  `$env:SUPABASE_ACCESS_TOKEN = (Select-String '^SUPABASE_ACCESS_TOKEN=' .env).Line.Split('=')[1].Trim('"'); npx supabase functions deploy api --project-ref bmfxhgznttcnnlqloqzp`
 - Run `npm run build` locally before any function deploy.
 - Migrations: `npx supabase db push --linked` (same token pattern).
 

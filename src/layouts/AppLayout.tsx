@@ -58,9 +58,11 @@ export function AppLayout({ children, title, headerActions }: AppLayoutProps) {
           <div className="flex items-center gap-1.5 md:gap-3">
             <LanguageSwitcher />
             <ThemeToggle />
-            {!isMobile && <BreakButton />}
-            <GlobalSearch />
-            <NotificationsDropdown />
+            {/* Break + customer search are staff tools — hidden for external
+                affiliate logins (their API calls would 403 on the hard wall). */}
+            {!isMobile && !user?.isAffiliate && <BreakButton />}
+            {!user?.isAffiliate && <GlobalSearch />}
+            {!user?.isAffiliate && <NotificationsDropdown />}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button className="flex items-center gap-2 rounded-lg px-2 py-1 hover:bg-muted transition-colors">

@@ -37,6 +37,11 @@ export function ProtectedRoute({ children, moduleKey, moduleKeysAny }: Protected
       if (user.isPendingAgent || user.isPredictionAgent || user.isAgent) {
         return <Navigate to="/assigned" replace />;
       }
+      // Affiliates land on their portal — without this branch an affiliate
+      // hitting "/" would bounce to "/" forever (infinite redirect).
+      if (user.isAffiliate) {
+        return <Navigate to="/affiliate" replace />;
+      }
       if (user.isWarehouse) {
         return <Navigate to="/warehouse" replace />;
       }

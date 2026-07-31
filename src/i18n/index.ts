@@ -3,6 +3,7 @@ import { initReactI18next } from 'react-i18next';
 import en from './locales/en.json';
 import bg from './locales/bg.json';
 import sq from './locales/sq.json';
+import mk from './locales/mk.json';
 
 // App-wide i18n singleton. Imported for its side effect at the very top of
 // src/main.tsx so the cached language is active before the first paint.
@@ -14,12 +15,15 @@ import sq from './locales/sq.json';
 // re-render on switch. NEVER force a tree remount with key={language}: that
 // would wipe an agent's half-filled order form mid-call.
 
-export type AppLanguage = 'en' | 'bg' | 'sq';
-// Albanian ('sq', Kosovo standard) — live since 2026-06-22. Professional wording
-// review happens in-app (operator workflow); keys stay stable, only values change.
-// Cross-device persistence needs migration 20260622120000_profiles_language_sq.sql
-// applied remotely; until then the choice still sticks per-device via localStorage.
-export const SUPPORTED_LANGUAGES: AppLanguage[] = ['en', 'bg', 'sq'];
+export type AppLanguage = 'en' | 'bg' | 'sq' | 'mk';
+// Albanian ('sq', Kosovo standard) — live since 2026-06-22. Macedonian ('mk',
+// literary Skopje standard) — live since 2026-07-22. Professional wording review
+// happens in-app (operator workflow); keys stay stable, only values change.
+// Cross-device persistence needs the profiles.language CHECK constraint to allow
+// the code (migrations 20260622120000_profiles_language_sq.sql /
+// 20260906000000_profiles_language_mk.sql); until applied the choice still
+// sticks per-device via localStorage.
+export const SUPPORTED_LANGUAGES: AppLanguage[] = ['en', 'bg', 'sq', 'mk'];
 export const LANG_STORAGE_KEY = 'elyon.lang';
 
 function storedLanguage(): AppLanguage {
@@ -39,6 +43,7 @@ i18n.use(initReactI18next).init({
     en: { translation: en },
     bg: { translation: bg },
     sq: { translation: sq },
+    mk: { translation: mk },
   },
   lng: storedLanguage(),
   fallbackLng: 'en',
