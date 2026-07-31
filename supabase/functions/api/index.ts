@@ -311,7 +311,7 @@ const predictionListSchema = z.object({
 });
 
 // Bulk historical-order import (admin-only). One row = one past order. Money is
-// already EUR (Kosovo), phones get normalized to +389, products matched by name
+// already EUR (Macedonia), phones get normalized to +389, products matched by name
 // against the catalogue. Dedupe is by (external_source, external_order_id) so an
 // admin can re-upload the same file safely. The front-end chunks large files and
 // calls this repeatedly, aggregating the returned counts.
@@ -755,23 +755,17 @@ const corsHeaders = {
 // Browser-call origins allowed to use this function. Server-to-server
 // callers (e.g. webhook senders without an Origin header) bypass CORS
 // entirely and are gated by the HMAC signature instead.
-// Both Vercel project names are accepted on purpose. The project was created as
-// `elyon-kosovo` and renamed to `elyon-natura`; keeping the old one means the
-// rename can happen in either order without a window where the SPA is alive but
-// every API call is CORS-blocked. Drop `elyon-kosovo` once the rename has
-// settled and nobody is using the old link.
 const ALLOWED_ORIGINS = [
   "https://elyon-mk.com",       // TODO(mk): real Macedonian prod domain
   "https://www.elyon-mk.com",   // TODO(mk): real Macedonian prod domain
   "https://elyon-natura.vercel.app",
-  "https://elyon-kosovo.vercel.app", // legacy — remove after the rename settles
   "http://localhost:8080",
   "http://localhost:5173",
   "http://localhost:3000",
 ];
 
-// Vercel preview deploys: <project>-<hash>-gordanas-projects-a53c0208.vercel.app
-const PREVIEW_ORIGIN = /^https:\/\/elyon-(natura|kosovo)-[a-z0-9-]+-gordanas-projects-a53c0208\.vercel\.app$/;
+// Vercel preview deploys: elyon-natura-<hash>-gordanas-projects-a53c0208.vercel.app
+const PREVIEW_ORIGIN = /^https:\/\/elyon-natura-[a-z0-9-]+-gordanas-projects-a53c0208\.vercel\.app$/;
 
 function pickAllowedOrigin(origin: string): string | null {
   if (!origin) return null;
@@ -1613,7 +1607,7 @@ async function handleRequest(req: Request): Promise<Response> {
       // name (first + last) AND a complete phone number. Junk is dropped quietly.
       if (isAbandoned) {
         const hasFullName = fullName.split(/\s+/).filter(Boolean).length >= 2;
-        const hasFullPhone = !!phone && phone.replace(/\D/g, "").length >= 11; // +389 + ~8 digits (Kosovo). TODO(mk): verify threshold
+        const hasFullPhone = !!phone && phone.replace(/\D/g, "").length >= 11; // +389 + ~8 digits (Macedonia). TODO(mk): verify threshold
         if (!hasFullName || !hasFullPhone) {
           return json({ success: true, skipped: "abandoned cart missing full name or phone" });
         }
@@ -4190,7 +4184,7 @@ async function handleRequest(req: Request): Promise<Response> {
     // POST /api/orders/import (bulk historical-order import — admin only)
     // Turns a CSV/Excel of real past orders into real `orders` rows (+ one
     // order_items line + a provenance order_note each), exactly like the
-    // import-cpa-xlsx.mjs script but adapted for Kosovo: money is already EUR,
+    // import-cpa-xlsx.mjs script but adapted for Macedonia: money is already EUR,
     // phones normalize to +389, no lev peg, no transliteration. Importing these
     // also feeds the segments engine (it recomputes from order history), which is
     // the whole point — it backfills the prediction lists. Optionally upserts
@@ -14349,7 +14343,7 @@ async function getEcontStreetsAndQuarters(cityId: string): Promise<{ streets: st
   return result;
 }
 
-// Normalize a Kosovo phone to E.164 (+389XXXXXXXX) - TODO(mk): verify digit lengths vs real +389 numbers, matching how the rest
+// Normalize a Macedonia phone to E.164 (+389XXXXXXXX) - TODO(mk): verify digit lengths vs real +389 numbers, matching how the rest
 // of the CRM stores phones. Returns "" if there aren't enough digits.
 //   070123456 / 38970123456 / +38970123456 / 0038970123456 → +38970123456
 function normalizeMkPhone(raw: string): string {

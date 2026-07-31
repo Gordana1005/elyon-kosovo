@@ -1,4 +1,4 @@
-# 02 — Fork the code into `elyon-kosovo`
+# 02 — Fork the code into `elyon-macedonia`
 
 Goal: a **clean, standalone copy** of the app in its own GitHub repo, sharing nothing with the
 live repo's history or remote. No secrets travel with it (they're all gitignored).
@@ -12,8 +12,8 @@ fresh clone, then detach it.
 
 ```bash
 # 1. Clone the current repo into a NEW folder (a sibling of elyoncrm)
-git clone https://github.com/Gordana1005/elyoncrm.git elyon-kosovo
-cd elyon-kosovo
+git clone https://github.com/Gordana1005/elyoncrm.git elyon-macedonia
+cd elyon-macedonia
 
 # 2. Detach from the Bulgarian remote so you can never push to it by accident
 git remote remove origin
@@ -22,7 +22,7 @@ git remote remove origin
 rm -rf .git
 git init
 git add .
-git commit -m "chore: fork Elyon CRM for Kosovo (Phase 1 baseline)"
+git commit -m "chore: fork Elyon CRM for Macedonia (Phase 1 baseline)"
 ```
 
 > Alternatively just **copy the folder** (without `node_modules/`, `dist/`, `.git/`, `.vercel/`).
@@ -31,7 +31,7 @@ git commit -m "chore: fork Elyon CRM for Kosovo (Phase 1 baseline)"
 ## Step 2 — point it at the new GitHub repo
 
 ```bash
-git remote add origin https://github.com/<you>/elyon-kosovo.git
+git remote add origin https://github.com/<you>/elyon-macedonia.git
 git push -u origin main
 ```
 
@@ -47,7 +47,7 @@ carries them. Confirmed in [`../.gitignore`](../.gitignore):
 - `.secrets/`, `.vercel/` — local key copies + Vercel link
 - `dist/`, `node_modules/`
 
-So a fresh clone starts with **no credentials**. You will create brand-new ones for Kosovo in
+So a fresh clone starts with **no credentials**. You will create brand-new ones for Macedonia in
 [03](03-SUPABASE-FROM-ZERO.md), [05](05-FRONTEND-DEPLOY.md), and [08](08-SECRETS-TEMPLATE.md).
 
 ### After cloning, double-check nothing leaked in
@@ -58,13 +58,13 @@ ls -a | grep -E '^\.env'
 ls docs/VAULT.md 2>/dev/null && echo "DELETE THIS — it's live secrets"
 ```
 If `docs/VAULT.md` or a real `.env` somehow came along (e.g. you copied the folder manually),
-**delete them** — they are Bulgaria's live credentials and must never live in the Kosovo repo.
+**delete them** — they are Bulgaria's live credentials and must never live in the Macedonia repo.
 
 ---
 
 ## Step 3 — clean the live-only pointers
 
-These files reference the **live** project. You'll overwrite them with Kosovo values in later
+These files reference the **live** project. You'll overwrite them with Macedonia values in later
 steps; just know they're here:
 
 | File | Holds | Fixed in |
@@ -83,7 +83,7 @@ npm install
 npm run build      # should produce dist/ with no errors
 ```
 
-A successful build here (before any Kosovo edits) proves the fork is intact. You'll wire it to
+A successful build here (before any Macedonia edits) proves the fork is intact. You'll wire it to
 the new Supabase/Vercel next.
 
 > Where the market-specific values live (currency, timezone, +359, couriers, PBX URLs) is

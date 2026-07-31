@@ -13,7 +13,7 @@ export interface ResolvedScript {
   helpers: CallScriptHelper[];
 }
 
-/** Normalise an i18next language tag ('sq', 'sq-XK', undefined) to a bare code. */
+/** Normalise an i18next language tag ('sq', 'sq-MK', undefined) to a bare code. */
 function normalizeLang(lang?: string): string {
   return (lang || i18n.language || BASE_SCRIPT_LANG).split('-')[0];
 }

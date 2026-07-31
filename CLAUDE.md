@@ -4,14 +4,14 @@ This repository is the **Macedonian** instance of the Elyon CRM — a hard fork 
 system, run as a completely separate operation. It has its OWN infrastructure and shares
 **nothing at runtime** with Bulgaria.
 
-> **Naming note:** the deployment was stood up for Kosovo on 2026-06-30 and re-aimed at
-> **Macedonia** on 2026-07-31. The Vercel project was renamed `elyon-kosovo` → `elyon-natura`
+> **Naming note:** the deployment was stood up for Macedonia on 2026-06-30 and re-aimed at
+> **Macedonia** on 2026-07-31. The Vercel project was renamed `elyon-macedonia` → `elyon-natura`
 > on 2026-08-01, so the live URL is **https://elyon-natura.vercel.app**
-> (`elyon-kosovo.vercel.app` still resolves to the same deployment and is kept as a legacy
+> (`elyon-macedonia.vercel.app` still resolves to the same deployment and is kept as a legacy
 > alias — both are in the edge function's CORS allowlist).
-> The **Supabase ref** (`bmfxhgznttcnnlqloqzp`) and the **GitHub repo** (`Gordana1005/elyon-kosovo`)
+> The **Supabase ref** (`bmfxhgznttcnnlqloqzp`) and the **GitHub repo** (`Gordana1005/elyon-macedonia`)
 > keep their original names on purpose — renaming the ref means rebuilding the project, and
-> renaming the repo breaks the Vercel git link for no benefit. Wherever you see "kosovo" in
+> renaming the repo breaks the Vercel git link for no benefit. Wherever you see "macedonia" in
 > those two identifiers, read it as "this project". **The market is Macedonia.**
 
 ## 🛑 GOLDEN RULE — never touch the Bulgarian system
@@ -41,9 +41,9 @@ exits non-zero if anything points at Bulgaria.
 The shell's working directory **silently resets between tool calls**. NEVER rely on the current
 directory to choose which project a command acts on. For ANY state-changing command, pass the
 target **explicitly** and verify it before running:
-- **Vercel:** `vercel <cmd> --cwd "D:\Dev\archives\elyon-kosovo" --scope gordanas-projects-a53c0208`
+- **Vercel:** `vercel <cmd> --cwd "D:\Dev\archives\elyon-macedonia" --scope gordanas-projects-a53c0208`
 - **Supabase:** confirm `supabase/config.toml` `project_id = "bmfxhgznttcnnlqloqzp"` before any link/push/deploy
-- **Git:** `git -C "D:\Dev\archives\elyon-kosovo" …`
+- **Git:** `git -C "D:\Dev\archives\elyon-macedonia" …`
 - Read the tool's echoed target (e.g. "to Project X"); if it's ever `elyoncrm`/BG → abort immediately.
 - **Never pass a `--project-ref` copied out of `docs/`** — those pages were inherited from Bulgaria.
 - **Vercel env vars:** prefer the Vercel REST API (JSON body) over `vercel env add` stdin — PowerShell
@@ -53,7 +53,7 @@ target **explicitly** and verify it before running:
 ## Infra (Macedonia only)
 - **Supabase:** ref `bmfxhgznttcnnlqloqzp` → https://bmfxhgznttcnnlqloqzp.supabase.co
 - **Vercel:** project `elyon-natura`, scope `gordanas-projects-a53c0208` → https://elyon-natura.vercel.app (GitHub-connected → auto-deploys on push to `main`)
-- **GitHub:** `Gordana1005/elyon-kosovo`
+- **GitHub:** `Gordana1005/elyon-macedonia`
 - **Secrets:** `docs/VAULT.md` (gitignored) — keys, webhook secret, admin logins
 - **Status / done / TODO:** `MACEDONIA-STATUS.md` (repo root)
 - **Migrations:** the DB password was never recorded, so `supabase db push` cannot open a direct
@@ -88,7 +88,7 @@ before non-trivial work on money, phones, warehouse, stock, webhooks, or fulfilm
 **But apply the Macedonian per-market overrides above** — several skills still teach BG rules
 (lev peg, +359, Sofia). When a skill conflicts with the overrides, the overrides win; fix the skill.
 
-- `elyon-currency` — ⚠️ inherited BG/Kosovo rules. The currency override above wins.
+- `elyon-currency` — ⚠️ inherited BG/Macedonia rules. The currency override above wins.
 - `elyon-phone-normalization` — Last-8-digits search + E.164 storage + pollution protection.
 - `elyon-fulfilment-csv` — ⚠️ describes a Bulgarian warehouse serving a Skopje call centre; for MK that relationship inverts. Rewrite before relying on it.
 - `elyon-warehouse-incoming` — The full daily warehouse workflow and stock safety.
@@ -124,6 +124,6 @@ and never let a recalled BG fact send you to touch the BG system.
 
 ---
 
-*Fork stood up 2026-06-30 from `deploy-kit/`; re-aimed from Kosovo to Macedonia and brought to
+*Fork stood up 2026-06-30 from `deploy-kit/`; re-aimed from Macedonia to Macedonia and brought to
 Bulgarian code parity on 2026-07-31 (28 migrations + ~33 new files). This file is the Macedonian
 constitution (Claude.md + Skills + Memory = the Elyon Agent OS, Macedonian instance).*

@@ -3,7 +3,7 @@
 One ordered, tick-box pass that ties the whole kit together. Phase 1 = working CRM. Phase 2 =
 telephony.
 
-> 🛑 Before every command, confirm it targets the **new** Kosovo ref — never `sxymaloycddnoxudxaqp`.
+> 🛑 Before every command, confirm it targets the **new** Macedonia ref — never `sxymaloycddnoxudxaqp`.
 
 ---
 
@@ -11,11 +11,11 @@ telephony.
 - [ ] Supabase, Vercel, GitHub logins ready
 - [ ] Domain bought
 - [ ] Product catalog XLSX in hand
-- [ ] Kosovo courier(s) + city list decided
+- [ ] Macedonia courier(s) + city list decided
 - [ ] A machine with Node 20+ and the Supabase CLI
 
 ## Code fork — [02](02-FORK-THE-CODE.md)
-- [ ] `elyon-kosovo` repo created, **detached** from the Bulgarian remote
+- [ ] `elyon-macedonia` repo created, **detached** from the Bulgarian remote
 - [ ] Confirmed no `.env` / `docs/VAULT.md` / `.secrets/` came along
 - [ ] `npm install && npm run build` succeeds on the untouched fork
 
@@ -30,11 +30,11 @@ telephony.
 - [ ] Public sign-ups disabled in Auth
 
 ## Seed — [04](04-SEED-AND-BOOTSTRAP.md)
-- [ ] Admin(s) created (emails edited for Kosovo); **bootstrap password rotated**
+- [ ] Admin(s) created (emails edited for Macedonia); **bootstrap password rotated**
 - [ ] Products imported (`--commit`)
 - [ ] Call scripts imported (`--commit`)
 - [ ] Per-product webhooks created (`--commit`)
-- [ ] Kosovo couriers + cities loaded (even a minimal list)
+- [ ] Macedonia couriers + cities loaded (even a minimal list)
 - [ ] `audit-segments-integrity.mjs` clean
 
 ## Per-market edits (Group A) — [06](06-PER-MARKET-CHANGES.md)
@@ -43,7 +43,7 @@ telephony.
 - [ ] Phone default → +383 (and the `hasFullPhone` length check re-checked)
 - [ ] Login email domain updated (matches admin emails)
 - [ ] Default UI language → `sq`
-- [ ] CORS allow-list → Kosovo domain; function redeployed
+- [ ] CORS allow-list → Macedonia domain; function redeployed
 - [ ] Couriers/address strings updated
 - [ ] Grep sweep clean: `1.95583`, `Europe/Sofia`, `elyoncall.com`, `elyoncrm.local`
 
@@ -63,14 +63,14 @@ telephony.
 - [ ] **Fire a signed webhook** to one product slug (HMAC with the new `WEBHOOK_SECRET`) → a
       lead/order appears; an unsigned request is **rejected (401)** (fail-closed)
 - [ ] Trigger a segment recompute (or wait for nightly) → membership computes without error
-- [ ] Times shown (activity/leaderboard day boundary) reflect Kosovo time
+- [ ] Times shown (activity/leaderboard day boundary) reflect Macedonia time
 
-✅ If all the above pass, **the Kosovo CRM is live** (Phase 1).
+✅ If all the above pass, **the Macedonia CRM is live** (Phase 1).
 
 ---
 
 ## Phase 2 (telephony) acceptance — [07](07-TELEPHONY-LATER.md)
-- [ ] Kosovo PBX reachable; trunk "Reachable"; TLS valid
+- [ ] Macedonia PBX reachable; trunk "Reachable"; TLS valid
 - [ ] Group B edits applied (PBX host + +383 DIDs); `VITE_USE_REAL_VOIP=true`; redeployed
 - [ ] Browser → +383 outbound call has **two-way audio**
 - [ ] Inbound to a +383 DID rings an agent

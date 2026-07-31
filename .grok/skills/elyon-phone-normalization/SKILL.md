@@ -1,14 +1,14 @@
 ---
 name: elyon-phone-normalization
-description: Use for any phone number handling, search, matching, import, or customer lookup in the Kosovo Elyon CRM. KOSOVO stores E.164 with country code +383 (NOT the Bulgarian +359). Last-8-digits normalization for search is unchanged. Critical for search-prediction, customer intelligence, call queues, webhooks, and all order/lead lookups.
+description: Use for any phone number handling, search, matching, import, or customer lookup in the Macedonia Elyon CRM. MACEDONIA stores E.164 with country code +383 (NOT the Bulgarian +359). Last-8-digits normalization for search is unchanged. Critical for search-prediction, customer intelligence, call queues, webhooks, and all order/lead lookups.
 ---
 
 # Elyon Phone Normalization Skill
 
-> **KOSOVO OVERRIDE:** this is the Kosovo fork. Store numbers as E.164 with **+383**, not the
+> **MACEDONIA OVERRIDE:** this is the Macedonia fork. Store numbers as E.164 with **+383**, not the
 > Bulgarian **+359**. The last-8-digits search/matching rule below is country-agnostic and stays
 > exactly as written. The edge function's `normalizeBgPhone()` is already retargeted to +383 —
-> verify Kosovo digit-length rules against real numbers (`TODO(kosovo)`). Wherever this skill says
+> verify Macedonia digit-length rules against real numbers (`TODO(macedonia)`). Wherever this skill says
 > "+359" below, read it as **+383**.
 
 ## The Golden Rule

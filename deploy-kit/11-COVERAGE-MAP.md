@@ -63,7 +63,7 @@ call-script template). Nothing in that list is "manual."
 **SQL that lives *outside* migrations (and what to do with it):**
 - `backup_before_*.sql` (repo root) — old pre-migration snapshots. **Ignore** for the fork.
 - `scripts/segment-engine-cutover.sql` — the **optional** v4-engine cutover. **Leave it
-  unapplied** so Kosovo runs the proven v3.4 engine (same as live today).
+  unapplied** so Macedonia runs the proven v3.4 engine (same as live today).
 
 **The caveat (be honest about it):** over the project's life some changes were applied to the
 *live* DB via the Supabase Management API / SQL editor, and notes suggest a migration or two may
@@ -86,7 +86,7 @@ documented source of truth.)
 ---
 
 ## What is genuinely *not* in the repo (and never was)
-- **Runtime data** — orders/customers/calls (by design; Kosovo starts fresh).
+- **Runtime data** — orders/customers/calls (by design; Macedonia starts fresh).
 - **Secrets** — gitignored ([08](08-SECRETS-TEMPLATE.md)).
 - **PBX server config** — lives on the Sofia box, but is fully *documented* and rebuildable
   ([07](07-TELEPHONY-LATER.md), `PBX-SETUP.md`, telephony RUNBOOK).

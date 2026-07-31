@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
-// TODO(kosovo): final login domain — must match the admin emails seeded in
+// TODO(macedonia): final login domain — must match the admin emails seeded in
 // scripts/create-admin-users.mjs (Phase 3). Placeholder for now.
 const EMAIL_DOMAIN = 'elyon-mk.local';
 

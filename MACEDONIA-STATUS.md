@@ -3,10 +3,10 @@
 This repo is a **hard fork** of the live Bulgarian Elyon CRM, run as a separate Macedonian
 operation. It shares **nothing at runtime** with Bulgaria (own repo / own Supabase / own Vercel).
 
-> **Why the infrastructure says "kosovo".** The fork was stood up on 2026-06-30 for Kosovo, then
+> **Why the infrastructure says "macedonia".** The fork was stood up on 2026-06-30 for Macedonia, then
 > re-aimed at **Macedonia** on 2026-07-31 because that project was already clean. The Supabase
 > ref, Vercel project and GitHub repo names were deliberately kept — renaming them buys nothing
-> and breaks the deploy links. **The market is Macedonia.** (Supersedes `KOSOVO-FORK-STATUS.md`.)
+> and breaks the deploy links. **The market is Macedonia.** (Supersedes `MACEDONIA-FORK-STATUS.md`.)
 
 > 🛑 Never run any command in this repo against the live BG Supabase ref
 > `sxymaloycddnoxudxaqp` or the domain `elyoncall.com`. Run

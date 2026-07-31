@@ -1,6 +1,6 @@
-# 06 — The master Bulgaria → Kosovo change list
+# 06 — The master Bulgaria → Macedonia change list
 
-Every value that is **Bulgaria-specific** and must change for Kosovo, with the exact file and
+Every value that is **Bulgaria-specific** and must change for Macedonia, with the exact file and
 line. The good news from the codebase audit: these are **isolated to ~10-15 files**. The core
 order/customer/call/segment logic is market-neutral and needs no changes.
 
@@ -15,8 +15,8 @@ Group B is telephony (Phase 2 — see [07](07-TELEPHONY-LATER.md)); Group C is d
 
 ## Group A — needed for Phase 1 (CRM correctness)
 
-### A1. Currency — drop the lev peg (Kosovo uses EUR natively)
-Bulgaria stores prices in EUR and displays EUR **+** lev via a fixed 1.95583 peg. Kosovo is
+### A1. Currency — drop the lev peg (Macedonia uses EUR natively)
+Bulgaria stores prices in EUR and displays EUR **+** lev via a fixed 1.95583 peg. Macedonia is
 euro-only, so the dual display should collapse to EUR.
 
 - File: [`../src/lib/currency.ts`](../src/lib/currency.ts)
@@ -37,11 +37,11 @@ activity). Search and replace across the fork:
   [`../src/components/insights/CallActivityTimeline.tsx`](../src/components/insights/CallActivityTimeline.tsx),
   and any `*Sofia*` display strings (e.g. PredictionEngineTab) + the Edge Function.
 - Also re-grep `supabase/functions/api/index.ts` for `Sofia` and time math.
-- **Change every `Europe/Sofia` → `Europe/Belgrade`.** (Kosovo/Pristina has no own IANA zone;
+- **Change every `Europe/Sofia` → `Europe/Belgrade`.** (Macedonia/Pristina has no own IANA zone;
   it follows Belgrade = CET/CEST.)
 
 > The pg_cron recompute schedule is in UTC and can stay — only the *human-facing* day boundary
-> needs the Kosovo zone.
+> needs the Macedonia zone.
 
 ### A3. Phone country code — +359 → +383
 Storage/search is last-8-digits + E.164; the **default country code** for inbound/normalized
@@ -51,7 +51,7 @@ numbers is the Bulgarian one.
   already country-agnostic (just strips junk) — no change.
 - The **country-code assumption** lives server-side / in ingestion. Check:
   - [`../supabase/functions/api/index.ts:1303`](../supabase/functions/api/index.ts#L1303) —
-    `hasFullPhone` assumes "+359 + 8-9 digits" (≥11). Kosovo +383 mobile lengths differ;
+    `hasFullPhone` assumes "+359 + 8-9 digits" (≥11). Macedonia +383 mobile lengths differ;
     re-check this digit threshold.
   - Webhook/lead normalization that prepends a default country code → make it `+383`.
 - Authority on the rules: [`../.grok/skills/elyon-phone-normalization/SKILL.md`](../.grok/skills/elyon-phone-normalization/SKILL.md).
@@ -61,38 +61,38 @@ numbers is the Bulgarian one.
 ### A4. Login email domain
 - File: [`../src/pages/LoginPage.tsx:11`](../src/pages/LoginPage.tsx#L11) —
   `const EMAIL_DOMAIN = 'elyoncrm.local';`
-- **Change** to your Kosovo convention (e.g. `'elyon-xk.local'`). Must match the emails you
+- **Change** to your Macedonia convention (e.g. `'elyon-mk.local'`). Must match the emails you
   create in [`create-admin-users.mjs`](../scripts/create-admin-users.mjs) (step 1 of [04](04-SEED-AND-BOOTSTRAP.md)).
 
 ### A5. Default UI language → Albanian (recommended)
 - File: [`../src/i18n/index.ts:32`](../src/i18n/index.ts#L32) — `storedLanguage()` falls back to
-  `'en'`. Change the fallback to `'sq'` so a brand-new Kosovo user starts in Albanian.
+  `'en'`. Change the fallback to `'sq'` so a brand-new Macedonia user starts in Albanian.
 - `sq` is already a supported language with full translations
   ([`../src/i18n/locales/sq.json`](../src/i18n/locales/sq.json)). Operator should review wording
   in-app. Rule: [`../.grok/skills/elyon-i18n/SKILL.md`](../.grok/skills/elyon-i18n/SKILL.md).
 
 ### A6. CORS allow-list (backend)
 - File: [`../supabase/functions/api/index.ts:547`](../supabase/functions/api/index.ts#L547) —
-  replace `https://elyoncall.com` / `https://www.elyoncall.com` with the Kosovo domain(s).
+  replace `https://elyoncall.com` / `https://www.elyoncall.com` with the Macedonia domain(s).
   (Full steps in [05](05-FRONTEND-DEPLOY.md).)
 
-### A7. Couriers, settlements, address format (Kosovo-local)
+### A7. Couriers, settlements, address format (Macedonia-local)
 - **Courier picker enum/labels:** [`../src/components/DeliveryMethodPicker.tsx`](../src/components/DeliveryMethodPicker.tsx)
   and the `delivery_type` values (`home` / `speedy_office` / `econt_office`) referenced in
   [`../src/lib/api.ts`](../src/lib/api.ts) and the Edge Function. Replace Speedy/Econt with the
-  chosen Kosovo carrier(s).
-- **Settlements / city DB:** the `bg_settlements` migration data → Kosovo cities (data step,
+  chosen Macedonia carrier(s).
+- **Settlements / city DB:** the `bg_settlements` migration data → Macedonia cities (data step,
   [04](04-SEED-AND-BOOTSTRAP.md) §5).
 - **Address parsing:** [`../src/lib/address.ts`](../src/lib/address.ts) parses Bulgarian Cyrillic
   markers (ул./бул./бл./вх./ет./ап.). Adapt for Albanian address conventions (or simplify to a
   free-text address for Phase 1).
 - **Fulfilment CSV** format stays the same shape — keep
   [`../.grok/skills/elyon-fulfilment-csv/SKILL.md`](../.grok/skills/elyon-fulfilment-csv/SKILL.md);
-  just confirm your Kosovo courier accepts that layout.
+  just confirm your Macedonia courier accepts that layout.
 
 ### A8. Webhook source label (cosmetic)
 - The Edge Function defaults an inbound source label to `naturatherapy.bg`. Update to the
-  Kosovo store/landing label (or leave — it's only a provenance tag). See [04](04-SEED-AND-BOOTSTRAP.md) §4.
+  Macedonia store/landing label (or leave — it's only a provenance tag). See [04](04-SEED-AND-BOOTSTRAP.md) §4.
 
 ---
 
@@ -117,7 +117,7 @@ These hold Bulgarian PBX/A1 values. Leave them until you do [07](07-TELEPHONY-LA
 
 ## Group C — data (not code; done in step 04)
 
-Fresh customers/orders, Kosovo couriers + cities, new admin accounts, new `WEBHOOK_SECRET`.
+Fresh customers/orders, Macedonia couriers + cities, new admin accounts, new `WEBHOOK_SECRET`.
 See [04-SEED-AND-BOOTSTRAP.md](04-SEED-AND-BOOTSTRAP.md).
 
 ---

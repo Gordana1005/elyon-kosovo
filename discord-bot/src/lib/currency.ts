@@ -12,12 +12,12 @@ export function fmtEur(eur: number | string): string {
   return `€${(Number.isFinite(n) ? n : 0).toFixed(2)}`;
 }
 
-// Kosovo: euro-native, no lev. Kept for signature compatibility; emit EUR only.
+// Macedonia: euro-native, no lev. Kept for signature compatibility; emit EUR only.
 export function fmtLev(eur: number | string): string {
   return fmtEur(eur);
 }
 
-/** EUR-only in Kosovo (was dual "€30.63 (59.93 лв)" in Bulgaria). */
+/** EUR-only in Macedonia (was dual "€30.63 (59.93 лв)" in Bulgaria). */
 export function fmtDual(eur: number | string): string {
   return fmtEur(eur);
 }

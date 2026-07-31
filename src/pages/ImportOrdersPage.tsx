@@ -35,21 +35,47 @@ const EMPTY: PreviewRow = {
 };
 
 // Flexible header matching — first column whose header (case-insensitive, trimmed)
-// is in the candidate list wins. Lets the Kosovo team hand us English or Albanian
+// is in the candidate list wins. Lets the Macedonia team hand us English or Albanian
 // headers without exact-naming the file.
+// Header aliases, matched case-insensitively after trimming. English +
+// Macedonian (Cyrillic and common Latin transliterations) + Albanian, so a file
+// exported from almost any local system maps without being re-typed first.
 const HEADER_MAP: Record<keyof PreviewRow, string[]> = {
-  external_order_id: ['external_order_id', 'order_id', 'order id', 'order_no', 'order no', 'order number', 'order #', '#', 'id', 'porosia', 'nr', 'no'],
-  order_date: ['order_date', 'date', 'data', 'datum', 'date_added', 'dt'],
-  customer_name: ['customer_name', 'name', 'full name', 'fullname', 'client', 'customer', 'emri', 'emri mbiemri'],
-  customer_phone: ['customer_phone', 'phone', 'telephone', 'tel', 'number', 'phone number', 'numri', 'telefoni', 'mobile', 'gsm'],
-  product_name: ['product_name', 'product', 'produkti', 'item', 'article', 'produkt'],
-  quantity: ['quantity', 'qty', 'sasia', 'count', 'pcs'],
-  price: ['price', 'total', 'amount', 'cmimi', 'çmimi', 'total price', 'sum', 'value'],
-  status: ['status', 'statusi', 'state', 'gjendja'],
-  customer_city: ['customer_city', 'city', 'qyteti', 'town', 'vendi'],
-  customer_address: ['customer_address', 'address', 'adresa', 'adresë', 'street', 'rruga'],
-  postal_code: ['postal_code', 'postcode', 'post code', 'zip', 'zip code', 'kodi postar'],
-  note: ['note', 'notes', 'comment', 'comments', 'koment', 'remark', 'shenim', 'shënim'],
+  external_order_id: ['external_order_id', 'order_id', 'order id', 'order_no', 'order no', 'order number', 'order #', '#', 'id', 'nr', 'no',
+    'нарачка', 'број на нарачка', 'бр', 'бр.', 'нарачка бр', 'порачка', 'broj na naracka', 'naracka',
+    'porosia'],
+  order_date: ['order_date', 'date', 'data', 'datum', 'date_added', 'dt',
+    'датум', 'датум на нарачка'],
+  customer_name: ['customer_name', 'name', 'full name', 'fullname', 'client', 'customer',
+    'име', 'име и презиме', 'клиент', 'купувач', 'ime', 'ime i prezime', 'klient',
+    'emri', 'emri mbiemri'],
+  customer_phone: ['customer_phone', 'phone', 'telephone', 'tel', 'number', 'phone number', 'mobile', 'gsm',
+    'телефон', 'телефонски број', 'број', 'мобилен', 'telefon', 'mobilen',
+    'numri', 'telefoni'],
+  product_name: ['product_name', 'product', 'item', 'article', 'produkt',
+    'производ', 'артикл', 'proizvod', 'artikl',
+    'produkti'],
+  quantity: ['quantity', 'qty', 'count', 'pcs',
+    'количина', 'кол', 'кол.', 'парчиња', 'kolicina',
+    'sasia'],
+  price: ['price', 'total', 'amount', 'total price', 'sum', 'value',
+    'цена', 'износ', 'вкупно', 'сума', 'cena', 'iznos', 'vkupno',
+    'cmimi', 'çmimi'],
+  status: ['status', 'state',
+    'статус', 'состојба', 'sostojba',
+    'statusi', 'gjendja'],
+  customer_city: ['customer_city', 'city', 'town',
+    'град', 'место', 'grad', 'mesto',
+    'qyteti', 'vendi'],
+  customer_address: ['customer_address', 'address', 'street',
+    'адреса', 'улица', 'adresa', 'ulica',
+    'adresë', 'rruga'],
+  postal_code: ['postal_code', 'postcode', 'post code', 'zip', 'zip code',
+    'поштенски код', 'пошт. код', 'поштенски број', 'postenski kod',
+    'kodi postar'],
+  note: ['note', 'notes', 'comment', 'comments', 'remark',
+    'забелешка', 'коментар', 'напомена', 'zabeleska', 'komentar',
+    'koment', 'shenim', 'shënim'],
 };
 
 const VALID_STATUSES = ['pending', 'confirmed', 'shipped', 'delivered', 'paid', 'cancelled', 'returned', 'trashed', 'call_again'];

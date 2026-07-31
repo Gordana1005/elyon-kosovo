@@ -11,8 +11,8 @@ phone dialer; **Phase 2** adds telephony. Buy/create only the Phase 1 items firs
 |---|---|---|---|---|
 | 1 | **Supabase** project | Database (Postgres) + Auth + the backend API (Edge Function) | supabase.com | One **new** project, separate from Bulgaria. Free tier works to start; Pro recommended for production (see below). |
 | 2 | **Vercel** project | Hosts the web app (the React frontend) | vercel.com | One new project pointed at the new repo. Hobby tier can work; Pro for a team/custom SLA. |
-| 3 | **GitHub** repo (private) | Holds the forked code | github.com | New private repo, e.g. `elyon-kosovo`. |
-| 4 | **Domain + DNS** | The address agents log in at | a registrar (Namecheap, etc.) | e.g. `elyon-xk.com` or a subdomain. DNS points to Vercel. |
+| 3 | **GitHub** repo (private) | Holds the forked code | github.com | New private repo, e.g. `elyon-macedonia`. |
+| 4 | **Domain + DNS** | The address agents log in at | a registrar (Namecheap, etc.) | e.g. `elyon-mk.com` or a subdomain. DNS points to Vercel. |
 | 5 | **A computer with Node.js + Supabase CLI** | Runs migrations and seed scripts once | you | Node 20+. Used only during setup. |
 
 ### Accounts/info the operator must personally provide
@@ -21,7 +21,7 @@ phone dialer; **Phase 2** adds telephony. Buy/create only the Phase 1 items firs
 - A GitHub login that can create a private repo.
 - A domain (bought from any registrar).
 - The **product catalog source** (the BigArena fulfilment XLSX) — for the catalog import.
-- Decisions on **Kosovo couriers** and a **city/settlement list** (see file 04 + 06).
+- Decisions on **Macedonia couriers** and a **city/settlement list** (see file 04 + 06).
 
 ---
 
@@ -32,7 +32,7 @@ Covered in detail in [07-TELEPHONY-LATER.md](07-TELEPHONY-LATER.md). Summary of 
 | # | Service | What it's for | Notes |
 |---|---|---|---|
 | 6 | **VPS** (Linux server) | Runs the PBX (Asterisk + FreePBX) | New box, or reuse the Sofia box. ~€7/mo class. |
-| 7 | **SIP trunk** (Kosovo/Albania carrier) | Connects the PBX to the real phone network | e.g. IPKO / Vodafone / Albtelecom — needs a business account. The biggest unknown; pricing per carrier. |
+| 7 | **SIP trunk** (Macedonia/Albania carrier) | Connects the PBX to the real phone network | e.g. IPKO / Vodafone / Albtelecom — needs a business account. The biggest unknown; pricing per carrier. |
 | 8 | **DID phone numbers** (+383) | The numbers customers see / that ring in | Bought from the trunk carrier. |
 | 9 | **TLS certificate** | Encrypts the browser↔PBX audio link | Free via Let's Encrypt. |
 
@@ -46,7 +46,7 @@ Covered in detail in [07-TELEPHONY-LATER.md](07-TELEPHONY-LATER.md). Summary of 
 | Service | What it's for | Notes |
 |---|---|---|
 | **Discord** + bot | Read-only team reports/slash commands | New Discord app + a read-only DB role. See [../docs/discord-bot/CHECKLIST.md](../docs/discord-bot/CHECKLIST.md). |
-| **OpenCart store bridge** | Auto-import web-store orders as leads | Only if a Kosovo web store exists. See [../docs/WEBSITES_WEBHOOKS.md](../docs/WEBSITES_WEBHOOKS.md). |
+| **OpenCart store bridge** | Auto-import web-store orders as leads | Only if a Macedonia web store exists. See [../docs/WEBSITES_WEBHOOKS.md](../docs/WEBSITES_WEBHOOKS.md). |
 
 ---
 
@@ -60,7 +60,7 @@ Covered in detail in [07-TELEPHONY-LATER.md](07-TELEPHONY-LATER.md). Summary of 
 | GitHub private repo | — | €0 | Phase 1 |
 | **Phase 1 subtotal** | **€0** | **~€1 – €46** | |
 | VPS for PBX | — | ~€7 | Phase 2 |
-| SIP trunk + DIDs | varies (setup) | carrier-dependent (the BG trunk is ~€160/mo for 4 ch / 10 numbers / 5,000 min — Kosovo will differ) | Phase 2 |
+| SIP trunk + DIDs | varies (setup) | carrier-dependent (the BG trunk is ~€160/mo for 4 ch / 10 numbers / 5,000 min — Macedonia will differ) | Phase 2 |
 | Let's Encrypt TLS | — | €0 | Phase 2 |
 
 > **Reality check:** Phase 1 can run on near-free tiers while you validate the market.

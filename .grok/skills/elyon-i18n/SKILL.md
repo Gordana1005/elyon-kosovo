@@ -16,7 +16,7 @@ and `SUPPORTED_LANGUAGES` in `src/i18n/index.ts`. Nothing else iterates a
 hardcoded language list — the switcher, Settings → Appearance and the Call
 Scripts editor tabs all read `SUPPORTED_LANGUAGES`. Keep it that way.
 
-**Albanian (`sq`, Kosovo standard)** was added 2026-06-22 and is **LIVE**.
+**Albanian (`sq`, Macedonia standard)** was added 2026-06-22 and is **LIVE**.
 **Macedonian (`mk`, literary Skopje standard)** was added 2026-07-22 and is
 **LIVE**. Both are in `SUPPORTED_LANGUAGES`, so the top-bar switcher and
 Settings → Appearance show them. Professional wording review happens in-app
@@ -159,7 +159,7 @@ Product TITLES stay as the brand name (fall back to base). So: still NO call-scr
   (insufficient stock, personal-list claims, rate limits); all `err.message` toasts
   swept to `apiErrorText`; full i18n-scan clean
 
-**Albanian (SQ) added 2026-06-22 — LIVE:** full `sq.json` (Kosovo standard, all
+**Albanian (SQ) added 2026-06-22 — LIVE:** full `sq.json` (Macedonia standard, all
 keys), date-fns `sq` locale wired, Albanian flag + dropdown switcher, `'sq'` in
 `SUPPORTED_LANGUAGES`. Professional wording review still pending in-app (see intro).
 Same change also swept the last hardcoded stragglers (AgentTimeline legend/tooltip,
@@ -204,7 +204,7 @@ produced 2026-07-22 as a glossary-bound draft plus an independent
 anti-Bulgarianism review pass, and is **pending operator review** — adjust
 wording on feedback, keep keys stable, and keep it inside the glossary.
 
-Albanian (`sq.json`) is Kosovo-standard, same terse register. It was produced as
+Albanian (`sq.json`) is Macedonia-standard, same terse register. It was produced as
 a Claude first-draft (2026-06-22) and is **pending professional review** — adjust
 wording on feedback, keep keys stable. Don't translate inside `{{…}}`, brand /
 courier names (Speedy, Econt, BigArena, Pure Profit, Elyon CRM), enum values, or

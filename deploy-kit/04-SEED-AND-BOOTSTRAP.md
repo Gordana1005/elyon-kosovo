@@ -1,8 +1,8 @@
 # 04 — Seed & bootstrap the empty database
 
-Now we put the first real content into the empty Kosovo DB: an admin to log in, the product
+Now we put the first real content into the empty Macedonia DB: an admin to log in, the product
 catalog, the call scripts, and the per-product webhooks. **Customer/order data stays empty —
-that fills up from real Kosovo business.**
+that fills up from real Macedonia business.**
 
 > 🛑 Everything here runs against the **new** project, via the fork's `.env` (the one you filled
 > in [03](03-SUPABASE-FROM-ZERO.md)). Confirm `.env` has the **new** ref before running anything.
@@ -19,12 +19,12 @@ Run in this order.
 Creates the first admin(s) (auth user + profile + `admin` role), bypassing email confirmation.
 
 By default the script creates 3 hardcoded Bulgarian admins
-(`MileStoev@elyoncrm.local`, …) with password `12345678`. **For Kosovo, edit the `USERS`
-array and email domain in the script first** (e.g. an `@elyon-xk.local` address), then run it.
+(`MileStoev@elyoncrm.local`, …) with password `12345678`. **For Macedonia, edit the `USERS`
+array and email domain in the script first** (e.g. an `@elyon-mk.local` address), then run it.
 
 ```powershell
 # PowerShell — note: plain SUPABASE_URL, NOT VITE_
-$env:SUPABASE_URL="https://<NEW_KOSOVO_REF>.supabase.co"
+$env:SUPABASE_URL="https://<NEW_PROJECT_REF>.supabase.co"
 $env:SUPABASE_SERVICE_ROLE_KEY="<new service-role key>"
 node scripts/create-admin-users.mjs
 ```
@@ -48,10 +48,10 @@ node --env-file=.env scripts/import-products-bigarena.mjs --commit
 - Matches by SKU, falls back to normalized name; auto-generates SKUs on insert.
 - Stock >10 → insert/update + activate; stock ≤10 → update existing only.
 - Each change writes an `inventory_logs` row.
-- Prices are in **EUR** in the catalog — correct for Kosovo as-is.
+- Prices are in **EUR** in the catalog — correct for Macedonia as-is.
 - Rules: [../.grok/skills/elyon-stock-and-bigarena/SKILL.md](../.grok/skills/elyon-stock-and-bigarena/SKILL.md).
 
-> If Kosovo sells a **different** product set, just import a different XLSX (`--file=PATH`).
+> If Macedonia sells a **different** product set, just import a different XLSX (`--file=PATH`).
 
 ---
 
@@ -66,7 +66,7 @@ node --env-file=.env scripts/import-call-scripts.mjs --commit   # write
 
 - Idempotent by title.
 - Albanian/English/Bulgarian variants live in the `call_scripts.translations` JSONB; for
-  Kosovo the operator should review/adjust the **sq** wording in-app afterwards.
+  Macedonia the operator should review/adjust the **sq** wording in-app afterwards.
 - Reference: [../docs/CALL_SCRIPTS.md](../docs/CALL_SCRIPTS.md).
 
 ---
@@ -82,25 +82,25 @@ node --env-file=.env scripts/create-webhooks-for-products.mjs --commit   # write
 
 - Idempotent (upserts on slug).
 - The signing key is the `WEBHOOK_SECRET` you set in [03](03-SUPABASE-FROM-ZERO.md). Give that
-  secret + each webhook URL to whoever builds the Kosovo landing pages.
+  secret + each webhook URL to whoever builds the Macedonia landing pages.
 - Contract: [../docs/WEBSITES_WEBHOOKS.md](../docs/WEBSITES_WEBHOOKS.md) and
   [../.grok/skills/elyon-webhook-and-lead-ingestion/SKILL.md](../.grok/skills/elyon-webhook-and-lead-ingestion/SKILL.md).
 
 ---
 
-## 5. Couriers + cities — **Kosovo-local (fresh, not carried over)**
+## 5. Couriers + cities — **Macedonia-local (fresh, not carried over)**
 
-Bulgaria's Speedy/Econt offices and `bg_settlements` do **not** apply to Kosovo. You need:
+Bulgaria's Speedy/Econt offices and `bg_settlements` do **not** apply to Macedonia. You need:
 
-- A **Kosovo courier list** + their office/pickup points → populate `courier_offices`.
-- A **Kosovo city/settlement list** → populate the settlements table.
+- A **Macedonia courier list** + their office/pickup points → populate `courier_offices`.
+- A **Macedonia city/settlement list** → populate the settlements table.
 
 The Bulgarian scripts are the **pattern to adapt**, not to run as-is:
-- `scripts/scrape-courier-offices.mjs` (Speedy/Econt scraper) → rewrite for the Kosovo carrier(s).
+- `scripts/scrape-courier-offices.mjs` (Speedy/Econt scraper) → rewrite for the Macedonia carrier(s).
 - `scripts/fetch-bg-settlements.mjs` (+ `enrich-settlements-municipality.mjs`) → replace with
-  Kosovo data (a one-off CSV/JSON import is fine to start).
+  Macedonia data (a one-off CSV/JSON import is fine to start).
 
-> Minimum to go live: even a small static list of the main Kosovo cities + one courier is
+> Minimum to go live: even a small static list of the main Macedonia cities + one courier is
 > enough for Phase 1. Expand later. The matching enum/labels are listed in
 > [06-PER-MARKET-CHANGES.md](06-PER-MARKET-CHANGES.md).
 

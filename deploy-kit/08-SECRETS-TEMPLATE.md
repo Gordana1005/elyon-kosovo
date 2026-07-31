@@ -1,6 +1,6 @@
-# 08 — Secrets template (blank vault for Kosovo)
+# 08 — Secrets template (blank vault for Macedonia)
 
-Every credential a Kosovo deployment needs, **with no real values**. Copy this into a private
+Every credential a Macedonia deployment needs, **with no real values**. Copy this into a private
 file (e.g. `docs/VAULT.md` in the fork — already gitignored) and fill it in as you create each
 account. Mirrors the structure of the Bulgarian vault so it feels familiar.
 
@@ -12,7 +12,7 @@ account. Mirrors the structure of the Bulgarian vault so it feels familiar.
 
 ---
 
-## 1. Supabase (project `<NEW_KOSOVO_REF>`)
+## 1. Supabase (project `<NEW_PROJECT_REF>`)
 
 | Key | Value | Where it's used |
 |---|---|---|
@@ -28,7 +28,7 @@ account. Mirrors the structure of the Bulgarian vault so it feels familiar.
 
 | Secret | Value | Notes |
 |---|---|---|
-| `WEBHOOK_SECRET` | `__________` | new random HMAC key; share only with Kosovo senders |
+| `WEBHOOK_SECRET` | `__________` | new random HMAC key; share only with Macedonia senders |
 | `SUPABASE_URL` | `https://__________.supabase.co` | usually runtime-provided |
 | `SUPABASE_SERVICE_ROLE_KEY` | (as §1) | usually runtime-provided |
 | `SUPABASE_ANON_KEY` | (as §1 anon) | needed by the function's RLS client |
@@ -37,8 +37,8 @@ account. Mirrors the structure of the Bulgarian vault so it feels familiar.
 ## 3. `.env` (local, gitignored) — fork working copy
 
 ```
-VITE_SUPABASE_PROJECT_ID="<NEW_KOSOVO_REF>"
-VITE_SUPABASE_URL="https://<NEW_KOSOVO_REF>.supabase.co"
+VITE_SUPABASE_PROJECT_ID="<NEW_PROJECT_REF>"
+VITE_SUPABASE_URL="https://<NEW_PROJECT_REF>.supabase.co"
 VITE_SUPABASE_PUBLISHABLE_KEY="<anon key>"
 SUPABASE_SERVICE_ROLE_KEY="<service_role key>"
 SUPABASE_ACCESS_TOKEN="<CLI token>"
@@ -50,7 +50,7 @@ SUPABASE_ACCESS_TOKEN="<CLI token>"
 
 | Item | Value |
 |---|---|
-| Project name | `__________` (e.g. elyon-kosovo) |
+| Project name | `__________` (e.g. elyon-macedonia) |
 | Project ID | `prj___________` |
 | Org / team ID | `team___________` |
 | Production domain(s) | `__________` |
@@ -91,7 +91,7 @@ SUPABASE_ACCESS_TOKEN="<CLI token>"
 
 | Item | Value |
 |---|---|
-| GitHub repo (private) | `github.com/__________/elyon-kosovo` |
+| GitHub repo (private) | `github.com/__________/elyon-macedonia` |
 | Founding admin login(s) | `__________@__________` (rotate bootstrap pw immediately) |
 | OpenCart store (optional) | `__________` |
 | Discord bot token (optional) | `__________` |

@@ -34,10 +34,9 @@ function storedLanguage(): AppLanguage {
   } catch {
     // localStorage unavailable (private mode etc.) — fall through to default.
   }
-  // Macedonia default = Macedonian (was 'sq' while this deployment was aimed at
-  // Kosovo, 'en' in Bulgaria). Albanian stays shipped for Albanian-speaking
-  // agents — it is a language choice, not a market change. fallbackLng stays
-  // 'en' below so a missing key still resolves.
+  // Macedonia default = Macedonian. Albanian ('sq') stays shipped for
+  // Albanian-speaking agents — that is a language choice, not a market one.
+  // fallbackLng stays 'en' below so a missing key still resolves.
   return 'mk';
 }
 
