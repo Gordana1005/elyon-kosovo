@@ -82,7 +82,7 @@ function ScriptAccordionItem({
 }) {
   const { t, i18n } = useTranslation();
   // Resolve the script for the agent's active app language (per-field fallback to the
-  // Bulgarian base). Re-runs on language switch — this component subscribes via useTranslation().
+  // Macedonian base). Re-runs on language switch — this component subscribes via useTranslation().
   const r = resolveScript(script, i18n.language);
   // Local state for the 30% helpers pane (clean, per-script, no global stuffing)
   const [helperSearch, setHelperSearch] = useState('');

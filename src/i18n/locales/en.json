@@ -274,7 +274,7 @@
   },
   "fields": {
     "customerName": "Customer name",
-    "phonePlaceholder": "Phone (+359…)"
+    "phonePlaceholder": "Phone (+389…)"
   },
   "validation": {
     "phoneTooShort": "Phone too short",
@@ -713,7 +713,7 @@
     "myPayoutDetails": "Full payout details",
     "myPayoutDetailsDesc": "See packages, rates and earnings breakdown",
     "openAgentsTab": "Open details",
-    "perPackage": "≈ €{{price}} / package",
+    "perPackage": "≈ {{price}} / package",
     "unitsSub": "Total products (units)",
     "returns": "Returns",
     "ordersSub": "All you handled",

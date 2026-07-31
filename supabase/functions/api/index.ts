@@ -311,7 +311,7 @@ const predictionListSchema = z.object({
 });
 
 // Bulk historical-order import (admin-only). One row = one past order. Money is
-// already EUR (Kosovo), phones get normalized to +383, products matched by name
+// already EUR (Kosovo), phones get normalized to +389, products matched by name
 // against the catalogue. Dedupe is by (external_source, external_order_id) so an
 // admin can re-upload the same file safely. The front-end chunks large files and
 // calls this repeatedly, aggregating the returned counts.
@@ -371,10 +371,10 @@ const inboundLeadSchema = z.object({
   source: z.string().max(100).optional().default("landing_page"),
 });
 
-// Inbound order from an external storefront (naturatherapy.xk / OpenCart) pushed
+// Inbound order from an external storefront (naturatherapy.mk / OpenCart) pushed
 // by the elyon_crm_bridge OCMOD. Carries the full order so the CRM has clear data
 // about what product, what happened, and where it came from. Monetary values are
-// in `currency` (EUR or BGN); the CRM stores EUR.
+// in `currency` (EUR or MKD); the CRM stores EUR.
 const opencartItemSchema = z.object({
   name: z.string().trim().min(1).max(400),
   sku: z.string().max(120).optional().default(""),
@@ -399,8 +399,8 @@ const opencartOrderSchema = z.object({
   postal_code: z.string().max(30).optional().default(""),
   comment: z.string().max(4000).optional().default(""),
   total: z.coerce.number().optional(),
-  currency: z.string().max(10).optional().default("EUR"),
-  source: z.string().max(120).optional().default("naturatherapy.xk"),
+  currency: z.string().max(10).optional().default("EUR"),   // EUR or MKD only — anything else is rejected 400 (see toEur below)
+  source: z.string().max(120).optional().default("naturatherapy.mk"),
   date_added: z.string().max(40).optional().default(""),
   items: z.array(opencartItemSchema).optional().default([]),
 });
@@ -756,9 +756,9 @@ const corsHeaders = {
 // callers (e.g. webhook senders without an Origin header) bypass CORS
 // entirely and are gated by the HMAC signature instead.
 const ALLOWED_ORIGINS = [
-  "https://elyon-xk.com",       // TODO(kosovo): real Kosovo prod domain
-  "https://www.elyon-xk.com",   // TODO(kosovo): real Kosovo prod domain
-  "https://elyon-kosovo.vercel.app", // TODO(kosovo): set after first `vercel --prod` (Phase 5)
+  "https://elyon-mk.com",       // TODO(mk): real Macedonian prod domain
+  "https://www.elyon-mk.com",   // TODO(mk): real Macedonian prod domain
+  "https://elyon-kosovo.vercel.app", // TODO(mk): set after first `vercel --prod` (Phase 5)
   "http://localhost:8080",
   "http://localhost:5173",
   "http://localhost:3000",
@@ -767,7 +767,7 @@ const ALLOWED_ORIGINS = [
 function pickAllowedOrigin(origin: string): string | null {
   if (!origin) return null;
   if (ALLOWED_ORIGINS.includes(origin)) return origin;
-  // Vercel preview deploys: elyon-kosovo-<hash>-gordanas-projects-a53c0208.vercel.app  (TODO(kosovo): confirm team slug after first deploy)
+  // Vercel preview deploys: elyon-kosovo-<hash>-gordanas-projects-a53c0208.vercel.app  (TODO(mk): confirm team slug after first deploy)
   if (/^https:\/\/elyon-kosovo-[a-z0-9-]+-gordanas-projects-a53c0208\.vercel\.app$/.test(origin)) {
     return origin;
   }
@@ -953,42 +953,42 @@ function calcLeaderboardBonus(
   return { total: Math.round(total * 100) / 100, breakdown };
 }
 
-// Europe/Belgrade day boundary as a UTC ISO instant (DST-correct). The board's
-// "today" must reset at Sofia midnight, not the edge function's server-local day.
-function sofiaDayStart(now = new Date()): { startISO: string; day: string } {
+// Europe/Skopje day boundary as a UTC ISO instant (DST-correct). The board's
+// "today" must reset at Skopje midnight, not the edge function's server-local day.
+function skopjeDayStart(now = new Date()): { startISO: string; day: string } {
   const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Europe/Belgrade",
+    timeZone: "Europe/Skopje",
     year: "numeric", month: "2-digit", day: "2-digit",
     hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
   }).formatToParts(now);
   const v = (t: string) => parts.find((p) => p.type === t)!.value;
   const n = (t: string) => Number(v(t));
   const day = `${v("year")}-${v("month")}-${v("day")}`;
-  // Interpret the Sofia wall-clock as if it were UTC, diff against the real
-  // instant to get the current offset, then apply it to Sofia midnight.
+  // Interpret the Skopje wall-clock as if it were UTC, diff against the real
+  // instant to get the current offset, then apply it to Skopje midnight.
   const wallAsUTC = Date.UTC(n("year"), n("month") - 1, n("day"), n("hour"), n("minute"), n("second"));
   const offsetMs = wallAsUTC - now.getTime();
-  const sofiaMidnightUTC = Date.UTC(n("year"), n("month") - 1, n("day"), 0, 0, 0);
-  return { startISO: new Date(sofiaMidnightUTC - offsetMs).toISOString(), day };
+  const skopjeMidnightUTC = Date.UTC(n("year"), n("month") - 1, n("day"), 0, 0, 0);
+  return { startISO: new Date(skopjeMidnightUTC - offsetMs).toISOString(), day };
 }
 
-// UTC instant of Europe/Belgrade 00:00 for an arbitrary YYYY-MM-DD (DST-correct via a
-// noon probe — Sofia is +2 in winter, +3 in summer).
-function sofiaMidnight(dateStr: string): string {
+// UTC instant of Europe/Skopje 00:00 for an arbitrary YYYY-MM-DD (DST-correct via a
+// noon probe — Skopje is +2 in winter, +3 in summer).
+function skopjeMidnight(dateStr: string): string {
   const [y, m, d] = dateStr.split("-").map(Number);
   const probe = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
-  const hour = Number(new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Belgrade", hour: "2-digit", hour12: false }).formatToParts(probe).find((p) => p.type === "hour")!.value);
+  const hour = Number(new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Skopje", hour: "2-digit", hour12: false }).formatToParts(probe).find((p) => p.type === "hour")!.value);
   const offsetHours = hour - 12;
   return new Date(Date.UTC(y, m - 1, d, 0, 0, 0) - offsetHours * 3600 * 1000).toISOString();
 }
 
-// [start, end) UTC window for a Sofia calendar day (defaults to today).
-function sofiaDayRange(dayParam?: string): { day: string; today: string; startISO: string; endISO: string } {
-  const today = sofiaDayStart().day;
+// [start, end) UTC window for a Skopje calendar day (defaults to today).
+function skopjeDayRange(dayParam?: string): { day: string; today: string; startISO: string; endISO: string } {
+  const today = skopjeDayStart().day;
   const day = /^\d{4}-\d{2}-\d{2}$/.test(dayParam || "") ? (dayParam as string) : today;
   const [y, m, d] = day.split("-").map(Number);
   const next = new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10);
-  return { day, today, startISO: sofiaMidnight(day), endISO: sofiaMidnight(next) };
+  return { day, today, startISO: skopjeMidnight(day), endISO: skopjeMidnight(next) };
 }
 
 // Fire-and-forget Realtime broadcast so the TV reacts within ~1s when an agent
@@ -1071,9 +1071,13 @@ function orderCOGS(o: any, unitCost: (productId: any, productName: any) => numbe
 const BLENDED_DELIVER_COST = 3.5;  // fallback when the courier wasn't recorded
 const BLENDED_RETURN_COST = 6.0;
 
-// BG standard VAT rate. All stored prices are GROSS (VAT-inclusive), so the
-// VAT owed on collected cash = gross − gross / (1 + VAT_RATE)  (= gross ÷ 6 at 20%).
-const VAT_RATE = 0.20;
+// Macedonian standard VAT rate (18%; upstream Bulgaria uses 20%). All stored
+// prices are GROSS (VAT-inclusive), so the VAT owed on collected cash =
+// gross − gross / (1 + VAT_RATE).
+// TODO(mk): CONFIRM WITH THE ACCOUNTANT. Food supplements may fall under the
+// preferential 5%/10% band, which would make 18% wrong for this catalogue. This
+// single constant feeds every pure-profit and net-revenue figure in the system.
+const VAT_RATE = 0.18;
 type CourierRate = { deliver: number; return_: number };
 type RateMap = Record<string, CourierRate>;
 const rateKey = (courier: string, service: string) => `${courier}_${service}`;
@@ -1575,7 +1579,7 @@ async function handleRequest(req: Request): Promise<Response> {
     }
 
     // ── OPENCART ORDER BRIDGE (HMAC-signed, no Supabase auth) ──
-    // POST /api/webhook/opencart — the elyon_crm_bridge OCMOD on naturatherapy.xk
+    // POST /api/webhook/opencart — the elyon_crm_bridge OCMOD on naturatherapy.mk
     // pushes every placed order here (and, optionally, qualified abandoned carts).
     // Idempotent: deduped on (external_source, external_order_id) so the live
     // event, the historical import, and status upgrades all upsert one CRM row.
@@ -1591,29 +1595,42 @@ async function handleRequest(req: Request): Promise<Response> {
       let body;
       try { body = parseBody(opencartOrderSchema, JSON.parse(rawBody)); } catch (e: any) { return json({ error: e.message }, 400); }
 
-      const externalSource = (body.source || "naturatherapy.xk").trim();
+      const externalSource = (body.source || "naturatherapy.mk").trim();
       const isAbandoned = body.mode === "abandoned";
 
       // ── Customer name + phone ──
       const fullName = (body.customer_name
         || `${body.first_name || ""} ${body.last_name || ""}`.trim()).trim();
-      const phone = normalizeBgPhone(body.phone);
+      const phone = normalizeMkPhone(body.phone);
 
       // Abandoned carts are only kept as leads when we have a real lead: a full
       // name (first + last) AND a complete phone number. Junk is dropped quietly.
       if (isAbandoned) {
         const hasFullName = fullName.split(/\s+/).filter(Boolean).length >= 2;
-        const hasFullPhone = !!phone && phone.replace(/\D/g, "").length >= 11; // +383 + ~8 digits (Kosovo). TODO(kosovo): verify threshold
+        const hasFullPhone = !!phone && phone.replace(/\D/g, "").length >= 11; // +389 + ~8 digits (Kosovo). TODO(mk): verify threshold
         if (!hasFullName || !hasFullPhone) {
           return json({ success: true, skipped: "abandoned cart missing full name or phone" });
         }
       }
       if (!phone) return json({ error: "Phone is required" }, 400);
 
-      // ── Money: store EUR. Convert if the storefront sent BGN. ──
-      const BGN_PER_EUR = 1.95583;
-      const toEur = (v: number) =>
-        (body.currency || "EUR").toUpperCase() === "BGN" ? Math.round((v / BGN_PER_EUR) * 100) / 100 : v;
+      // ── Money: store EUR. ──
+      // Explicit whitelist, and a hard 400 on anything else.
+      //
+      // The upstream version converted only "BGN" and passed EVERY OTHER
+      // currency through 1:1. A Macedonian storefront sending currency:"MKD"
+      // would therefore have had a 1,845 ден order stored as a €1,845 order —
+      // ~61x too high. That single row then lands in the top commission tier,
+      // sits in the wrong prediction value band forever, and inflates revenue,
+      // VAT and pure profit. It fails silently, permanently, and per order.
+      // Never default-passthrough an unrecognised currency.
+      const MKD_PER_EUR = 61.5;   // must match src/lib/currency.ts (frozen)
+      const FX: Record<string, number> = { EUR: 1, MKD: 1 / MKD_PER_EUR };
+      const curCode = (body.currency || "EUR").toUpperCase();
+      if (!(curCode in FX)) {
+        return json({ error: `Unsupported currency '${curCode}'. Send EUR or MKD.` }, 400);
+      }
+      const toEur = (v: number) => Math.round(v * FX[curCode] * 100) / 100;
 
       // ── Match line items to the CRM catalogue (by sku/barcode, then name) ──
       const rawItems = body.items || [];
@@ -1717,7 +1734,7 @@ async function handleRequest(req: Request): Promise<Response> {
       const totalQty = matchedItems.reduce((s, i) => s + i.quantity, 0) || 1;
       const productSummary = matchedItems.length
         ? matchedItems.map((i) => i.product_name).join(", ")
-        : (isAbandoned ? "Abandoned cart" : "From naturatherapy.xk");
+        : (isAbandoned ? "Abandoned cart" : "From naturatherapy.mk");
 
       // source_type drives the UI badge: 'opencart' = a real Site order,
       // 'opencart_abandoned' = an abandoned-cart lead.
@@ -1811,7 +1828,7 @@ async function handleRequest(req: Request): Promise<Response> {
           order_id: orderId,
           to_status: "pending",
           changed_by: null,
-          changed_by_name: "System (naturatherapy.xk)",
+          changed_by_name: "System (naturatherapy.mk)",
         });
       }
 
@@ -1873,7 +1890,7 @@ async function handleRequest(req: Request): Promise<Response> {
         .maybeSingle();
       if (!approval || approval.status !== "approved") return cpaError("offer");
 
-      const phone = normalizeBgPhone(s(body.phone, 40));
+      const phone = normalizeMkPhone(s(body.phone, 40));
       if (!phone) return cpaError("nophone");
 
       // Their lead id = idempotency key; 'auto' (AlterCPA convention) → none.
@@ -2172,7 +2189,7 @@ async function handleRequest(req: Request): Promise<Response> {
     // ── PUBLIC TV LEADERBOARD (token-gated, no Supabase auth) ──
     // Aggregates-only, no PII. Drives the always-on wall screen. The token is
     // validated server-side BEFORE the auth gate so a wall TV needs no login.
-    // Returns today's (Europe/Belgrade) per-agent confirmed count, AVG order value,
+    // Returns today's (Europe/Skopje) per-agent confirmed count, AVG order value,
     // answer rate, and the computed daily game bonus + rank.
     if (req.method === "GET" && path === "leaderboard") {
       const ip = req.headers.get("x-forwarded-for")?.split(",")[0].trim() || "unknown";
@@ -2187,8 +2204,8 @@ async function handleRequest(req: Request): Promise<Response> {
       // ?mode=prediction|pending. Two different sales motions, different bonuses.
       // Default = prediction (the live motion today; pendings aren't flowing yet).
       const mode = url.searchParams.get("mode") === "pending" ? "pending" : "prediction";
-      // ?day=YYYY-MM-DD lets the TV page browse previous days; default = today (Sofia).
-      const { day, today, startISO, endISO } = sofiaDayRange(url.searchParams.get("day") || "");
+      // ?day=YYYY-MM-DD lets the TV page browse previous days; default = today (Skopje).
+      const { day, today, startISO, endISO } = skopjeDayRange(url.searchParams.get("day") || "");
       const isToday = day === today;
 
       // Roster + bonus rules are per-mode. Roster (if set) is an exact whitelist.
@@ -2958,7 +2975,7 @@ async function handleRequest(req: Request): Promise<Response> {
     if (path === "leaderboard/admin" && req.method === "GET") {
       if (!isAdminOrManager) return json({ error: "Forbidden" }, 403);
       const mode = url.searchParams.get("mode") === "pending" ? "pending" : "prediction";
-      const { day } = sofiaDayStart();
+      const { day } = skopjeDayStart();
       const [rosterRes, rulesRes, tokRes] = await Promise.all([
         adminClient.from("leaderboard_roster").select("agent_id").eq("roster_date", day).eq("mode", mode),
         adminClient.from("leaderboard_bonus_rules").select("metric,tiers,is_active").eq("mode", mode).order("metric"),
@@ -2977,7 +2994,7 @@ async function handleRequest(req: Request): Promise<Response> {
       let body: any; try { body = await req.json(); } catch { return json({ error: "Invalid JSON" }, 400); }
       const mode = body?.mode === "pending" ? "pending" : "prediction";
       const ids: string[] = Array.isArray(body?.agent_ids) ? body.agent_ids.filter((x: any) => typeof x === "string") : [];
-      const { day } = sofiaDayStart();
+      const { day } = skopjeDayStart();
       await adminClient.from("leaderboard_roster").delete().eq("roster_date", day).eq("mode", mode);
       if (ids.length) {
         const rows = ids.map((agent_id) => ({ roster_date: day, mode, agent_id, added_by: user.id }));
@@ -3443,6 +3460,11 @@ async function handleRequest(req: Request): Promise<Response> {
     // ===== Per-agent caller-ID (superadmin) — default +35924234100 for everyone;
     // admins can assign any owned DID to an agent. Stored in telephony_extensions;
     // a 2-min PBX sync applies it (predial hook presents it, whitelisted).
+    // TODO(mk): these are the BULGARIAN A1 trunk's Sofia DIDs, inherited from the
+    // upstream system. Macedonian telephony is deferred (Phase 2) and there is no
+    // MK carrier yet, so they are left intact but MUST be replaced with real MK
+    // numbers before the softphone is enabled. They are not live config today —
+    // VITE_USE_REAL_VOIP is false.
     const OWNED_DIDS: { value: string; label: string }[] = [
       { value: "+35924234100", label: "02 423 4100 — Sofia (default)" },
       { value: "+35924232487", label: "02 423 2487 — Sofia" },
@@ -4163,7 +4185,7 @@ async function handleRequest(req: Request): Promise<Response> {
     // Turns a CSV/Excel of real past orders into real `orders` rows (+ one
     // order_items line + a provenance order_note each), exactly like the
     // import-cpa-xlsx.mjs script but adapted for Kosovo: money is already EUR,
-    // phones normalize to +383, no lev peg, no transliteration. Importing these
+    // phones normalize to +389, no lev peg, no transliteration. Importing these
     // also feeds the segments engine (it recomputes from order history), which is
     // the whole point — it backfills the prediction lists. Optionally upserts
     // customer_profiles so future calls to the number pre-fill name + address.
@@ -4195,7 +4217,7 @@ async function handleRequest(req: Request): Promise<Response> {
       const prepared: Prepared[] = [];
       let skippedNoPhone = 0;
       for (const r of body.rows) {
-        const phone = normalizeBgPhone(r.customer_phone || "");
+        const phone = normalizeMkPhone(r.customer_phone || "");
         if (!phone) { skippedNoPhone++; continue; }
         const key = (r.product_name || "").toLowerCase().trim();
         const prod = key ? (byName.get(key) || bySku.get(key) || null) : null;
@@ -6347,7 +6369,7 @@ async function handleRequest(req: Request): Promise<Response> {
         targetId = agentParam;
       }
 
-      // Same UTC window math as dashboard-stats — deliberately NOT Sofia-
+      // Same UTC window math as dashboard-stats — deliberately NOT Skopje-
       // midnight, so the dashboard tiles and these lists agree. Day browsing
       // is past-only: a future date clamps to today.
       const now = new Date();
@@ -7990,7 +8012,7 @@ async function handleRequest(req: Request): Promise<Response> {
           return json({
             report_title: "Elyon CRM — Agent Commission Report",
             generated_at: new Date().toISOString(),
-            currency_note: "EUR primary; BGN = EUR × 1.95583",
+            currency_note: "Amounts shown in MKD (denars), derived from EUR at the frozen 61.5 rate.",
             settlement: payload,
           });
         }
@@ -8495,9 +8517,9 @@ async function handleRequest(req: Request): Promise<Response> {
       // truth for the "doesn't pick up" lifecycle (both the call strip and the
       // manual "Didn't Answer" button log a no_answer call). We count the
       // trailing consecutive no-answers for this phone, and separately how many
-      // no-answers already happened TODAY (Europe/Sofia), to pace the calls:
+      // no-answers already happened TODAY (Europe/Skopje), to pace the calls:
       //   • max 2 calls/day, spaced ~3–4h apart, kept on the SAME agent;
-      //   • after the 2nd no-answer today the client resurfaces at ~09:00 Sofia
+      //   • after the 2nd no-answer today the client resurfaces at ~09:00 Skopje
       //     the next morning (not again today — don't anger the customer);
       //   • across ~4–5 calling days this reaches 9 no-answers → Unreachable:
       //     move to Trash (reason "not_reachable"). Trash, NOT cancel, so cancel
@@ -8507,9 +8529,9 @@ async function handleRequest(req: Request): Promise<Response> {
       // These knobs are hardcoded for now; they can later move to app_settings
       // (like the Personal-List cap) to be tuned without a deploy.
       const UNREACHABLE_TRASH_STREAK = 9;                     // consecutive no-answers → auto-trash
-      const MAX_CALLS_PER_DAY = 2;                            // per client, per Sofia day
+      const MAX_CALLS_PER_DAY = 2;                            // per client, per Skopje day
       const INTRA_DAY_COOLDOWN_MS = 3.5 * 60 * 60 * 1000;     // ~3–4h between the 2 daily attempts
-      const NEXT_DAY_RESUME_HOUR = 9;                         // Sofia local hour to resurface next morning
+      const NEXT_DAY_RESUME_HOUR = 9;                         // Skopje local hour to resurface next morning
       const isNoAnswer = outcome === "no_answer" || connection_state === "no_answer";
       if (isNoAnswer && customer_phone) {
         const digits = customer_phone.replace(/\D/g, "");
@@ -8573,20 +8595,20 @@ async function handleRequest(req: Request): Promise<Response> {
           } else {
             // Not unreachable yet — pace the retries. The current call is already
             // logged above, so recentLogs includes it: count today's no-answers
-            // (Europe/Sofia day). Once the daily cap is hit, push to tomorrow
+            // (Europe/Skopje day). Once the daily cap is hit, push to tomorrow
             // morning; otherwise a short 3–4h intra-day gap.
-            const { startISO: sofiaTodayStart, day: sofiaToday } = sofiaDayStart();
-            const sofiaTodayStartMs = new Date(sofiaTodayStart).getTime();
+            const { startISO: skopjeTodayStart, day: skopjeToday } = skopjeDayStart();
+            const skopjeTodayStartMs = new Date(skopjeTodayStart).getTime();
             const noAnswersToday = (recentLogs || []).filter(
-              (lg) => logIsNoAnswer(lg) && lg.created_at && new Date(lg.created_at).getTime() >= sofiaTodayStartMs,
+              (lg) => logIsNoAnswer(lg) && lg.created_at && new Date(lg.created_at).getTime() >= skopjeTodayStartMs,
             ).length;
             let cooldownUntil: string;
             if (noAnswersToday >= MAX_CALLS_PER_DAY) {
-              // ~09:00 Sofia the next calling day (same agent — assignment kept).
-              const [ty, tm, td] = sofiaToday.split("-").map(Number);
+              // ~09:00 Skopje the next calling day (same agent — assignment kept).
+              const [ty, tm, td] = skopjeToday.split("-").map(Number);
               const tomorrow = new Date(Date.UTC(ty, tm - 1, td + 1)).toISOString().slice(0, 10);
               cooldownUntil = new Date(
-                new Date(sofiaMidnight(tomorrow)).getTime() + NEXT_DAY_RESUME_HOUR * 3600 * 1000,
+                new Date(skopjeMidnight(tomorrow)).getTime() + NEXT_DAY_RESUME_HOUR * 3600 * 1000,
               ).toISOString();
             } else {
               cooldownUntil = new Date(Date.now() + INTRA_DAY_COOLDOWN_MS).toISOString();
@@ -8661,15 +8683,15 @@ async function handleRequest(req: Request): Promise<Response> {
 
     // GET /api/call-history (list all call logs with filters, pagination, enriched data)
     // GET /api/agent-activity — per-agent call-activity timeline for ONE day
-    // (Europe/Belgrade). Powers the Agent Activity swimlane: each agent's calls
+    // (Europe/Skopje). Powers the Agent Activity swimlane: each agent's calls
     // (ring + talk segments), their scheduled shift window, and breaks, all
     // positioned on a real clock axis. Managers/admins see every agent; a plain
     // agent sees only their own row. Purely read-only — no side effects.
     if (req.method === "GET" && path === "agent-activity") {
       if (!canViewModule("call_activity")) return json({ error: "Forbidden" }, 403);
-      const TZ = "Europe/Belgrade";
+      const TZ = "Europe/Skopje";
 
-      // Minutes to ADD to UTC to get Sofia local time at the given instant
+      // Minutes to ADD to UTC to get Skopje local time at the given instant
       // (+120 winter / +180 summer). DST handled by the runtime via Intl.
       const tzOffsetMinutes = (at: Date): number => {
         const parts = new Intl.DateTimeFormat("en-US", {
@@ -8684,8 +8706,8 @@ async function handleRequest(req: Request): Promise<Response> {
         return Math.round((asUTC - at.getTime()) / 60000);
       };
 
-      // Resolve the target day (YYYY-MM-DD) in Sofia local time; default today.
-      const sofiaToday = (() => {
+      // Resolve the target day (YYYY-MM-DD) in Skopje local time; default today.
+      const skopjeToday = (() => {
         const p = new Intl.DateTimeFormat("en-CA", {
           timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit",
         }).formatToParts(new Date());
@@ -8693,10 +8715,10 @@ async function handleRequest(req: Request): Promise<Response> {
         return `${g("year")}-${g("month")}-${g("day")}`;
       })();
       const dateParam = url.searchParams.get("date");
-      const date = /^\d{4}-\d{2}-\d{2}$/.test(dateParam || "") ? dateParam! : sofiaToday;
+      const date = /^\d{4}-\d{2}-\d{2}$/.test(dateParam || "") ? dateParam! : skopjeToday;
       const [yy, mm, dd] = date.split("-").map(Number);
 
-      // Sofia-local [00:00, 24:00) → UTC ISO bounds for the timestamptz filter.
+      // Skopje-local [00:00, 24:00) → UTC ISO bounds for the timestamptz filter.
       // Probe at local noon to read the day's offset clear of DST edges.
       const off = tzOffsetMinutes(new Date(Date.UTC(yy, mm - 1, dd, 12, 0, 0)));
       const dayStartMs = Date.UTC(yy, mm - 1, dd, 0, 0, 0) - off * 60000;
@@ -9256,7 +9278,7 @@ async function handleRequest(req: Request): Promise<Response> {
     // POST /api/customers/update-contact — fix a customer's name / phone across
     // EVERY one of their orders at once (identified by the CURRENT phone, last-8).
     // Re-keys the prediction calling-queue sources too so the corrected number
-    // flows into future calls. New phone is stored E.164 (+359…). Used by the
+    // flows into future calls. New phone is stored E.164 (+389…). Used by the
     // inline edit on the Calls customer card; the client then re-points Dial at the
     // new number. See the elyon-phone-normalization skill.
     if (req.method === "POST" && segments[0] === "customers" && segments[1] === "update-contact" && segments.length === 2) {
@@ -9276,9 +9298,11 @@ async function handleRequest(req: Request): Promise<Response> {
         }
         const d = body.customer_phone.replace(/\D/g, "");
         if (d.length < 8) return json({ error: "New phone must have at least 8 digits" }, 400);
-        newPhone = d.length >= 11 && d.startsWith("383") ? "+" + d
-          : d.length === 10 && d.startsWith("0") ? "+383" + d.slice(1)
-          : (d.length === 9 || d.length === 8) ? "+383" + d
+        // Macedonia: E.164 is +389 + 8 subscriber digits (11 digits total);
+        // the national form is 0 + those 8 digits (9 digits, e.g. 070123456).
+        newPhone = d.length >= 11 && d.startsWith("389") ? "+" + d
+          : d.length === 9 && d.startsWith("0") ? "+389" + d.slice(1)
+          : d.length === 8 ? "+389" + d
           : "+" + d;
       }
 
@@ -9842,7 +9866,7 @@ async function handleRequest(req: Request): Promise<Response> {
       const { data: row } = await adminClient
         .from("app_settings").select("value").eq("key", "promo_of_the_day").maybeSingle();
       const p: any = row?.value || PROMO_OF_THE_DAY_DEFAULT;
-      const { day, startISO, endISO } = sofiaDayRange();
+      const { day, startISO, endISO } = skopjeDayRange();
       const price = Number(p?.price_eur);
       const bonus = Number(p?.bonus_eur);
       const active = !!p?.enabled
@@ -9851,7 +9875,7 @@ async function handleRequest(req: Request): Promise<Response> {
         && (!p?.expires_on || day <= String(p.expires_on));
       if (!active) return json({ active: false });
 
-      // The caller's own orders for the Sofia day. Ownership = salesOwnerId
+      // The caller's own orders for the Skopje day. Ownership = salesOwnerId
       // (confirmer, or the assignee on legacy rows) so "my sale" means the same
       // thing here as on every other surface.
       const { data: orders } = await adminClient
@@ -10210,9 +10234,9 @@ async function handleRequest(req: Request): Promise<Response> {
         .maybeSingle();
       if (existing) return json(existing);
 
-      // Resolve today's shift (Europe/Belgrade local date) to attach the break to.
+      // Resolve today's shift (Europe/Skopje local date) to attach the break to.
       const tzParts = new Intl.DateTimeFormat("en-CA", {
-        timeZone: "Europe/Belgrade",
+        timeZone: "Europe/Skopje",
         year: "numeric", month: "2-digit", day: "2-digit",
       }).formatToParts(new Date());
       const g = (t: string) => tzParts.find((p) => p.type === t)?.value || "";
@@ -10319,12 +10343,12 @@ async function handleRequest(req: Request): Promise<Response> {
       }
 
       // Shift hours are entered in the operator's local time (Bulgaria /
-      // Macedonia — Europe/Belgrade, UTC+2 summer / UTC+1 winter). Edge Functions
+      // Macedonia — Europe/Skopje, UTC+2 summer / UTC+1 winter). Edge Functions
       // run in UTC, so comparing against UTC "now" makes every shift look
       // 1–2h off (the 08:46 shift read as "not started" at 08:48 local because
-      // the server saw 06:48 UTC). Evaluate today + now in Europe/Belgrade so the
+      // the server saw 06:48 UTC). Evaluate today + now in Europe/Skopje so the
       // comparison matches what the user typed. DST handled by the runtime.
-      const TZ = "Europe/Belgrade";
+      const TZ = "Europe/Skopje";
       const tzParts = new Intl.DateTimeFormat("en-CA", {
         timeZone: TZ,
         year: "numeric", month: "2-digit", day: "2-digit",
@@ -12972,14 +12996,16 @@ async function handleRequest(req: Request): Promise<Response> {
       candidates.add(phone);                    // exactly as typed
       candidates.add(digitsOnly);               // digits only
       candidates.add("+" + digitsOnly);         // + prefix
-      if (digitsOnly.length === 9) {
-        candidates.add("+383" + digitsOnly);
+      // Macedonia: 8 subscriber digits, national form 0 + 8 = 9, E.164 389 + 8 = 11.
+      if (digitsOnly.length === 8) {
+        candidates.add("+389" + digitsOnly);
         candidates.add("0" + digitsOnly);
-      } else if (digitsOnly.length === 10 && digitsOnly.startsWith("0")) {
-        candidates.add("+383" + digitsOnly.slice(1));
-      } else if (digitsOnly.length === 12 && digitsOnly.startsWith("383")) {
+      } else if (digitsOnly.length === 9 && digitsOnly.startsWith("0")) {
+        candidates.add("+389" + digitsOnly.slice(1));
+        candidates.add(digitsOnly.slice(1));
+      } else if (digitsOnly.length === 11 && digitsOnly.startsWith("389")) {
         candidates.add("+" + digitsOnly);
-        candidates.add(digitsOnly.slice(3));    // 9-digit local form
+        candidates.add(digitsOnly.slice(3));    // 8-digit local form
         candidates.add("0" + digitsOnly.slice(3));
       }
 
@@ -14317,21 +14343,21 @@ async function getEcontStreetsAndQuarters(cityId: string): Promise<{ streets: st
   return result;
 }
 
-// Normalize a Kosovo phone to E.164 (+383XXXXXXXX) - TODO(kosovo): verify digit lengths vs real +383 numbers, matching how the rest
+// Normalize a Kosovo phone to E.164 (+389XXXXXXXX) - TODO(mk): verify digit lengths vs real +389 numbers, matching how the rest
 // of the CRM stores phones. Returns "" if there aren't enough digits.
-//   0888123456 / 359888123456 / +359888123456 / 00359888123456 → +359888123456
-function normalizeBgPhone(raw: string): string {
+//   070123456 / 38970123456 / +38970123456 / 0038970123456 → +38970123456
+function normalizeMkPhone(raw: string): string {
   let digits = (raw || "").replace(/\D/g, "");
   if (!digits) return "";
   if (digits.startsWith("00")) digits = digits.slice(2);
-  if (digits.startsWith("383")) {
+  if (digits.startsWith("389")) {
     digits = digits.slice(3);
   } else if (digits.startsWith("0")) {
     digits = digits.slice(1);
   }
   digits = digits.replace(/^0+/, "");
   if (digits.length < 8) return "";
-  return "+383" + digits;
+  return "+389" + digits;
 }
 
 // ── Deterministic recording ↔ call matcher (shared by every surface) ─────────

@@ -13,7 +13,7 @@ import { useTranslation } from 'react-i18next';
 import { format } from 'date-fns';
 import { formatDate } from '@/i18n/dates';
 import { statusLabel } from '@/types';
-import { formatEur, formatLev } from '@/lib/currency';
+import { formatMoney } from '@/lib/currency';
 import { cleanNoteForDisplay } from '@/lib/notes';
 import { cn } from '@/lib/utils';
 import { formatOrderProducts } from '@/lib/monadonSubstitutes';
@@ -94,8 +94,7 @@ export function CustomerSummaryCard({ orders, action }: { orders: any[]; action?
           </div>
           <div>
             <div className="text-[10px] uppercase tracking-wider text-muted-foreground">{t('search.lifetimeRevenue')}</div>
-            <div className="text-lg font-semibold tabular-nums leading-tight">{formatEur(summary.lifetimeRevenue)}</div>
-            <div className="text-[10px] text-muted-foreground tabular-nums">{formatLev(summary.lifetimeRevenue)}</div>
+            <div className="text-lg font-semibold tabular-nums leading-tight">{formatMoney(summary.lifetimeRevenue)}</div>
           </div>
         </div>
       </CardContent>
@@ -224,8 +223,7 @@ export function OrdersResultTable({ orders, orderHistory }: { orders: any[]; ord
                           )}
                         </td>
                         <td className="py-2 px-2 text-right tabular-nums font-mono leading-tight">
-                          <div className="font-bold">{formatEur(total)}</div>
-                          <div className="text-[9px] font-normal text-muted-foreground">{formatLev(total)}</div>
+                          <div className="font-bold">{formatMoney(total)}</div>
                         </td>
                         <td className="py-2 px-2">
                           <Badge className={cn('text-[10px] font-medium', STATUS_TONE[order.status] || 'bg-muted text-muted-foreground')}>
@@ -258,8 +256,8 @@ export function OrdersResultTable({ orders, orderHistory }: { orders: any[]; ord
                                           <tr key={it.id} className="border-b last:border-0">
                                             <td className="py-1">{it.product_name}</td>
                                             <td className="py-1 text-right tabular-nums text-muted-foreground">×{it.quantity}</td>
-                                            <td className="py-1 text-right tabular-nums">{formatEur(it.price_per_unit)}</td>
-                                            <td className="py-1 text-right tabular-nums font-semibold">{formatEur(it.total_price)}</td>
+                                            <td className="py-1 text-right tabular-nums">{formatMoney(it.price_per_unit)}</td>
+                                            <td className="py-1 text-right tabular-nums font-semibold">{formatMoney(it.total_price)}</td>
                                           </tr>
                                         ))}
                                       </tbody>
@@ -273,16 +271,16 @@ export function OrdersResultTable({ orders, orderHistory }: { orders: any[]; ord
                                       <CreditCard className="h-3 w-3" /> {t('search.payment')}
                                     </div>
                                     <div className="tabular-nums">
-                                      <span className="font-semibold">{formatEur(total)}</span>
-                                      <span className="text-muted-foreground ml-2">({formatLev(total)})</span>
+                                      <span className="font-semibold">{formatMoney(total)}</span>
+
                                     </div>
                                   </div>
                                   <div>
                                     <div className="text-[10px] uppercase tracking-wider text-muted-foreground flex items-center gap-1">
                                       <Hash className="h-3 w-3" /> {t('search.source')}
                                     </div>
-                                    <div>{order.source_type === 'opencart' ? 'naturatherapy.bg'
-                                      : order.source_type === 'opencart_abandoned' ? 'naturatherapy.bg (abandoned)'
+                                    <div>{order.source_type === 'opencart' ? 'naturatherapy.mk'
+                                      : order.source_type === 'opencart_abandoned' ? 'naturatherapy.mk (abandoned)'
                                       : order.source_type === 'inbound_lead' ? 'Webhook'
                                       : order.source_type === 'prediction_lead' ? 'Lead'
                                       : (order.source_type || 'manual')}</div>

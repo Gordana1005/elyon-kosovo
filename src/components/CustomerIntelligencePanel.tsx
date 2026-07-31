@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils';
 import { formatOrderProducts } from '@/lib/monadonSubstitutes';
 import { format } from 'date-fns';
 import { formatDate } from '@/i18n/dates';
-import { formatLev, formatEur } from '@/lib/currency';
+import { formatMoney } from '@/lib/currency';
 import { STATUS_COLORS, statusLabel } from '@/types';
 
 // Use the single canonical status palette (src/types/index.ts).
@@ -97,8 +97,7 @@ export function CustomerIntelligencePanel({ data, loading, hideOrdersHistory = f
           </div>
           <div>
             <div className="text-[10px] text-muted-foreground">{t('clientProfile.metricRevenue')}</div>
-            <div className="text-sm font-bold text-primary leading-tight">€{stats.lifetime_revenue.toLocaleString()}</div>
-          <div className="text-[9px] text-muted-foreground tabular-nums">{formatLev(stats.lifetime_revenue)}</div>
+            <div className="text-sm font-bold text-primary leading-tight">{formatMoney(stats.lifetime_revenue)}</div>
           </div>
         </div>
       </button>
@@ -184,8 +183,7 @@ function PastOrderRow({ order }: { order: NonNullable<CustomerIntelligence['orde
           </span>
         </div>
         <span className="text-right tabular-nums shrink-0 leading-tight">
-          <span className="block font-bold">{formatEur(order.price)}</span>
-          <span className="block text-[9px] font-normal text-muted-foreground">{formatLev(order.price)}</span>
+          <span className="block font-bold">{formatMoney(order.price)}</span>
         </span>
       </div>
       <div className="mt-0.5 text-muted-foreground truncate">{itemsLabel}</div>

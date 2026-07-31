@@ -14,7 +14,7 @@ import { apiErrorText } from '@/i18n/apiErrors';
 import i18n, { type AppLanguage } from '@/i18n';
 import { BASE_SCRIPT_LANG } from '@/lib/callScripts';
 import { apiGetAppSettings, apiGetProducts, apiUpdateAppSettings, type PromoConfig } from '@/lib/api';
-import { formatEur, formatPriceInline } from '@/lib/currency';
+import { formatMoney, formatPriceInline } from '@/lib/currency';
 import { cleanCustomText, plainPromoText, renderPromoText, resolveCustomText } from '@/lib/promoText';
 
 const EMPTY: PromoConfig = {
@@ -74,7 +74,7 @@ export function PromoOfTheDayTab({ isAdmin }: { isAdmin: boolean }) {
   // "the default text, which reads like this".
   const filledDefault = (lang: string, key: 'offer' | 'offerShort') =>
     plainPromoText(defaultIn(lang, key), {
-      product: previewName, price: formatEur(draft.price_eur ?? 0), bonus: formatEur(draft.bonus_eur ?? 0),
+      product: previewName, price: formatMoney(draft.price_eur ?? 0), bonus: formatMoney(draft.bonus_eur ?? 0),
     });
   const defaultShortFor = (lang: string) => filledDefault(lang, 'offerShort');
   const defaultFullFor = (lang: string) => filledDefault(lang, 'offer');
@@ -125,8 +125,8 @@ export function PromoOfTheDayTab({ isAdmin }: { isAdmin: boolean }) {
     const text = own || defaultIn(textLang, variant === 'short' ? 'offerShort' : 'offer');
     return renderPromoText(text, {
       product: previewName,
-      price: formatEur(draft.price_eur ?? 0),
-      bonus: formatEur(draft.bonus_eur ?? 0),
+      price: formatMoney(draft.price_eur ?? 0),
+      bonus: formatMoney(draft.bonus_eur ?? 0),
     }).map((p, i) => p.bold
       ? <strong key={i} className="font-semibold text-foreground">{p.text}</strong>
       : <span key={i}>{p.text}</span>);
@@ -306,7 +306,7 @@ export function PromoOfTheDayTab({ isAdmin }: { isAdmin: boolean }) {
               {draft.note && <p className="text-[11px] leading-snug text-muted-foreground/70">{draft.note}</p>}
               <div>
                 <span className="rounded-lg bg-amber-500/15 px-2 py-1 text-[11px] font-semibold text-amber-800 dark:text-amber-300">
-                  {t('promo.today', { n: 4, total: formatEur((draft.bonus_eur ?? 0) * 4) })}
+                  {t('promo.today', { n: 4, total: formatMoney((draft.bonus_eur ?? 0) * 4) })}
                 </span>
               </div>
             </div>

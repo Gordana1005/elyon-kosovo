@@ -16,8 +16,9 @@ import mk from './locales/mk.json';
 // would wipe an agent's half-filled order form mid-call.
 
 export type AppLanguage = 'en' | 'bg' | 'sq' | 'mk';
-// Albanian ('sq', Kosovo standard) — live since 2026-06-22. Macedonian ('mk',
-// literary Skopje standard) — live since 2026-07-22. Professional wording review
+// This deployment serves MACEDONIA: 'mk' (literary Skopje standard) is the
+// default. Albanian ('sq') is kept for Albanian-speaking agents, and bg/en are
+// kept as fallbacks — all four ship. Professional wording review
 // happens in-app (operator workflow); keys stay stable, only values change.
 // Cross-device persistence needs the profiles.language CHECK constraint to allow
 // the code (migrations 20260622120000_profiles_language_sq.sql /
@@ -33,9 +34,11 @@ function storedLanguage(): AppLanguage {
   } catch {
     // localStorage unavailable (private mode etc.) — fall through to default.
   }
-  // Kosovo default = Albanian (was 'en' in Bulgaria). fallbackLng stays 'en' below
-  // so a missing key still resolves. See deploy-kit/06-PER-MARKET-CHANGES.md (A5).
-  return 'sq';
+  // Macedonia default = Macedonian (was 'sq' while this deployment was aimed at
+  // Kosovo, 'en' in Bulgaria). Albanian stays shipped for Albanian-speaking
+  // agents — it is a language choice, not a market change. fallbackLng stays
+  // 'en' below so a missing key still resolves.
+  return 'mk';
 }
 
 i18n.use(initReactI18next).init({

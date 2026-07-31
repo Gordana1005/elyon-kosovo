@@ -12,7 +12,7 @@ import { supabase } from '@/integrations/supabase/client';
 import i18n, { SUPPORTED_LANGUAGES } from '@/i18n';
 import { formatDate } from '@/i18n/dates';
 import { apiGetLeaderboard, type LeaderboardResponse, type LeaderboardRow, type LeaderboardMode } from '@/lib/api';
-import { formatEur } from '@/lib/currency';
+import { formatMoney } from '@/lib/currency';
 
 const POLL_MS = 20_000;
 const REFETCH_DEBOUNCE_MS = 1_000;
@@ -261,10 +261,10 @@ export default function TvLeaderboardPage() {
         <StatCard label={t('tvBoard.agentsOnline')} value={String(team.agents)} />
         <StatCard label={t('tvBoard.sales')} value={String(team.confirmed)} />
         {isPred
-          ? <StatCard label={t('tvBoard.revenue')} value={formatEur(team.revenue)} />
+          ? <StatCard label={t('tvBoard.revenue')} value={formatMoney(team.revenue)} />
           : <StatCard label={t('tvBoard.soldRate')} value={`${team.sold.toFixed(1)}%`} />}
-        <StatCard label={t('tvBoard.avgOrder')} value={formatEur(team.avg)} />
-        <StatCard label={t('tvBoard.bonusPool')} value={formatEur(team.bonus)} />
+        <StatCard label={t('tvBoard.avgOrder')} value={formatMoney(team.avg)} />
+        <StatCard label={t('tvBoard.bonusPool')} value={formatMoney(team.bonus)} />
       </div>
 
       {/* Team daily target (prediction only) — the shared goal for all agents */}
@@ -273,7 +273,7 @@ export default function TvLeaderboardPage() {
           <div className="mb-[0.8vh] flex items-end justify-between">
             <span className="text-[1.6vh] font-semibold uppercase tracking-[0.12em] text-emerald-300">{t('tvBoard.teamTarget')}</span>
             <span className="text-[2.6vh] font-bold tabular-nums">
-              {formatEur(data.team_revenue)} <span className="text-[1.9vh] text-slate-400">/ {formatEur(data.target)}</span>
+              {formatMoney(data.team_revenue)} <span className="text-[1.9vh] text-slate-400">/ {formatMoney(data.target)}</span>
               <span className="ml-[1vw] text-emerald-300">{data.team_target_pct.toFixed(0)}%</span>
             </span>
           </div>
@@ -326,13 +326,13 @@ export default function TvLeaderboardPage() {
                   {/* Sales / Confirmed */}
                   <div className="text-center font-bold tabular-nums">{a.confirmed_count}</div>
                   {/* Revenue (prediction) / Avg order (pending) */}
-                  <div className="text-center font-semibold tabular-nums">{formatEur(isPred ? a.revenue : a.avg_order_value)}</div>
+                  <div className="text-center font-semibold tabular-nums">{formatMoney(isPred ? a.revenue : a.avg_order_value)}</div>
                   {/* Sold rate (pending only) */}
                   {!isPred && <div className="text-center font-semibold tabular-nums">{a.sold_rate.toFixed(1)}%</div>}
                   {/* Bonus */}
                   <div className="text-right">
                     <span className={`inline-block rounded-lg px-[1vw] py-[0.5vh] text-[2.6vh] font-bold tabular-nums ${a.bonus > 0 ? 'bg-emerald-400/15 text-emerald-300' : a.bonus < 0 ? 'bg-rose-500/15 text-rose-300' : 'bg-white/5 text-slate-400'}`}>
-                      {a.bonus > 0 ? formatEur(a.bonus) : a.bonus < 0 ? `−${formatEur(Math.abs(a.bonus))}` : '€0'}
+                      {a.bonus > 0 ? formatMoney(a.bonus) : a.bonus < 0 ? `−${formatMoney(Math.abs(a.bonus))}` : formatMoney(0)}
                     </span>
                   </div>
                 </div>

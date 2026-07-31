@@ -4,7 +4,7 @@ import { BASE_SCRIPT_LANG } from '@/lib/callScripts';
 import { FlagIcon } from '@/components/LanguageSwitcher';
 import { cn } from '@/lib/utils';
 
-/** Editor language order: Bulgarian base first, then the rest (en, sq). */
+/** Editor language order: Macedonian base first, then the rest (en, bg, sq). */
 export const EDITOR_LANGS: AppLanguage[] = [
   BASE_SCRIPT_LANG,
   ...SUPPORTED_LANGUAGES.filter(l => l !== BASE_SCRIPT_LANG),

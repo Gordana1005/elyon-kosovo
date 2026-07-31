@@ -277,7 +277,7 @@ interface ScriptFormProps {
 
 function ScriptForm({ initial, onSave, onCancel }: ScriptFormProps) {
   const { t } = useTranslation();
-  // Bulgarian base
+  // Macedonian base
   const [title, setTitle] = useState(initial?.title || '');
   const [description, setDescription] = useState(initial?.description || '');
   const [scriptText, setScriptText] = useState(initial?.script_text || '');
@@ -311,7 +311,7 @@ function ScriptForm({ initial, onSave, onCancel }: ScriptFormProps) {
     setCurHelpers(curHelpers.map((h, i) => i === idx ? { ...h, ...patch } : h));
   const removeHelper = (idx: number) => setCurHelpers(curHelpers.filter((_, i) => i !== idx));
 
-  // Seed the active language's EMPTY fields from the Bulgarian base — a starting point
+  // Seed the active language's EMPTY fields from the Macedonian base — a starting point
   // for translating in place (also seeds helper rows: same count + category preserved).
   const copyBaseToActive = () => {
     if (isBase) return;
@@ -333,7 +333,7 @@ function ScriptForm({ initial, onSave, onCancel }: ScriptFormProps) {
   };
 
   const handleSave = async () => {
-    if (!title.trim()) return; // the Bulgarian base title is the script's identity
+    if (!title.trim()) return; // the Macedonian base title is the script's identity
     setSaving(true);
     try {
       await onSave({
@@ -355,7 +355,7 @@ function ScriptForm({ initial, onSave, onCancel }: ScriptFormProps) {
 
   return (
     <div className="space-y-4 rounded-xl border border-primary/30 bg-primary/5 p-4">
-      {/* Language selector — Bulgarian base + EN/SQ translations */}
+      {/* Language selector — Macedonian base + EN/SQ translations */}
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <LangTabs value={activeLang} onChange={setActiveLang} present={present} />
         {!isBase && (

@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { AppLayout } from '@/layouts/AppLayout';
 import { apiGetAffiliatePortalStats, apiGetAffiliatePortalLeads } from '@/lib/api';
-import { formatEur } from '@/lib/currency';
+import { formatMoney } from '@/lib/currency';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -79,8 +79,8 @@ export default function AffiliateDashboardPage() {
               { label: t('affiliate.kpiApproveRate'), value: `${approveRate}%` },
               { label: t('affiliate.kpiBuyoutRate'), value: `${buyoutRate}%` },
               { label: t('affiliate.kpiHold'), value: totals.hold },
-              { label: t('affiliate.kpiPayoutHold'), value: formatEur(totals.payout_hold) },
-              { label: t('affiliate.kpiPayoutEarned'), value: formatEur(totals.payout_earned), highlight: true },
+              { label: t('affiliate.kpiPayoutHold'), value: formatMoney(totals.payout_hold) },
+              { label: t('affiliate.kpiPayoutEarned'), value: formatMoney(totals.payout_earned), highlight: true },
             ].map((s, i) => (
               <div key={i} className={cn(
                 'rounded-xl border bg-card shadow-sm px-4 py-4',
@@ -148,7 +148,7 @@ export default function AffiliateDashboardPage() {
                       {l.customer_name}
                       {l.phone_masked && <span className="text-muted-foreground ml-1.5 font-mono">{l.phone_masked}</span>}
                     </td>
-                    <td className="px-4 py-3 font-semibold">{formatEur(l.payout_eur)}</td>
+                    <td className="px-4 py-3 font-semibold">{formatMoney(l.payout_eur)}</td>
                     <td className="px-4 py-3">
                       <Badge variant="outline" className={cn('text-xs', stageBadge[l.stage])}>
                         {t(`affiliate.stage.${l.stage}`)}

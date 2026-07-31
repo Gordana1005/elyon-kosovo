@@ -5,7 +5,7 @@ import { apiGetOffers, apiCreateOffer, apiUpdateOffer, apiGetProducts, OfferAdmi
 import { useToast } from '@/hooks/use-toast';
 import { apiErrorText } from '@/i18n/apiErrors';
 import { useAuth } from '@/contexts/AuthContext';
-import { formatPriceInline, formatLev } from '@/lib/currency';
+import { formatMoney, formatEurExact } from '@/lib/currency';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -143,7 +143,7 @@ export function OffersTab() {
                   </td>
                   <td className="px-4 py-3 text-muted-foreground">{o.products?.name || '—'}</td>
                   <td className="px-4 py-3"><Badge variant="outline" className="text-xs">{o.geo}</Badge></td>
-                  <td className="px-4 py-3 font-semibold">{formatPriceInline(o.payout_eur)}</td>
+                  <td className="px-4 py-3 font-semibold">{formatEurExact(o.payout_eur)}</td>
                   <td className="px-4 py-3">
                     <Badge variant="outline" className={cn('text-xs', o.is_active
                       ? 'bg-[hsl(var(--success))]/15 text-[hsl(var(--success))] border-[hsl(var(--success))]/30'
@@ -208,7 +208,7 @@ export function OffersTab() {
                 <Label>{t('affiliatesAdmin.fieldPayout')}</Label>
                 <Input type="number" step="0.01" min="0" value={fPayout} onChange={(e) => setFPayout(e.target.value)} placeholder="7.50" />
                 {payoutValid && fPayout !== '' && (
-                  <p className="text-xs text-muted-foreground">= {formatLev(payoutNum)}</p>
+                  <p className="text-xs text-muted-foreground">&asymp; {formatMoney(payoutNum)}</p>
                 )}
               </div>
               <div className="space-y-1.5">
@@ -219,7 +219,7 @@ export function OffersTab() {
                   placeholder={selectedProductPrice != null ? String(selectedProductPrice) : '34.90'}
                 />
                 {priceValid && fPrice !== '' ? (
-                  <p className="text-xs text-muted-foreground">= {formatLev(priceNum)}</p>
+                  <p className="text-xs text-muted-foreground">&asymp; {formatMoney(priceNum)}</p>
                 ) : (
                   <p className="text-xs text-muted-foreground">{t('affiliatesAdmin.sellPriceHint')}</p>
                 )}

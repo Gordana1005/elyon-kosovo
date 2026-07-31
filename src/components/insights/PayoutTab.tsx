@@ -28,7 +28,7 @@ import {
   type AgentPayoutSettlement,
   type AgentPayoutPreview,
 } from '@/lib/api';
-import { formatEur, formatLev, formatPriceInline } from '@/lib/currency';
+import { formatMoney, formatPriceInline } from '@/lib/currency';
 
 export default function PayoutTab() {
   const { t } = useTranslation();
@@ -258,7 +258,7 @@ export default function PayoutTab() {
           <td style="padding:4px 8px;border-bottom:1px solid #eee">${esc(it.display_id || it.order_id?.slice(0, 8) || '—')}</td>
           <td style="padding:4px 8px;border-bottom:1px solid #eee">${it.paid_at ? esc(String(it.paid_at).slice(0, 10)) : '—'}</td>
           <td style="padding:4px 8px;border-bottom:1px solid #eee;text-align:right">${Number(it.package_units)}</td>
-          <td style="padding:4px 8px;border-bottom:1px solid #eee;text-align:right">${Number(it.bonus_eur).toFixed(2)} €</td>
+          <td style="padding:4px 8px;border-bottom:1px solid #eee;text-align:right">${formatMoney(it.bonus_eur)}</td>
         </tr>`).join('');
       const html = `<!DOCTYPE html><html><head><title>${esc(report.report_title)}</title>
         <style>
@@ -278,13 +278,13 @@ export default function PayoutTab() {
           <div><b>${esc(t('payout.colPeriod'))}</b> ${esc(String(s.period_from).slice(0, 10))} → ${esc(String(s.period_to).slice(0, 10))}</div>
           <div><b>${esc(t('payout.paidOn'))}</b> ${esc(s.paid_on)}</div>
           <div><b>${esc(t('payout.colPackages'))}</b> ${Number(s.packages_count)}</div>
-          <div><b>${esc(t('payout.colAmount'))}</b> €${Number(s.amount_eur).toFixed(2)} (${formatLev(s.amount_eur)})</div>
+          <div><b>${esc(t('payout.colAmount'))}</b> ${formatMoney(s.amount_eur)}</div>
           <div><b>${esc(t('payout.method'))}</b> ${esc(s.method || '—')}</div>
           <div><b>${esc(t('payout.notes'))}</b> ${esc(s.notes || '—')}</div>
           ${s.amount_source === 'manual' ? `
           <div style="grid-column:1/-1"><b>${esc(t('payout.adjustedLabel'))}</b> ${esc(t('payout.adjustedDetail', {
-            calculated: `€${Number(s.computed_amount_eur ?? 0).toFixed(2)}`,
-            paid: `€${Number(s.amount_eur).toFixed(2)}`,
+            calculated: formatMoney(s.computed_amount_eur ?? 0),
+            paid: formatMoney(s.amount_eur),
           }))}${s.override_reason ? ` — ${esc(s.override_reason)}` : ''}</div>` : ''}
         </div>
         <table><thead><tr>
@@ -292,7 +292,7 @@ export default function PayoutTab() {
         </tr></thead><tbody>${lines}</tbody></table>
         <div class="totals">
           <strong>${esc(t('payout.totalPayout', {
-            amount: `€${Number(s.amount_eur).toFixed(2)} (${formatLev(s.amount_eur)})`,
+            amount: `${formatMoney(s.amount_eur)}`,
           }))}</strong>
         </div>
         <p class="footer">${esc(report.currency_note || '')}<br/>${esc(t('payout.generatedAt', { at: report.generated_at }))}<br/>${esc(t('payout.commissionLegend'))}</p>
@@ -394,9 +394,9 @@ export default function PayoutTab() {
                   </td>
                   <td className="px-3 py-3 text-right">{r.packages_sold}</td>
                   <td className="px-3 py-3 text-right text-muted-foreground">{r.packages_awaiting}</td>
-                  <td className="px-3 py-3 text-right">{formatEur(r.payout_earned)}</td>
-                  <td className="px-3 py-3 text-right text-muted-foreground">{formatEur(r.payout_settled)}</td>
-                  <td className="px-3 py-3 text-right font-semibold text-emerald-600">{formatEur(r.payout_unpaid)}</td>
+                  <td className="px-3 py-3 text-right">{formatMoney(r.payout_earned)}</td>
+                  <td className="px-3 py-3 text-right text-muted-foreground">{formatMoney(r.payout_settled)}</td>
+                  <td className="px-3 py-3 text-right font-semibold text-emerald-600">{formatMoney(r.payout_unpaid)}</td>
                   <td className="px-3 py-3 text-right text-xs">{r.last_paid_on || '—'}</td>
                   <td className="px-3 py-3 text-right">
                     <Button
@@ -450,12 +450,12 @@ export default function PayoutTab() {
                       </td>
                       <td className="py-2 text-right">{h.packages_count}</td>
                       <td className="py-2 text-right font-semibold whitespace-nowrap">
-                        {formatEur(h.amount_eur)}
+                        {formatMoney(h.amount_eur)}
                         {h.amount_source === 'manual' && (
                           <span
                             className="ml-1 text-[10px] text-amber-600"
                             title={t('payout.adjustedFrom', {
-                              amount: formatEur(Number(h.computed_amount_eur ?? 0)),
+                              amount: formatMoney(Number(h.computed_amount_eur ?? 0)),
                             })}
                           >
                             ✎
@@ -510,7 +510,7 @@ export default function PayoutTab() {
                 {t('payout.confirmBody', {
                   packages: preview.packages_count,
                   orders: preview.order_count,
-                  amount: formatEur(preview.amount_eur),
+                  amount: formatMoney(preview.amount_eur),
                 })}
               </p>
               <div className="grid grid-cols-2 gap-2">
@@ -566,8 +566,8 @@ export default function PayoutTab() {
                 />
                 <div className="mt-1 flex items-center justify-between gap-2 text-xs">
                   <span className="text-muted-foreground">
-                    {t('payout.calculatedWas', { amount: formatEur(preview.amount_eur) })}
-                    {amountValid && ` · ${formatLev(parsedAmount)}`}
+                    {t('payout.calculatedWas', { amount: formatMoney(preview.amount_eur) })}
+                    {amountValid && ` · ${formatMoney(parsedAmount)}`}
                   </span>
                   {amountOverridden && (
                     <button
@@ -683,7 +683,7 @@ export default function PayoutTab() {
                 <div className="mt-1 flex items-center justify-between gap-2 text-xs">
                   <span className="text-muted-foreground">
                     {t('payout.calculatedWas', {
-                      amount: formatEur(Number(editRow.computed_amount_eur ?? editRow.amount_eur)),
+                      amount: formatMoney(Number(editRow.computed_amount_eur ?? editRow.amount_eur)),
                     })}
                   </span>
                   <button

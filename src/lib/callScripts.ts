@@ -4,7 +4,7 @@ import type { CallScript, CallScriptHelper, CallScriptTranslation } from '@/lib/
 // The language the existing base columns (title/description/script_text/helpers)
 // were authored in. Everything else lives in call_scripts.translations[<lang>]
 // and falls back to these base columns per field.
-export const BASE_SCRIPT_LANG = 'bg';
+export const BASE_SCRIPT_LANG = 'mk';
 
 export interface ResolvedScript {
   title: string;
@@ -29,7 +29,7 @@ export function getTranslation(script: CallScript, lang?: string): CallScriptTra
 
 /**
  * Resolve the script for the active (or given) language, falling back PER FIELD to
- * the Bulgarian base column when a translated field is empty/missing. Helpers fall
+ * the Macedonian base column when a translated field is empty/missing. Helpers fall
  * back as a whole array (a non-empty translated array replaces the base set),
  * which avoids index drift on partially translated helper lists.
  */

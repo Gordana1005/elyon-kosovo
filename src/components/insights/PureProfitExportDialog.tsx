@@ -1,8 +1,8 @@
 // Export the Pure Profit tab over the selected date range as Excel (default,
 // one sheet per section) or CSV (one file, SECTION header rows, ';' + BOM for
-// BG Excel). Sections are toggleable. Numbers in Excel are real numbers so
-// they can be summed/filtered/formatted. Money is EUR; the Summary section
-// also carries BGN at the fixed 1.95583 peg.
+// Excel). Sections are toggleable. Numbers in Excel are real numbers so
+// they can be summed/filtered/formatted. Money is stored EUR; the Summary
+// section also carries MKD, derived at the frozen 61.5 rate.
 // The xlsx library (~430 kB) is loaded on demand, only when exporting Excel.
 import { useTranslation } from 'react-i18next';
 import { useState } from 'react';
@@ -14,7 +14,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter,
 } from '@/components/ui/dialog';
 import { toCsv, downloadCsv, type CsvColumn } from '@/lib/csv';
-import { eurToLev } from '@/lib/currency';
+import { eurToDen } from '@/lib/currency';
 import { cn } from '@/lib/utils';
 import type { InsightsResponse } from '@/lib/api';
 import type { DateRange } from '@/components/DateRangePicker';
@@ -50,9 +50,9 @@ export default function PureProfitExportDialog({ data, range }: { data: Insights
     const out: Section[] = [];
 
     if (picked.summary && pp) {
-      const vatPct = Math.round((pp.vat_rate ?? 0.2) * 100);
+      const vatPct = Math.round((pp.vat_rate ?? 0.18) * 100);
       const money = (metric: string, eur: number) => ({
-        'Metric': metric, 'EUR': n2(eur), 'BGN': n2(eurToLev(eur)),
+        'Metric': metric, 'EUR': n2(eur), 'MKD': eurToDen(eur),
       });
       // Unchecked topics disappear from the Summary too (e.g. a report shared
       // without commission info must not carry the commissions line). Clear
@@ -79,9 +79,9 @@ export default function PureProfitExportDialog({ data, range }: { data: Insights
         + (picked.commissions ? 0 : commissions);
       rows.push(money(excluded.length ? `Clear profit (excl. ${excluded.join(' & ')})` : 'Clear profit', clear));
       rows.push(
-        { 'Metric': 'Paid orders', 'EUR': pp.paid_orders ?? 0, 'BGN': '' },
-        { 'Metric': 'Paid packages', 'EUR': pp.paid_packages ?? 0, 'BGN': '' },
-        { 'Metric': 'Cost coverage %', 'EUR': n2((pp.cost_coverage ?? 1) * 100), 'BGN': '' },
+        { 'Metric': 'Paid orders', 'EUR': pp.paid_orders ?? 0, 'MKD': '' },
+        { 'Metric': 'Paid packages', 'EUR': pp.paid_packages ?? 0, 'MKD': '' },
+        { 'Metric': 'Cost coverage %', 'EUR': n2((pp.cost_coverage ?? 1) * 100), 'MKD': '' },
       );
       out.push({ name: 'Summary', widths: [40, 14, 14], rows });
     }

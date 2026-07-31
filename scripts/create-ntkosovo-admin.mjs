@@ -27,7 +27,7 @@ if (SUPABASE_URL.includes("sxymaloycddnoxudxaqp")) {
   process.exit(1);
 }
 
-const USER = { email: "ntkosovo@elyon-xk.local", full_name: "NT Kosovo" };
+const USER = { email: "ntmacedonia@elyon-mk.local", full_name: "NT Macedonia" };
 const PASSWORD = "12345678";
 
 async function adminApi(path, method, body) {

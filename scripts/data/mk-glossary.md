@@ -142,7 +142,7 @@ Macedonian **uses** `ѓ ќ љ њ џ ѕ`. Definite article `-от / -та / -то
 ## Never translate
 
 Brand and courier names, exactly as written: **Speedy, Econt, BigArena,
-naturatherapy.bg, Elyon CRM, Pure Profit, Monadon, AlterCPA, Discord, Vercel,
+naturatherapy.mk, Elyon CRM, Pure Profit, Monadon, AlterCPA, Discord, Vercel,
 Supabase**. Enum *values* in payloads/URLs (`pending`, `not_satisfied`, …) —
 labels only. Currency symbols `€` / `лв`. Anything inside `{{…}}`.
 

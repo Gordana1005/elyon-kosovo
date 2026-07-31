@@ -8,7 +8,7 @@ import {
 } from '@/components/ui/select';
 import { Beaker, Package, FlaskConical, Coins, TrendingUp } from 'lucide-react';
 import { KpiCard as Kpi } from '@/components/insights/KpiCard';
-import { formatEur, formatLev } from '@/lib/currency';
+import { formatMoney } from '@/lib/currency';
 import { cn } from '@/lib/utils';
 import type { InsightsResponse } from '@/lib/api';
 
@@ -16,7 +16,7 @@ import type { InsightsResponse } from '@/lib/api';
 function Money({ eur, className }: { eur: number; className?: string }) {
   return (
     <span className={className}>
-      {formatEur(eur)} <span className="text-muted-foreground font-normal">({formatLev(eur)})</span>
+      {formatMoney(eur)}
     </span>
   );
 }
@@ -28,7 +28,7 @@ export default function MarginLabTab({ data }: { data: InsightsResponse }) {
   const { t } = useTranslation();
   const ml = data.margin_lab;
   const [target, setTarget] = useState<number>(ml?.target_profit_per_package ?? 7);
-  const vat = ml?.vat_rate ?? 0.2;
+  const vat = ml?.vat_rate ?? 0.18;
   const gross = 1 + vat;
   const blendedDeliver = ml?.blended_deliver_cost ?? 3.5;
 
@@ -103,11 +103,11 @@ export default function MarginLabTab({ data }: { data: InsightsResponse }) {
 
       {/* Realized price KPIs */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
-        <Kpi icon={Coins} label={t('insights.mlAvg')} value={formatEur(r.avg)} sub={`${r.packages.toLocaleString()} ${t('insights.colPackages').toLowerCase()}`} tone="bg-sky-100 text-sky-700" />
-        <Kpi icon={FlaskConical} label={t('insights.mlMedian')} value={formatEur(r.median)} sub={`${formatEur(r.p25)} – ${formatEur(r.p75)}`} />
-        <Kpi icon={Package} label={t('insights.mlMin')} value={formatEur(r.min)} tone="bg-rose-100 text-rose-700" />
-        <Kpi icon={Package} label={t('insights.mlMax')} value={formatEur(r.max)} tone="bg-emerald-100 text-emerald-700" />
-        <Kpi icon={TrendingUp} label={t('insights.mlNetPerPkg')} value={formatEur(r.net_profit_per_pkg)} sub={t('insights.mlTargetIs', { v: formatEur(target) })} tone={r.net_profit_per_pkg >= target ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'} />
+        <Kpi icon={Coins} label={t('insights.mlAvg')} value={formatMoney(r.avg)} sub={`${r.packages.toLocaleString()} ${t('insights.colPackages').toLowerCase()}`} tone="bg-sky-100 text-sky-700" />
+        <Kpi icon={FlaskConical} label={t('insights.mlMedian')} value={formatMoney(r.median)} sub={`${formatMoney(r.p25)} – ${formatMoney(r.p75)}`} />
+        <Kpi icon={Package} label={t('insights.mlMin')} value={formatMoney(r.min)} tone="bg-rose-100 text-rose-700" />
+        <Kpi icon={Package} label={t('insights.mlMax')} value={formatMoney(r.max)} tone="bg-emerald-100 text-emerald-700" />
+        <Kpi icon={TrendingUp} label={t('insights.mlNetPerPkg')} value={formatMoney(r.net_profit_per_pkg)} sub={t('insights.mlTargetIs', { v: formatMoney(target) })} tone={r.net_profit_per_pkg >= target ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'} />
       </div>
 
       {/* Per-product floor table */}
@@ -138,10 +138,10 @@ export default function MarginLabTab({ data }: { data: InsightsResponse }) {
                     {!p.cost_known && <span className="ml-1 text-[10px] text-amber-600">({t('insights.mlNoCost')})</span>}
                   </td>
                   <td className="py-2 text-right tabular-nums">{p.packages.toLocaleString()}</td>
-                  <td className="py-2 text-right tabular-nums">{formatEur(p.avg_realized_price)}</td>
-                  <td className="py-2 text-right tabular-nums text-muted-foreground">{p.cost_known ? formatEur(p.cogs_unit) : '—'}</td>
-                  <td className={cn('py-2 text-right tabular-nums font-medium', netTone(p.net_profit_per_pkg))}>{formatEur(p.net_profit_per_pkg)}</td>
-                  <td className="py-2 text-right tabular-nums font-semibold">{formatEur(p.floor)}</td>
+                  <td className="py-2 text-right tabular-nums">{formatMoney(p.avg_realized_price)}</td>
+                  <td className="py-2 text-right tabular-nums text-muted-foreground">{p.cost_known ? formatMoney(p.cogs_unit) : '—'}</td>
+                  <td className={cn('py-2 text-right tabular-nums font-medium', netTone(p.net_profit_per_pkg))}>{formatMoney(p.net_profit_per_pkg)}</td>
+                  <td className="py-2 text-right tabular-nums font-semibold">{formatMoney(p.floor)}</td>
                   <td className={cn('py-2 text-right tabular-nums', (p.upliftPct ?? 0) > 0 ? 'text-rose-600' : 'text-emerald-600')}>
                     {p.upliftPct == null ? '—' : `${p.upliftPct > 0 ? '+' : ''}${p.upliftPct}%`}
                   </td>
@@ -196,7 +196,7 @@ export default function MarginLabTab({ data }: { data: InsightsResponse }) {
                 </div>
                 <div className="text-sm">
                   {t('insights.mlSimShipped')}: <span className="font-semibold">{sim.shipped}</span> ·{' '}
-                  {t('insights.mlSimEffPrice')}: <span className="font-semibold">{formatEur(sim.effPkg)}</span>
+                  {t('insights.mlSimEffPrice')}: <span className="font-semibold">{formatMoney(sim.effPkg)}</span>
                 </div>
               </div>
               <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1 text-sm">
@@ -211,9 +211,9 @@ export default function MarginLabTab({ data }: { data: InsightsResponse }) {
                 </div>
               </div>
               <div className="mt-2 flex flex-wrap items-baseline justify-between gap-2 text-sm">
-                <span>{t('insights.mlSimNetPkg')}: <span className={cn('font-bold', netTone(sim.perPkg))}>{formatEur(sim.perPkg)}</span></span>
+                <span>{t('insights.mlSimNetPkg')}: <span className={cn('font-bold', netTone(sim.perPkg))}>{formatMoney(sim.perPkg)}</span></span>
                 {!sim.pass && (
-                  <span className="text-rose-700">{t('insights.mlSimNeedPrice', { target: formatEur(target), price: formatEur(sim.needed), per: formatEur(sim.neededPer) })}</span>
+                  <span className="text-rose-700">{t('insights.mlSimNeedPrice', { target: formatMoney(target), price: formatMoney(sim.needed), per: formatMoney(sim.neededPer) })}</span>
                 )}
               </div>
               {!sim.costKnown && <div className="mt-2 text-xs text-amber-700">{t('insights.mlCostUnknownWarn')}</div>}
@@ -229,7 +229,7 @@ function Row({ label, eur, muted }: { label: string; eur: number; muted?: boolea
   return (
     <div className={cn('flex justify-between', muted && 'text-muted-foreground')}>
       <span className="text-muted-foreground">{label}</span>
-      <span className="tabular-nums">{formatEur(eur)}</span>
+      <span className="tabular-nums">{formatMoney(eur)}</span>
     </div>
   );
 }

@@ -1,32 +1,83 @@
-// Bulgaria's lev is pegged to the euro at 1 EUR = 1.95583 BGN (BNB fixed
-// rate since ERM II entry in 1999). The CRM stores prices in EUR; this
-// module is the single place that converts to/from BGN for display.
+// ── Money, Macedonia ────────────────────────────────────────────────────────
+//
+// STORAGE IS EUR. Every price, payout and commission in the database is a EUR
+// number, exactly as upstream. This module is the single place that turns those
+// into the denar figures the customer, the agent and the courier actually see.
+//
+// ⚠️ MKD_PER_EUR IS FROZEN. Do not "update it to today's rate", ever.
+//
+// Bulgaria's lev is legally fixed to the euro forever, so deriving it at render
+// time is safe. The denar is NOT: it is a managed peg maintained by the NBRM.
+// The moment someone edits this constant, every historical order, every closed
+// agent payout, every past revenue report and every COD amount already collected
+// from a customer silently re-prices itself. There is no audit trail for that
+// and no way to tell which figure was the one actually quoted on the phone.
+//
+// If the market rate genuinely moves, re-price the CATALOGUE in EUR instead —
+// that changes future orders only and leaves history intact.
+export const MKD_PER_EUR = 61.5;
 
-export const BGN_PER_EUR = 1.95583;
-
-export function eurToLev(eur: number | string): number {
+/** EUR → whole denars. Denars have no practical subunit, so this always rounds. */
+export function eurToDen(eur: number | string): number {
   const n = Number(eur);
   if (!Number.isFinite(n)) return 0;
-  return Math.round(n * BGN_PER_EUR * 100) / 100;
+  return Math.round(n * MKD_PER_EUR);
 }
 
-export function levToEur(lev: number | string): number {
-  const n = Number(lev);
+/** Denars → EUR, for the few admin inputs that accept a denar figure. */
+export function denToEur(den: number | string): number {
+  const n = Number(den);
   if (!Number.isFinite(n)) return 0;
-  return Math.round((n / BGN_PER_EUR) * 100) / 100;
+  return Math.round((n / MKD_PER_EUR) * 100) / 100;
 }
 
-const NUM = (n: number) =>
-  n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+// Macedonian grouping uses "." for thousands. Done manually rather than via
+// toLocaleString('mk-MK') so the output is identical in every browser and in
+// Node during tests — locale data for mk-MK is not universally present.
+function groupMk(n: number): string {
+  const neg = n < 0;
+  const s = Math.abs(Math.round(n)).toString();
+  let out = '';
+  for (let i = 0; i < s.length; i++) {
+    if (i > 0 && (s.length - i) % 3 === 0) out += '.';
+    out += s[i];
+  }
+  return (neg ? '-' : '') + out;
+}
 
-export const formatEur = (eur: number | string) => `€${NUM(Number(eur) || 0)}`;
-// Kosovo is euro-native — no lev, no dual display. These keep their names/signatures
-// (so no call sites break) but emit EUR only. formatLev returns "" so the secondary
-// "лв" line that some cards render (e.g. Dashboard MetricCard levValue) collapses to
-// nothing; formatPriceInline drops the parenthetical. eurToLev/levToEur are retained
-// but unused. TODO(kosovo): for a fully polished UI, remove the now-empty levValue
-// sublines. See deploy-kit/06-PER-MARKET-CHANGES.md (A1).
-export const formatLev = (_eur: number | string) => '';
+/**
+ * THE money formatter. Takes a stored EUR value, renders denars.
+ * Use this for anything a customer, agent or manager reads.
+ *
+ * Named `formatMoney` rather than `formatEur` on purpose: a function with "Eur"
+ * in its name that prints denars is how you end up with a hardcoded "€" typed
+ * in next to it six months later.
+ */
+export const formatMoney = (eur: number | string) => `${groupMk(eurToDen(eur))} ден`;
 
-/** EUR-only in Kosovo (was "€30.63 (59.93 лв)" dual display in Bulgaria). */
-export const formatPriceInline = (eur: number | string) => formatEur(eur);
+/**
+ * Deliberate EUR display — only for surfaces where EUR really is the unit:
+ * affiliate offers (partner networks are priced in EUR) and the internal
+ * margin bands. Always label these as EUR in the UI.
+ */
+export const formatEurExact = (eur: number | string) =>
+  `€${(Number(eur) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+/** Single-line price. In Macedonia that is just the denar figure. */
+export const formatPriceInline = (eur: number | string) => formatMoney(eur);
+
+/**
+ * Cash-on-delivery amount handed to the courier.
+ *
+ * Rounded to the nearest 10 denars: it is physical cash, and it makes the
+ * figure sayable on the phone. Rounded ONCE, on the order total — never per
+ * line and summed, or the lines stop reconciling with the total the customer
+ * actually agreed to.
+ *
+ * Returns the currency alongside the amount so the two can never be exported
+ * independently. A CSV that says MKD next to a lev-converted number makes the
+ * courier collect ~3% of the money, silently, on every parcel.
+ */
+export function codFor(eurPrice: number | string): { amount: number; currency: 'MKD' } {
+  return { amount: Math.round(eurToDen(eurPrice) / 10) * 10, currency: 'MKD' };
+}

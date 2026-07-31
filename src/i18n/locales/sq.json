@@ -274,7 +274,7 @@
   },
   "fields": {
     "customerName": "Emri i klientit",
-    "phonePlaceholder": "Telefoni (+359…)"
+    "phonePlaceholder": "Telefoni (+389…)"
   },
   "validation": {
     "phoneTooShort": "Telefoni shumë i shkurtër",
@@ -713,7 +713,7 @@
     "myPayoutDetails": "Detaje të plota të pagesës",
     "myPayoutDetailsDesc": "Shiko paketat, tarifat dhe ndarjen e fitimit",
     "openAgentsTab": "Hap detajet",
-    "perPackage": "≈ €{{price}} / paketë",
+    "perPackage": "≈ {{price}} / paketë",
     "unitsSub": "Gjithsej produkte (njësi)",
     "returns": "Kthime",
     "ordersSub": "Të gjitha që trajtove",

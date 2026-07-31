@@ -81,9 +81,8 @@ function exportCSV(data: DashStats, period: string, label?: string) {
 }
 
 // Premium Metric Card — Phase 2 elevated treatment
-function MetricCard({ title, value, icon: Icon, trend, trendLabel, color, subtitle, levValue }: {
+function MetricCard({ title, value, icon: Icon, trend, trendLabel, color, subtitle }: {
   title: string; value: string | number; icon: any; trend?: number; trendLabel?: string; color: string; subtitle?: string;
-  levValue?: number;
 }) {
   const isPositive = trend !== undefined && trend >= 0;
 
@@ -97,12 +96,6 @@ function MetricCard({ title, value, icon: Icon, trend, trendLabel, color, subtit
             <div className="flex items-baseline gap-1.5">
               <p className="text-3xl font-semibold tabular-nums tracking-tighter text-card-foreground">{value}</p>
             </div>
-
-            {levValue !== undefined && (
-              <p className="text-[11px] font-medium text-muted-foreground/90 tabular-nums tracking-tight">
-                {formatLev(levValue)}
-              </p>
-            )}
 
             {trend !== undefined && (
               <div className={`inline-flex items-center gap-1 text-xs font-medium mt-1 ${isPositive ? 'text-[hsl(var(--success))]' : 'text-destructive'}`}>
@@ -144,11 +137,13 @@ const chartTooltipStyle = {
   boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
 };
 
-import { formatEur, formatLev } from '@/lib/currency';
+import { formatMoney } from '@/lib/currency';
 import { CHART_COLORS, hoverLift } from '@/lib/design-utils';
 import { EmptyState } from '@/components/EmptyState';
 
-const fmtCurrency = (n: number) => Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+// Macedonia shows denars only. Routed through the shared helper so this page
+// can never drift from the rest of the app's money formatting.
+const fmtCurrency = (n: number) => formatMoney(n);
 
 export default function Dashboard() {
   const { t } = useTranslation(); // subscribes status labels to language switches
@@ -360,8 +355,7 @@ export default function Dashboard() {
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-4 mb-4">
           <MetricCard
             title={t('dashboard.payoutEarned')}
-            value={formatEur(payoutEarned)}
-            levValue={payoutEarned}
+            value={formatMoney(payoutEarned)}
             icon={Banknote}
             color="bg-emerald-600"
             subtitle={t('dashboard.payoutEarnedSub')}
@@ -377,8 +371,7 @@ export default function Dashboard() {
           />
           <MetricCard
             title={t('dashboard.paidRevenue')}
-            value={formatEur(paidRevenue)}
-            levValue={paidRevenue}
+            value={formatMoney(paidRevenue)}
             icon={DollarSign}
             color="bg-[hsl(var(--info))]"
             subtitle={t('dashboard.paidRevenueSub')}
@@ -705,10 +698,7 @@ export default function Dashboard() {
               <div className="rounded-xl border border-border/50 bg-muted/20 p-4">
                 <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1">{t('dashboard.grossRevenue')}</div>
                 <div className="text-3xl font-semibold tabular-nums tracking-tighter text-card-foreground">
-                  €{fmtCurrency(ceoStats.revenue || 0)}
-                </div>
-                <div className="text-xs text-muted-foreground mt-0.5 tabular-nums">
-                  {formatLev(ceoStats.revenue || 0)}
+                  {fmtCurrency(ceoStats.revenue || 0)}
                 </div>
                 <div className="text-[10px] text-muted-foreground mt-2">{t('dashboard.shippedPlusPaid')}</div>
               </div>
@@ -717,10 +707,7 @@ export default function Dashboard() {
               <div className="rounded-xl border border-border/50 bg-muted/20 p-4">
                 <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1">{t('dashboard.outstanding')}</div>
                 <div className="text-3xl font-semibold tabular-nums tracking-tighter text-card-foreground">
-                  €{fmtCurrency(ceoStats.outstanding || 0)}
-                </div>
-                <div className="text-xs text-muted-foreground mt-0.5 tabular-nums">
-                  {formatLev(ceoStats.outstanding || 0)}
+                  {fmtCurrency(ceoStats.outstanding || 0)}
                 </div>
                 <div className="text-[10px] text-muted-foreground mt-2">{t('dashboard.shippedOnly')}</div>
               </div>
@@ -731,10 +718,7 @@ export default function Dashboard() {
                   Profit <TrendingUp className="h-3 w-3" />
                 </div>
                 <div className="text-3xl font-semibold tabular-nums tracking-tighter text-[hsl(var(--success))]">
-                  €{fmtCurrency(ceoStats.profit || 0)}
-                </div>
-                <div className="text-xs text-muted-foreground mt-0.5 tabular-nums">
-                  {formatLev(ceoStats.profit || 0)}
+                  {fmtCurrency(ceoStats.profit || 0)}
                 </div>
                 <div className="text-[10px] text-muted-foreground mt-2">{t('dashboard.clearProfit')}</div>
               </div>
@@ -743,10 +727,10 @@ export default function Dashboard() {
             {/* Secondary breakdown - compact */}
             <div className="mt-4 pt-4 border-t flex flex-wrap gap-x-6 gap-y-1 text-sm text-muted-foreground">
               <span>
-                <span className="font-medium text-card-foreground">{t('dashboard.paidRevenueLabel')}</span> €{fmtCurrency(ceoStats.paidAmount || 0)} ({formatLev(ceoStats.paidAmount || 0)})
+                <span className="font-medium text-card-foreground">{t('dashboard.paidRevenueLabel')}</span> {fmtCurrency(ceoStats.paidAmount || 0)}
               </span>
               <span>
-                <span className="font-medium text-destructive">{t('dashboard.returnedAmountLabel')}</span> €{fmtCurrency(ceoStats.returnedAmount || 0)} ({formatLev(ceoStats.returnedAmount || 0)})
+                <span className="font-medium text-destructive">{t('dashboard.returnedAmountLabel')}</span> {fmtCurrency(ceoStats.returnedAmount || 0)}
               </span>
             </div>
           </CardContent>

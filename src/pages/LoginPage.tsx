@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label';
 
 // TODO(kosovo): final login domain — must match the admin emails seeded in
 // scripts/create-admin-users.mjs (Phase 3). Placeholder for now.
-const EMAIL_DOMAIN = 'elyon-xk.local';
+const EMAIL_DOMAIN = 'elyon-mk.local';
 
 export default function LoginPage() {
   const { t } = useTranslation();

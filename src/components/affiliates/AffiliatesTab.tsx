@@ -10,7 +10,7 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import { apiErrorText } from '@/i18n/apiErrors';
 import { useAuth } from '@/contexts/AuthContext';
-import { formatEur, formatPriceInline } from '@/lib/currency';
+import { formatMoney, formatEurExact } from '@/lib/currency';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -141,7 +141,7 @@ export function AffiliatesTab() {
         <Card className="border-none shadow-sm"><CardContent className="p-4 flex items-center gap-3"><div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary"><Handshake className="h-5 w-5 text-primary-foreground" /></div><div><p className="text-xs text-muted-foreground">{t('affiliatesAdmin.totalAffiliates')}</p><p className="text-xl font-bold">{affiliates.length}</p></div></CardContent></Card>
         <Card className="border-none shadow-sm"><CardContent className="p-4 flex items-center gap-3"><div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[hsl(var(--info))]"><PackageCheck className="h-5 w-5 text-primary-foreground" /></div><div><p className="text-xs text-muted-foreground">{t('affiliatesAdmin.leadsSent')}</p><p className="text-xl font-bold">{totals.sent}</p></div></CardContent></Card>
         <Card className="border-none shadow-sm"><CardContent className="p-4 flex items-center gap-3"><div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[hsl(var(--success))]"><CheckCircle2 className="h-5 w-5 text-primary-foreground" /></div><div><p className="text-xs text-muted-foreground">{t('affiliatesAdmin.paidBuyout')}</p><p className="text-xl font-bold">{totals.paid}</p></div></CardContent></Card>
-        <Card className="border-none shadow-sm"><CardContent className="p-4 flex items-center gap-3"><div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[hsl(var(--warning))]"><Banknote className="h-5 w-5 text-primary-foreground" /></div><div><p className="text-xs text-muted-foreground">{t('affiliatesAdmin.payoutEarned')}</p><p className="text-lg font-bold">{formatPriceInline(totals.earned)}</p></div></CardContent></Card>
+        <Card className="border-none shadow-sm"><CardContent className="p-4 flex items-center gap-3"><div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[hsl(var(--warning))]"><Banknote className="h-5 w-5 text-primary-foreground" /></div><div><p className="text-xs text-muted-foreground">{t('affiliatesAdmin.payoutEarned')}</p><p className="text-lg font-bold">{formatEurExact(totals.earned)}</p></div></CardContent></Card>
       </div>
 
       {/* Header */}
@@ -193,10 +193,10 @@ export function AffiliatesTab() {
                     </span>
                   </td>
                   <td className="px-4 py-3">
-                    <span className="font-semibold">{formatEur(a.stats.payout_earned)}</span>
+                    <span className="font-semibold">{formatMoney(a.stats.payout_earned)}</span>
                     {a.stats.payout_hold > 0 && (
                       <span className="text-xs text-muted-foreground ml-1.5">
-                        {t('affiliatesAdmin.payoutHoldShort', { amount: formatEur(a.stats.payout_hold) })}
+                        {t('affiliatesAdmin.payoutHoldShort', { amount: formatMoney(a.stats.payout_hold) })}
                       </span>
                     )}
                   </td>
@@ -466,7 +466,7 @@ function OffersApprovalDialog({ affiliate, onClose }: { affiliate: AffiliateAdmi
                 <div key={o.id} className="flex items-center gap-3 rounded-lg border p-3">
                   <div className="flex-1 min-w-0">
                     <p className="font-medium text-sm truncate">{o.name} <span className="text-xs text-muted-foreground">[{o.geo}]</span></p>
-                    <p className="text-xs text-muted-foreground">{t('affiliatesAdmin.basePayout')}: {formatPriceInline(o.payout_eur)}</p>
+                    <p className="text-xs text-muted-foreground">{t('affiliatesAdmin.basePayout')}: {formatEurExact(o.payout_eur)}</p>
                     {ap?.status === 'paused' && (
                       <Badge variant="outline" className="mt-1 text-xs bg-amber-500/10 text-amber-600 border-amber-200">
                         {t('affiliatesAdmin.approvalPaused')}
@@ -567,11 +567,11 @@ function StatsDialog({ affiliate, onClose }: { affiliate: AffiliateAdmin; onClos
             </div>
             <div className="flex items-center justify-between rounded-lg border p-3 text-sm">
               <span className="text-muted-foreground">{t('affiliatesAdmin.payoutHold')}</span>
-              <span className="font-semibold">{formatPriceInline(totals.payout_hold)}</span>
+              <span className="font-semibold">{formatEurExact(totals.payout_hold)}</span>
             </div>
             <div className="flex items-center justify-between rounded-lg border p-3 text-sm">
               <span className="text-muted-foreground">{t('affiliatesAdmin.payoutEarned')}</span>
-              <span className="font-semibold">{formatPriceInline(totals.payout_earned)}</span>
+              <span className="font-semibold">{formatEurExact(totals.payout_earned)}</span>
             </div>
             {(data?.days || []).length > 0 && (
               <div className="rounded-lg border overflow-hidden">

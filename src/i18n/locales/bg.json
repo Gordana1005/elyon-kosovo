@@ -274,7 +274,7 @@
   },
   "fields": {
     "customerName": "Име на клиента",
-    "phonePlaceholder": "Телефон (+359…)"
+    "phonePlaceholder": "Телефон (+389…)"
   },
   "validation": {
     "phoneTooShort": "Твърде кратък телефон",
@@ -713,7 +713,7 @@
     "myPayoutDetails": "Пълни детайли за бонуса",
     "myPayoutDetailsDesc": "Виж пакети, ставки и разбивка",
     "openAgentsTab": "Отвори детайли",
-    "perPackage": "≈ €{{price}} / пакет",
+    "perPackage": "≈ {{price}} / пакет",
     "unitsSub": "Общо продукти (бройки)",
     "returns": "Връщания",
     "ordersSub": "Всички, които си обработил",

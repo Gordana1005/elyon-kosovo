@@ -16,7 +16,7 @@ import { EmptyState } from '@/components/EmptyState';
 import { useToast } from '@/hooks/use-toast';
 import { apiGetProducts, apiCreateOrder, apiGetCustomerPrefill, apiSaveCustomerProfile, apiMatchCourierOffice, apiGetOrder, apiUpdateCustomer, apiSyncOrderItems, apiUpdateOrderStatus, apiAddOrderNote, type CancellationReason } from '@/lib/api';
 import { formatProductWithQuantity, isLegacyPromoName } from '@/lib/utils';
-import { formatLev } from '@/lib/currency';
+import { formatMoney } from '@/lib/currency';
 import { DeliveryMethodPicker, type DeliveryValue } from '@/components/DeliveryMethodPicker';
 import { CancellationReasonPicker } from '@/components/CancellationReasonPicker';
 import { cancelReasonRequiresNote } from '@/lib/cancellationReasons';
@@ -54,7 +54,7 @@ interface CreateOrderModalProps {
    *  already chosen upstream (e.g. Choose Answer → Confirmed). The order is
    *  always created with `defaultStatus`. */
   hideStatusPicker?: boolean;
-  /** Header text override — e.g. "Confirm Order — +383..." */
+  /** Header text override — e.g. "Confirm Order — +389..." */
   title?: string;
   /** Complete an EXISTING order instead of creating a new one (lead/pending
    *  confirm flow). Saving updates that order's fields + items in place and
@@ -675,7 +675,7 @@ export function CreateOrderModal({
                     value={phone} 
                     onChange={e => setPhone(e.target.value)} 
                     className="h-8 text-sm font-mono" 
-                    placeholder="+383..." 
+                    placeholder="+389..." 
                     disabled={!!prefillPhone && !isManualMode} 
                   />
                 </div>
@@ -813,9 +813,6 @@ export function CreateOrderModal({
                             />
                             <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-sm text-primary">€</span>
                           </div>
-                          <div className="mt-0.5 text-right text-[10px] tabular-nums text-muted-foreground">
-                            {formatLev(Math.max(1, item.quantity) * Math.max(0, item.price_per_unit))}
-                          </div>
                         </div>
                       </div>
 
@@ -927,8 +924,7 @@ export function CreateOrderModal({
 
           <div className="flex items-center justify-between border-t px-5 py-3 bg-card rounded-b-xl">
             <div className="text-right leading-tight">
-              <div className="text-sm font-bold text-primary">€{totalPrice.toFixed(2)}</div>
-              <div className="text-[10px] text-muted-foreground">{formatLev(totalPrice)}</div>
+              <div className="text-sm font-bold text-primary">{formatMoney(totalPrice)}</div>
             </div>
             <div className="flex gap-2">
               <Button variant="outline" size="sm" onClick={() => onClose()}>{t('common.cancel')}</Button>

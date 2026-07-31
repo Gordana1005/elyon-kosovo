@@ -10,7 +10,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiGetCustomerHistory, apiUpdateCustomerContact } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { usePermissions } from '@/contexts/PermissionsContext';
-import { formatEur, formatLev } from '@/lib/currency';
+import { formatMoney } from '@/lib/currency';
 import { composeHomeAddress } from '@/lib/address';
 import { CustomerHistoryTabs } from './CustomerHistoryTabs';
 import { EmptyState } from '@/components/EmptyState';
@@ -265,14 +265,12 @@ export function ClientProfileCard({ phone, onOpenOrder, onCreateOrder, onClaimed
                 <Metric label={t('clientProfile.metricReturned')} value={stats.returned_orders} valueClass="text-rose-600" />
                 <div>
                   <div className="text-[10px] uppercase tracking-wider text-muted-foreground">{t('clientProfile.metricRevenue')}</div>
-                  <div className="text-base font-bold text-primary leading-tight">{formatEur(stats.lifetime_revenue)}</div>
-                  <div className="text-[10px] text-muted-foreground tabular-nums">{formatLev(stats.lifetime_revenue)}</div>
+                  <div className="text-base font-bold text-primary leading-tight">{formatMoney(stats.lifetime_revenue)}</div>
                 </div>
                 {avgPackagePrice != null && (
                   <div>
                     <div className="text-[10px] uppercase tracking-wider text-muted-foreground">{t('clientProfile.metricAvgPkg')}</div>
-                    <div className="text-base font-bold text-primary leading-tight">{formatEur(avgPackagePrice)}</div>
-                    <div className="text-[10px] text-muted-foreground tabular-nums">{formatLev(avgPackagePrice)}</div>
+                    <div className="text-base font-bold text-primary leading-tight">{formatMoney(avgPackagePrice)}</div>
                   </div>
                 )}
               </div>

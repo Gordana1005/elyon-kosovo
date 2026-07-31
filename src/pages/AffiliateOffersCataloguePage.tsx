@@ -2,7 +2,7 @@ import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { AppLayout } from '@/layouts/AppLayout';
 import { apiGetAffiliatePortalOffers } from '@/lib/api';
-import { formatEur } from '@/lib/currency';
+import { formatMoney } from '@/lib/currency';
 import { useToast } from '@/hooks/use-toast';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -50,7 +50,7 @@ export default function AffiliateOffersCataloguePage() {
               </CardHeader>
               <CardContent className="space-y-3">
                 <div>
-                  <p className="text-2xl font-bold text-[hsl(var(--success))]">{formatEur(o.payout_eur)}</p>
+                  <p className="text-2xl font-bold text-[hsl(var(--success))]">{formatMoney(o.payout_eur)}</p>
                   <p className="text-xs text-muted-foreground">{t('affiliate.payoutPerBuyout')}</p>
                 </div>
                 {o.description && <p className="text-sm text-muted-foreground">{o.description}</p>}

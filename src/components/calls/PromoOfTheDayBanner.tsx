@@ -2,7 +2,7 @@ import { useTranslation, Trans } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { Flame } from 'lucide-react';
 import { apiGetPromoOfTheDay, type PromoStatus } from '@/lib/api';
-import { formatEur, formatPriceInline } from '@/lib/currency';
+import { formatMoney, formatPriceInline } from '@/lib/currency';
 import { plainPromoText, renderPromoText, resolveCustomText } from '@/lib/promoText';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { cn } from '@/lib/utils';
@@ -33,7 +33,7 @@ export function PromoOfTheDayBanner({ className }: { className?: string }) {
 
   if (!data?.active) return null;
   const { product_name, price_eur, bonus_eur, note, custom_text, my_orders_today, my_bonus_today } = data;
-  const values = { product: product_name, price: formatEur(price_eur), bonus: formatEur(bonus_eur) };
+  const values = { product: product_name, price: formatMoney(price_eur), bonus: formatMoney(bonus_eur) };
 
   // The operator can override either line from Call Scripts → Promo, per
   // language. When they haven't, the built-in translated copy is used.
@@ -69,8 +69,8 @@ export function PromoOfTheDayBanner({ className }: { className?: string }) {
   const rule = t('promo.rule');
   const counter = my_orders_today > 0
     // `n`, not `count` — `count` would make i18next look for plural key variants.
-    ? t('promo.today', { n: my_orders_today, total: formatEur(my_bonus_today) })
-    : t('promo.todayEmpty', { bonus: formatEur(bonus_eur) });
+    ? t('promo.today', { n: my_orders_today, total: formatMoney(my_bonus_today) })
+    : t('promo.todayEmpty', { bonus: formatMoney(bonus_eur) });
 
   // Plain-text twin of the FULL offer — the desktop strip shows the short form,
   // so the tooltip is where the whole sentence (with the lev price) lives.

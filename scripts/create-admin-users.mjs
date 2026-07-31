@@ -32,9 +32,9 @@ if (!SUPABASE_URL || !SERVICE_KEY) {
 }
 
 const USERS = [
-  { email: "MileStoev@elyon-xk.local", full_name: "Mile Stoev" },
-  { email: "MikiMitrov@elyon-xk.local", full_name: "Miki Mitrov" },
-  { email: "TomeDonchev@elyon-xk.local", full_name: "Tome Donchev" },
+  { email: "MileStoev@elyon-mk.local", full_name: "Mile Stoev" },
+  { email: "MikiMitrov@elyon-mk.local", full_name: "Miki Mitrov" },
+  { email: "TomeDonchev@elyon-mk.local", full_name: "Tome Donchev" },
 ];
 const PASSWORD = "12345678";
 
@@ -110,9 +110,9 @@ async function main() {
   // Clean slate: drop any prior users with these emails (or older formats)
   const allEmails = [
     ...USERS.map((u) => u.email),
-    "mile.stoev@elyon-xk.local",
-    "miki.mitrov@elyon-xk.local",
-    "tome.donchev@elyon-xk.local",
+    "mile.stoev@elyon-mk.local",
+    "miki.mitrov@elyon-mk.local",
+    "tome.donchev@elyon-mk.local",
   ];
   for (const e of allEmails) {
     try { await deleteUserIfExists(e); } catch (err) { /* ignore */ }

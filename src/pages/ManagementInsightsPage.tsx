@@ -18,7 +18,7 @@ import {
 } from 'recharts';
 import { apiGetManagementInsights, type InsightsResponse } from '@/lib/api';
 import { statusLabel } from '@/types';
-import { formatEur, formatLev } from '@/lib/currency';
+import { formatMoney } from '@/lib/currency';
 import { cn } from '@/lib/utils';
 import { EmptyState } from '@/components/EmptyState';
 import { usePermissions } from '@/contexts/PermissionsContext';
@@ -140,7 +140,7 @@ export default function ManagementInsightsPage() {
   );
 }
 
-const moneyTip = (v: number) => formatEur(v);
+const moneyTip = (v: number) => formatMoney(v);
 
 function Overview({ data }: { data: InsightsResponse }) {
   const o = data.overview;
@@ -148,12 +148,12 @@ function Overview({ data }: { data: InsightsResponse }) {
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
-        <Kpi icon={Coins} label={i18n.t('insights.revenueSold')} value={formatEur(o.revenue)} sub={formatLev(o.revenue)} tone="bg-emerald-100 text-emerald-700" />
+        <Kpi icon={Coins} label={i18n.t('insights.revenueSold')} value={formatMoney(o.revenue)} tone="bg-emerald-100 text-emerald-700" />
         <Kpi icon={BarChart3} label={i18n.t('insights.orders')} value={o.orders_total.toLocaleString()} sub={i18n.t('insights.soldPaidSub', { sold: o.sold_count.toLocaleString(), paid: o.paid_count.toLocaleString() })} tone="bg-blue-100 text-blue-700" />
-        <Kpi icon={TrendingUp} label={i18n.t('insights.avgOrderValue')} value={formatEur(o.aov)} sub={i18n.t('insights.unitsSoldSub', { count: o.units_sold.toLocaleString() })} tone="bg-amber-100 text-amber-700" />
-        <Kpi icon={Coins} label={i18n.t('insights.paidRevenue')} value={formatEur(o.paid_revenue)} sub={i18n.t('insights.paidCashSub', { count: o.paid_count.toLocaleString() })} tone="bg-teal-100 text-teal-700" />
-        <Kpi icon={Truck} label={i18n.t('insights.pipeline')} value={formatEur(o.pipeline_value)} sub={i18n.t('insights.pipelineSub')} tone="bg-indigo-100 text-indigo-700" />
-        <Kpi icon={RotateCcw} label={i18n.t('insights.returnRate')} value={pct(o.return_rate)} sub={i18n.t('insights.returnsSub', { count: o.returned_count.toLocaleString(), value: formatEur(o.returns_value) })} tone="bg-orange-100 text-orange-700" />
+        <Kpi icon={TrendingUp} label={i18n.t('insights.avgOrderValue')} value={formatMoney(o.aov)} sub={i18n.t('insights.unitsSoldSub', { count: o.units_sold.toLocaleString() })} tone="bg-amber-100 text-amber-700" />
+        <Kpi icon={Coins} label={i18n.t('insights.paidRevenue')} value={formatMoney(o.paid_revenue)} sub={i18n.t('insights.paidCashSub', { count: o.paid_count.toLocaleString() })} tone="bg-teal-100 text-teal-700" />
+        <Kpi icon={Truck} label={i18n.t('insights.pipeline')} value={formatMoney(o.pipeline_value)} sub={i18n.t('insights.pipelineSub')} tone="bg-indigo-100 text-indigo-700" />
+        <Kpi icon={RotateCcw} label={i18n.t('insights.returnRate')} value={pct(o.return_rate)} sub={i18n.t('insights.returnsSub', { count: o.returned_count.toLocaleString(), value: formatMoney(o.returns_value) })} tone="bg-orange-100 text-orange-700" />
         <Kpi icon={PackageX} label={i18n.t('insights.cancelRate')} value={pct(o.cancel_rate)} sub={i18n.t('insights.cancelledSub', { count: o.cancelled_count.toLocaleString() })} tone="bg-red-100 text-red-700" />
         <Kpi icon={Users} label={i18n.t('insights.leadsPending')} value={o.leads_pending.toLocaleString()} sub={i18n.t('insights.awaitingFirstCall')} tone="bg-violet-100 text-violet-700" />
       </div>
@@ -232,8 +232,8 @@ function Sales({ data }: { data: InsightsResponse }) {
 function Money({ eur, className }: { eur: number; className?: string }) {
   return (
     <span className={className}>
-      {formatEur(eur)}{' '}
-      <span className="text-muted-foreground font-normal">({formatLev(eur)})</span>
+      {formatMoney(eur)}{' '}
+
     </span>
   );
 }
@@ -289,36 +289,36 @@ function PureProfit({ data, range }: { data: InsightsResponse; range: DateRange 
         <Kpi
           icon={Coins}
           label={i18n.t('insights.kpiCash')}
-          value={hasPureProfit ? formatEur(cash) : '—'}
+          value={hasPureProfit ? formatMoney(cash) : '—'}
           tone="bg-emerald-100 text-emerald-700"
         />
         <Kpi
           icon={Coins}
           label={i18n.t('insights.kpiVat', { pct: vatPct })}
-          value={hasPureProfit ? `−${formatEur(vat)}` : '—'}
+          value={hasPureProfit ? `−${formatMoney(vat)}` : '—'}
           tone="bg-rose-100 text-rose-700"
         />
         <Kpi
           icon={Package}
           label={i18n.t('insights.kpiCogs')}
-          value={hasPureProfit ? `−${formatEur(cogs)}` : '—'}
+          value={hasPureProfit ? `−${formatMoney(cogs)}` : '—'}
         />
         <Kpi
           icon={Truck}
           label={i18n.t('insights.kpiDelivery')}
-          value={hasPureProfit ? `−${formatEur(delivery + returnLoss)}` : '—'}
+          value={hasPureProfit ? `−${formatMoney(delivery + returnLoss)}` : '—'}
           tone="bg-sky-100 text-sky-700"
         />
         <Kpi
           icon={Users}
           label={i18n.t('insights.kpiCommissions')}
-          value={hasPureProfit ? `−${formatEur(commissions)}` : '—'}
+          value={hasPureProfit ? `−${formatMoney(commissions)}` : '—'}
           tone="bg-amber-100 text-amber-700"
         />
         <Kpi
           icon={TrendingUp}
           label={i18n.t('insights.kpiClear')}
-          value={hasPureProfit ? formatEur(clear) : '—'}
+          value={hasPureProfit ? formatMoney(clear) : '—'}
           tone="bg-primary/10 text-primary"
         />
       </div>
@@ -360,7 +360,7 @@ function PureProfit({ data, range }: { data: InsightsResponse; range: DateRange 
               </div>
               <div className="flex justify-between text-xs text-muted-foreground border-t pt-2">
                 <span>{i18n.t('insights.totalCosts')}</span>
-                <span>−{formatEur(totalCosts)}</span>
+                <span>−{formatMoney(totalCosts)}</span>
               </div>
               <div className="border-t pt-2 flex justify-between font-bold text-lg">
                 <span>{i18n.t('insights.clearMoney')}</span>
@@ -416,17 +416,17 @@ function PureProfit({ data, range }: { data: InsightsResponse; range: DateRange 
                   <tr key={p.product} className="border-b last:border-0">
                     <td className="py-2 font-medium">
                       {p.product}
-                      <span className="text-muted-foreground font-normal"> · {p.packages}×{formatEur(p.unit_price)}</span>
+                      <span className="text-muted-foreground font-normal"> · {p.packages}×{formatMoney(p.unit_price)}</span>
                     </td>
                     <td className="py-2 text-right">{p.packages.toLocaleString()}</td>
                     <td className="py-2 text-right">{p.orders.toLocaleString()}</td>
-                    <td className="py-2 text-right">{formatEur(p.unit_price)}</td>
-                    <td className="py-2 text-right text-muted-foreground">{p.unit_cost > 0 ? formatEur(p.unit_cost) : '—'}</td>
-                    <td className="py-2 text-right">{formatEur(p.revenue)}</td>
-                    <td className="py-2 text-right text-muted-foreground">{formatEur(p.net_revenue ?? p.revenue)}</td>
-                    <td className="py-2 text-right text-muted-foreground">{formatEur(p.cogs)}</td>
-                    <td className="py-2 text-right font-semibold text-emerald-600">{formatEur(p.profit)}</td>
-                    <td className="py-2 text-right font-semibold">{formatEur(p.net_profit ?? p.profit)}</td>
+                    <td className="py-2 text-right">{formatMoney(p.unit_price)}</td>
+                    <td className="py-2 text-right text-muted-foreground">{p.unit_cost > 0 ? formatMoney(p.unit_cost) : '—'}</td>
+                    <td className="py-2 text-right">{formatMoney(p.revenue)}</td>
+                    <td className="py-2 text-right text-muted-foreground">{formatMoney(p.net_revenue ?? p.revenue)}</td>
+                    <td className="py-2 text-right text-muted-foreground">{formatMoney(p.cogs)}</td>
+                    <td className="py-2 text-right font-semibold text-emerald-600">{formatMoney(p.profit)}</td>
+                    <td className="py-2 text-right font-semibold">{formatMoney(p.net_profit ?? p.profit)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -436,11 +436,11 @@ function PureProfit({ data, range }: { data: InsightsResponse; range: DateRange 
                   <td className="py-2 text-right">{paidPackages.toLocaleString()}</td>
                   <td className="py-2 text-right">{paidOrders.toLocaleString()}</td>
                   <td className="py-2 text-right" colSpan={2}></td>
-                  <td className="py-2 text-right">{formatEur(byProduct.reduce((s, p) => s + p.revenue, 0))}</td>
-                  <td className="py-2 text-right text-muted-foreground">{formatEur(byProduct.reduce((s, p) => s + (p.net_revenue ?? p.revenue), 0))}</td>
-                  <td className="py-2 text-right text-muted-foreground">{formatEur(byProduct.reduce((s, p) => s + p.cogs, 0))}</td>
-                  <td className="py-2 text-right text-emerald-600">{formatEur(byProduct.reduce((s, p) => s + p.profit, 0))}</td>
-                  <td className="py-2 text-right">{formatEur(byProduct.reduce((s, p) => s + (p.net_profit ?? p.profit), 0))}</td>
+                  <td className="py-2 text-right">{formatMoney(byProduct.reduce((s, p) => s + p.revenue, 0))}</td>
+                  <td className="py-2 text-right text-muted-foreground">{formatMoney(byProduct.reduce((s, p) => s + (p.net_revenue ?? p.revenue), 0))}</td>
+                  <td className="py-2 text-right text-muted-foreground">{formatMoney(byProduct.reduce((s, p) => s + p.cogs, 0))}</td>
+                  <td className="py-2 text-right text-emerald-600">{formatMoney(byProduct.reduce((s, p) => s + p.profit, 0))}</td>
+                  <td className="py-2 text-right">{formatMoney(byProduct.reduce((s, p) => s + (p.net_profit ?? p.profit), 0))}</td>
                 </tr>
               </tfoot>
             </table>
@@ -475,9 +475,9 @@ function PureProfit({ data, range }: { data: InsightsResponse; range: DateRange 
                       <td className="py-2 font-medium">{courierServiceLabel(key)}</td>
                       <td className="py-2 text-right">{l.delivered.toLocaleString()}</td>
                       <td className="py-2 text-right">{l.returned.toLocaleString()}</td>
-                      <td className="py-2 text-right">{formatEur(l.deliver_cost)}</td>
-                      <td className="py-2 text-right text-pink-600">{formatEur(l.return_cost)}</td>
-                      <td className="py-2 text-right font-semibold">{formatEur(l.total_cost)}</td>
+                      <td className="py-2 text-right">{formatMoney(l.deliver_cost)}</td>
+                      <td className="py-2 text-right text-pink-600">{formatMoney(l.return_cost)}</td>
+                      <td className="py-2 text-right font-semibold">{formatMoney(l.total_cost)}</td>
                     </tr>
                   );
                 })}
@@ -487,8 +487,8 @@ function PureProfit({ data, range }: { data: InsightsResponse; range: DateRange 
                   <td className="py-2">{i18n.t('insights.totalRow')}</td>
                   <td className="py-2 text-right">{logiTotals.delivered.toLocaleString()}</td>
                   <td className="py-2 text-right">{logiTotals.returned.toLocaleString()}</td>
-                  <td className="py-2 text-right">{formatEur(logiTotals.deliver_cost)}</td>
-                  <td className="py-2 text-right text-pink-600">{formatEur(logiTotals.return_cost)}</td>
+                  <td className="py-2 text-right">{formatMoney(logiTotals.deliver_cost)}</td>
+                  <td className="py-2 text-right text-pink-600">{formatMoney(logiTotals.return_cost)}</td>
                   <td className="py-2 text-right"><Money eur={logiTotals.total_cost} /></td>
                 </tr>
               </tfoot>
@@ -517,7 +517,7 @@ function PureProfit({ data, range }: { data: InsightsResponse; range: DateRange 
                 {agentsWithPayout.map((a: any) => (
                   <tr key={a.name} className="border-b last:border-0">
                     <td className="py-2 font-medium">{a.name}</td>
-                    <td className="py-2 text-right font-semibold text-emerald-600">{formatEur(a.payout_earned || 0)}</td>
+                    <td className="py-2 text-right font-semibold text-emerald-600">{formatMoney(a.payout_earned || 0)}</td>
                     <td className="py-2 text-right">{(a.packages_sold ?? a.units ?? 0).toLocaleString()}</td>
                   </tr>
                 ))}
@@ -555,10 +555,10 @@ function PredictionLists({ data }: { data: InsightsResponse }) {
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Kpi icon={Coins} label={i18n.t('insights.revenueFromLists')} value={formatEur(totals.revenue)} sub={formatLev(totals.revenue)} tone="bg-emerald-100 text-emerald-700" />
-        <Kpi icon={TrendingUp} label={i18n.t('insights.netAfterRefunds')} value={formatEur(totals.net_revenue)} sub={i18n.t('insights.paidOrdersSub', { count: totals.paid.toLocaleString() })} tone="bg-teal-100 text-teal-700" />
-        <Kpi icon={RotateCcw} label={i18n.t('insights.refundsReturned')} value={formatEur(totals.refund_value)} sub={i18n.t('insights.returnedSub', { count: totals.returned.toLocaleString() })} tone="bg-orange-100 text-orange-700" />
-        <Kpi icon={Coins} label={i18n.t('insights.bonusesPaid')} value={formatEur(totals.bonus_paid)} sub={i18n.t('insights.bonusesSub')} tone="bg-amber-100 text-amber-700" />
+        <Kpi icon={Coins} label={i18n.t('insights.revenueFromLists')} value={formatMoney(totals.revenue)} tone="bg-emerald-100 text-emerald-700" />
+        <Kpi icon={TrendingUp} label={i18n.t('insights.netAfterRefunds')} value={formatMoney(totals.net_revenue)} sub={i18n.t('insights.paidOrdersSub', { count: totals.paid.toLocaleString() })} tone="bg-teal-100 text-teal-700" />
+        <Kpi icon={RotateCcw} label={i18n.t('insights.refundsReturned')} value={formatMoney(totals.refund_value)} sub={i18n.t('insights.returnedSub', { count: totals.returned.toLocaleString() })} tone="bg-orange-100 text-orange-700" />
+        <Kpi icon={Coins} label={i18n.t('insights.bonusesPaid')} value={formatMoney(totals.bonus_paid)} sub={i18n.t('insights.bonusesSub')} tone="bg-amber-100 text-amber-700" />
       </div>
 
       <Card>
@@ -595,9 +595,9 @@ function PredictionLists({ data }: { data: InsightsResponse }) {
                   <td className="py-2 px-2 text-right tabular-nums text-emerald-600 font-medium">{l.paid.toLocaleString()}</td>
                   <td className="py-2 px-2 text-right tabular-nums text-red-600">{l.cancelled.toLocaleString()}</td>
                   <td className="py-2 px-2 text-right tabular-nums text-orange-600">{l.returned.toLocaleString()}</td>
-                  <td className="py-2 px-2 text-right tabular-nums font-semibold">{formatEur(l.revenue)}</td>
-                  <td className="py-2 px-2 text-right tabular-nums">{formatEur(l.net_revenue)}</td>
-                  <td className="py-2 px-2 text-right tabular-nums text-amber-600">{formatEur(l.bonus_paid)}</td>
+                  <td className="py-2 px-2 text-right tabular-nums font-semibold">{formatMoney(l.revenue)}</td>
+                  <td className="py-2 px-2 text-right tabular-nums">{formatMoney(l.net_revenue)}</td>
+                  <td className="py-2 px-2 text-right tabular-nums text-amber-600">{formatMoney(l.bonus_paid)}</td>
                   <td className="py-2 px-2 text-right tabular-nums">{pct(l.conversion_rate)}</td>
                 </tr>
               ))}
@@ -608,9 +608,9 @@ function PredictionLists({ data }: { data: InsightsResponse }) {
                 <td className="py-2 px-2 text-right tabular-nums text-emerald-600">{totals.paid.toLocaleString()}</td>
                 <td className="py-2 px-2 text-right tabular-nums text-red-600">{totals.cancelled.toLocaleString()}</td>
                 <td className="py-2 px-2 text-right tabular-nums text-orange-600">{totals.returned.toLocaleString()}</td>
-                <td className="py-2 px-2 text-right tabular-nums">{formatEur(totals.revenue)}</td>
-                <td className="py-2 px-2 text-right tabular-nums">{formatEur(totals.net_revenue)}</td>
-                <td className="py-2 px-2 text-right tabular-nums text-amber-600">{formatEur(totals.bonus_paid)}</td>
+                <td className="py-2 px-2 text-right tabular-nums">{formatMoney(totals.revenue)}</td>
+                <td className="py-2 px-2 text-right tabular-nums">{formatMoney(totals.net_revenue)}</td>
+                <td className="py-2 px-2 text-right tabular-nums text-amber-600">{formatMoney(totals.bonus_paid)}</td>
                 <td className="py-2 px-2"></td>
               </tr>
             </tbody>
@@ -694,7 +694,7 @@ function Returns({ data }: { data: InsightsResponse }) {
     <div className="space-y-4">
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <Kpi icon={RotateCcw} label={i18n.t('insights.returnRate')} value={pct(r.rate)} tone="bg-orange-100 text-orange-700" />
-        <Kpi icon={Coins} label={i18n.t('insights.valueLost')} value={formatEur(r.value_lost)} sub={formatLev(r.value_lost)} tone="bg-red-100 text-red-700" />
+        <Kpi icon={Coins} label={i18n.t('insights.valueLost')} value={formatMoney(r.value_lost)} tone="bg-red-100 text-red-700" />
         <Kpi icon={PackageX} label={i18n.t('insights.cancellations')} value={data.cancellations.total.toLocaleString()} tone="bg-zinc-100 text-zinc-700" />
         <Kpi icon={Trash2} label={i18n.t('insights.trashed')} value={data.cancellations.trashed.toLocaleString()} sub={i18n.t('insights.junkSub')} tone="bg-zinc-100 text-zinc-700" />
       </div>
@@ -781,7 +781,7 @@ function ListCard({ title, icon: Icon, rows, nameKey, cols, transformName, note 
                   <div className="absolute inset-y-0 left-0 rounded bg-primary/10" style={{ width: `${(v / max) * 100}%` }} />
                   <div className="relative flex items-center justify-between gap-2 px-2 py-1 text-xs">
                     <span className="truncate" title={name}>{name}</span>
-                    <span className="tabular-nums font-medium shrink-0">{valMoney ? formatEur(v) : v.toLocaleString()}</span>
+                    <span className="tabular-nums font-medium shrink-0">{valMoney ? formatMoney(v) : v.toLocaleString()}</span>
                   </div>
                 </div>
               );

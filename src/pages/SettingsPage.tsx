@@ -666,7 +666,7 @@ function SystemRulesTab() {
     const tests = [
       ['order_paid', 'Order #TEST-88421 has been paid', '2× items, total 187.50 BGN. Customer paid in full.', '/orders'],
       ['order_returned', 'Order #TEST-39102 returned by customer', 'Reason: changed mind. Will be restocked.', '/orders'],
-      ['missed_call', 'Missed call from +359887654321', 'Called at 15:47. No answer after 4 rings.', '/missed-calls'],
+      ['missed_call', 'Missed call from +38970765432', 'Called at 15:47. No answer after 4 rings.', '/missed-calls'],
       ['low_stock', 'Low stock alert: Product XYZ-500ml', 'Only 4 units remaining (threshold: 10).', '/products'],
       ['info', 'New feature: Missed calls page now has voicemail playback', 'Check the Calls tab for details.', '/calls'],
     ];
@@ -904,7 +904,7 @@ function SystemRulesTab() {
                 💔 Test Order Return / Refund (pink sad)
               </button>
               <button
-                onClick={() => sendTestNotification('missed_call', 'Missed call from +359 88 765 4321', 'Rang 5 times at 15:47. No voicemail recorded.', '/missed-calls')}
+                onClick={() => sendTestNotification('missed_call', 'Missed call from +389 70 765 432', 'Rang 5 times at 15:47. No voicemail recorded.', '/missed-calls')}
                 className="text-xs px-2.5 py-1 rounded-md border border-rose-500/40 hover:bg-rose-500/10 text-rose-600 dark:text-rose-400 transition-colors"
               >
                 📞 Test Missed Call (urgent)

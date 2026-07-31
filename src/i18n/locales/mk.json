@@ -274,7 +274,7 @@
   },
   "fields": {
     "customerName": "Име на клиентот",
-    "phonePlaceholder": "Телефон (+359…)"
+    "phonePlaceholder": "Телефон (+389…)"
   },
   "validation": {
     "phoneTooShort": "Прекраток телефон",
@@ -669,7 +669,7 @@
     "myPayoutDetails": "Целосни детали за исплатата",
     "myPayoutDetailsDesc": "Види пакети, стапки и распределба на заработката",
     "openAgentsTab": "Отвори детали",
-    "perPackage": "≈ €{{price}} / пакет",
+    "perPackage": "≈ {{price}} / пакет",
     "unitsSub": "Вкупно производи (парчиња)",
     "returns": "Враќања",
     "ordersSub": "Сите што ги обработи",

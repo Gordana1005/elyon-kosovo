@@ -5,7 +5,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Button } from '@/components/ui/button';
 import { ChevronLeft, ChevronRight, Phone, UserX } from 'lucide-react';
 import { SmartPagination } from '@/components/SmartPagination';
-import { formatEur, formatLev } from '@/lib/currency';
+import { formatMoney } from '@/lib/currency';
 import { cn } from '@/lib/utils';
 import { EmptyState } from '@/components/EmptyState';
 import { MobileCard, MobileCardHeader, MobileCardField } from '@/components/ui/mobile-card';
@@ -166,23 +166,21 @@ export function SegmentMemberTable({
                     </td>
                   )}
                   <td className={cn(pad, 'text-right text-xs leading-tight')}>
-                    <div className="font-mono font-semibold">{formatEur(m.trigger_price)}</div>
+                    <div className="font-mono font-semibold">{formatMoney(m.trigger_price)}</div>
                     <div className="text-[10px] text-muted-foreground">{m.trigger_event_at ? format(new Date(m.trigger_event_at), 'dd MMM yy') : ''}</div>
                   </td>
                   <td className={cn(pad, 'text-right tabular-nums text-xs')}>{m.paid_count}</td>
                   <td className={cn(pad, 'text-right text-xs leading-tight')}>
                     {m.avg_package_price != null ? (
                       <>
-                        <div className="font-semibold">{formatEur(m.avg_package_price)}</div>
-                        <div className="text-[10px] text-muted-foreground">{formatLev(m.avg_package_price)}</div>
+                        <div className="font-semibold">{formatMoney(m.avg_package_price)}</div>
                       </>
                     ) : (
                       <span className="text-muted-foreground">—</span>
                     )}
                   </td>
                   <td className={cn(pad, 'text-right text-xs leading-tight')}>
-                    <div className="font-semibold">{formatEur(m.lifetime_value)}</div>
-                    <div className="text-[10px] text-muted-foreground">{formatLev(m.lifetime_value)}</div>
+                    <div className="font-semibold">{formatMoney(m.lifetime_value)}</div>
                   </td>
                   <td className={cn(pad, 'text-xs')}>
                     {m.assigned_agent_name ? (
@@ -257,18 +255,18 @@ export function SegmentMemberTable({
               )}
               <MobileCardField
                 label={t('segTable.lastOrder')}
-                value={<>{formatEur(m.trigger_price)}{m.trigger_event_at ? <span className="text-muted-foreground font-normal"> · {format(new Date(m.trigger_event_at), 'dd MMM yy')}</span> : null}</>}
+                value={<>{formatMoney(m.trigger_price)}{m.trigger_event_at ? <span className="text-muted-foreground font-normal"> · {format(new Date(m.trigger_event_at), 'dd MMM yy')}</span> : null}</>}
               />
               <MobileCardField label={t('segTable.totalOrders')} value={m.paid_count} />
               <MobileCardField
                 label={t('segTable.avgPerPkg')}
                 value={m.avg_package_price != null
-                  ? <>{formatEur(m.avg_package_price)} <span className="text-muted-foreground font-normal">({formatLev(m.avg_package_price)})</span></>
+                  ? <>{formatMoney(m.avg_package_price)}</>
                   : '—'}
               />
               <MobileCardField
                 label={t('segTable.totalSpend')}
-                value={<>{formatEur(m.lifetime_value)} <span className="text-muted-foreground font-normal">({formatLev(m.lifetime_value)})</span></>}
+                value={<>{formatMoney(m.lifetime_value)}</>}
               />
               <MobileCardField
                 label={t('segTable.lastCall')}

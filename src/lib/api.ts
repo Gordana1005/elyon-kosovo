@@ -219,8 +219,8 @@ export type LeaderboardMode = 'prediction' | 'pending';
 export interface LeaderboardResponse {
   generated_at: string;
   mode: LeaderboardMode;
-  day: string;               // YYYY-MM-DD (Europe/Belgrade) being viewed
-  today: string;             // YYYY-MM-DD (Europe/Belgrade) now
+  day: string;               // YYYY-MM-DD (Europe/Skopje) being viewed
+  today: string;             // YYYY-MM-DD (Europe/Skopje) now
   is_today: boolean;
   target: number;            // top revenue target (prediction); 0 for pending
   team_revenue: number;      // prediction: combined team revenue today (€)
@@ -408,7 +408,7 @@ export const apiUpdateCustomer = (orderId: string, body: UpdateCustomerBody) =>
 export interface UpdateCustomerContactBody {
   phone: string;            // current phone (identifies the customer)
   customer_name?: string;   // new full name
-  customer_phone?: string;  // new phone (stored as +359… E.164)
+  customer_phone?: string;  // new phone (stored as +389… E.164)
 }
 export const apiUpdateCustomerContact = (
   body: UpdateCustomerContactBody,
@@ -624,7 +624,7 @@ export interface CallScriptHelper {
   category?: string | null;
 }
 // Per-language variant of a script. Every field is optional — missing fields fall
-// back to the Bulgarian base columns at resolve time (see src/lib/callScripts.ts).
+// back to the Macedonian base columns at resolve time (see src/lib/callScripts.ts).
 export interface CallScriptTranslation {
   title?: string;
   description?: string | null;

@@ -8,7 +8,7 @@ import { cn } from '@/lib/utils';
 import { CHART_COLORS } from '@/lib/design-utils';
 import type { AgentActivityResponse, AgentActivityRow, AgentActivityCall } from '@/lib/api';
 
-const TZ = 'Europe/Belgrade';
+const TZ = 'Europe/Skopje';
 
 // Horizontal zoom expressed as pixels-per-hour. Higher = more spread out, so
 // short (few-second) calls and tight clusters become readable. The view scrolls
@@ -31,7 +31,7 @@ const BREAK_TRACK = breakStripes(0.85, 0.45, 5);
 const BREAK_SWATCH = breakStripes(0.95, 0.5, 3);
 
 /** Minutes to ADD to UTC to get Sofia local time at `at` (+120 / +180, DST-aware). */
-function sofiaOffsetMinutes(at: Date): number {
+function skopjeOffsetMinutes(at: Date): number {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: TZ, hour12: false,
     year: 'numeric', month: '2-digit', day: '2-digit',
@@ -73,7 +73,7 @@ export function AgentTimeline({ data, isToday }: AgentTimelineProps) {
   // Sofia-midnight epoch for the selected day — lets us map any instant to
   // minutes-of-day (handles a call that spills past midnight, and "now").
   const [yy, mm, dd] = date.split('-').map(Number);
-  const off = sofiaOffsetMinutes(new Date(Date.UTC(yy, mm - 1, dd, 12, 0, 0)));
+  const off = skopjeOffsetMinutes(new Date(Date.UTC(yy, mm - 1, dd, 12, 0, 0)));
   const midnightMs = Date.UTC(yy, mm - 1, dd, 0, 0, 0) - off * 60000;
   const minutesOfDay = (iso: string) => (new Date(iso).getTime() - midnightMs) / 60000;
   const hhmmToMin = (s: string) => { const [h, m] = s.split(':').map(Number); return h * 60 + m; };

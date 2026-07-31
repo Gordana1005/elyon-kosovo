@@ -18,9 +18,9 @@ import { fmtDuration } from '@/lib/design-utils';
 // Embedded in the Insights → Call Activity tab. This is a REPORTING view of
 // call telemetry; it is NOT the /calls agent dialer.
 
-const TZ = 'Europe/Belgrade';
+const TZ = 'Europe/Skopje';
 
-function sofiaTodayStr(): string {
+function skopjeTodayStr(): string {
   const p = new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
   const g = (t: string) => p.find((x) => x.type === t)?.value || '';
   return `${g('year')}-${g('month')}-${g('day')}`;
@@ -44,7 +44,7 @@ export default function CallActivityTimeline() {
   const { user } = useAuth();
   const isManager = !!(user?.isAdmin || user?.isManager);
 
-  const todayStr = sofiaTodayStr();
+  const todayStr = skopjeTodayStr();
   const [date, setDate] = useState<string>(todayStr);
   const [agentFilter, setAgentFilter] = useState<string>('all');
   const [calOpen, setCalOpen] = useState(false);

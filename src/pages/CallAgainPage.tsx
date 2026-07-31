@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { useAuth } from '@/contexts/AuthContext';
 import { apiGetCallAgainQueue, type CallAgainEntry } from '@/lib/api';
-import { formatEur, formatLev } from '@/lib/currency';
+import { formatMoney } from '@/lib/currency';
 import { MobileCard, MobileCardHeader, MobileCardField, MobileCardActions } from '@/components/ui/mobile-card';
 import { cn } from '@/lib/utils';
 
@@ -122,14 +122,12 @@ function QueueTable({ rows, showAgent }: { rows: CallAgainEntry[]; showAgent: bo
                   {r.prediction_segment_lists?.name || '—'}
                 </td>
                 <td className="py-2.5 align-top text-right tabular-nums font-mono">
-                  <div className="font-semibold">{formatEur(r.lifetime_value)}</div>
-                  <div className="text-[10px] text-muted-foreground">{formatLev(r.lifetime_value)}</div>
+                  <div className="font-semibold">{formatMoney(r.lifetime_value)}</div>
                 </td>
                 <td className="py-2.5 align-top text-right tabular-nums font-mono text-xs">
                   {r.avg_package_price != null ? (
                     <>
-                      <div className="font-semibold">{formatEur(r.avg_package_price)}</div>
-                      <div className="text-[10px] text-muted-foreground">{formatLev(r.avg_package_price)}</div>
+                      <div className="font-semibold">{formatMoney(r.avg_package_price)}</div>
                     </>
                   ) : (
                     <span className="text-muted-foreground">—</span>
@@ -182,12 +180,12 @@ function QueueTable({ rows, showAgent }: { rows: CallAgainEntry[]; showAgent: bo
             <MobileCardField label={t('callAgainPage.colSourceList')} value={r.prediction_segment_lists?.name || '—'} />
             <MobileCardField
               label={t('callAgainPage.lifetimeShort')}
-              value={<>{formatEur(r.lifetime_value)} <span className="text-muted-foreground font-normal">({formatLev(r.lifetime_value)})</span></>}
+              value={<>{formatMoney(r.lifetime_value)}</>}
             />
             <MobileCardField
               label={t('callAgainPage.colAvgPkg')}
               value={r.avg_package_price != null
-                ? <>{formatEur(r.avg_package_price)} <span className="text-muted-foreground font-normal">({formatLev(r.avg_package_price)})</span></>
+                ? <>{formatMoney(r.avg_package_price)}</>
                 : '—'}
             />
             <MobileCardField

@@ -7,7 +7,7 @@ import { ShoppingCart, Phone, PhoneOff, PhoneCall } from 'lucide-react';
 import { apiGetCustomerHistory, type CustomerHistoryCall } from '@/lib/api';
 import { StatusBadge } from '@/components/StatusBadge';
 import { OrderStatus } from '@/types';
-import { formatEur, formatLev } from '@/lib/currency';
+import { formatMoney } from '@/lib/currency';
 import { cleanNoteForDisplay } from '@/lib/notes';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
@@ -158,8 +158,7 @@ function OrdersTable({ orders, onOpenOrder }: { orders: any[]; onOpenOrder?: (id
                   <td className="py-1.5 font-mono text-[11px]">{o.display_id || o.id.slice(0, 8)}</td>
                   <td className="py-1.5 max-w-[220px] truncate" title={productLabel}>{productLabel}</td>
                   <td className="py-1.5 pl-3 text-right tabular-nums font-mono leading-tight">
-                    <div className="font-bold">{formatEur(total)}</div>
-                    <div className="text-[9px] font-normal text-muted-foreground">{formatLev(total)}</div>
+                    <div className="font-bold">{formatMoney(total)}</div>
                   </td>
                   <td className="py-1.5 pl-3">
                     {o.status

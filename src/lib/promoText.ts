@@ -11,7 +11,7 @@ const hasText = (v?: string | null): v is string => typeof v === 'string' && v.t
 
 /**
  * The operator's own wording for the viewer's language, if they wrote any.
- * Falls back to the Bulgarian base entry (same rule as the call scripts), then
+ * Falls back to the Macedonian base entry (same rule as the call scripts), then
  * to undefined — at which point the caller uses the built-in translated default.
  */
 export function resolveCustomText(

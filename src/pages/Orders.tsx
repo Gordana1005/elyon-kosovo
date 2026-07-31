@@ -23,7 +23,7 @@ import { Check } from 'lucide-react';
 import { MobileCard, MobileCardHeader, MobileCardField, MobileCardActions } from '@/components/ui/mobile-card';
 import { apiGetOrders, apiGetAgents, apiGetProducts, apiBulkStatusUpdate, apiDuplicateOrder } from '@/lib/api';
 import { Checkbox } from '@/components/ui/checkbox';
-import { formatEur, formatLev, eurToLev } from '@/lib/currency';
+import { formatMoney, codFor } from '@/lib/currency';
 import { toCsv, downloadCsv } from '@/lib/csv';
 import { composeHomeAddress, effectiveHomeParts } from '@/lib/address';
 import { validateOrderForFulfilment } from '@/lib/fulfilmentValidation';
@@ -475,13 +475,22 @@ export default function Orders() {
     const courierService = (o: any) => (o.delivery_type === 'speedy_office' || o.delivery_type === 'econt_office') ? 'office' : 'door';
     const cityName = (o: any) => (o.delivery_type === 'speedy_office' || o.delivery_type === 'econt_office') ? (o.courier_office_city || '') : (o.customer_city || '');
 
-    // BG national format (0XXXXXXXXX) from the stored +359 E.164 number.
+    // MK national format (0XXXXXXXX) from the stored +389 E.164 number.
+    // NOTE: this used to strip only +359. A +389 number fell straight through
+    // and was emitted as "389XXXXXXXX" — a plausible-looking but wrong national
+    // number that a courier would fail to dial.
     const phoneNational = (o: any) => {
       let p = (o.customer_phone || '').replace(/[^\d+]/g, '');
-      if (p.startsWith('+359')) p = '0' + p.slice(4);
-      else if (p.startsWith('359')) p = '0' + p.slice(3);
+      if (p.startsWith('+389')) p = '0' + p.slice(4);
+      else if (p.startsWith('389')) p = '0' + p.slice(3);
       return p.replace(/\D/g, '');
     };
+
+    // COD amount and its currency come from ONE call, deliberately. They used to
+    // be two independent `format:` lambdas, one emitting the currency code and
+    // one the converted amount — change one and forget the other and the courier
+    // collects the wrong sum on every parcel, with nothing throwing.
+    const cod = (o: any) => codFor(o.price || 0);
 
     const dash = (v: string) => (v && v.trim()) ? v.trim() : '-';
 
@@ -491,20 +500,21 @@ export default function Orders() {
       { key: 'customer_telephone', header: 'customer_telephone', format: phoneNational },
       { key: 'products', header: 'products (sku:quantity)', format: skuQty },
       { key: 'postal_code', header: 'postal_code', format: (o: any) => (o.postal_code || '').toString() },
-      { key: 'country_code', header: 'country_code', format: () => 'BG' },
+      { key: 'country_code', header: 'country_code', format: () => 'MK' },
       { key: 'city', header: 'city', format: cityName },
       { key: 'address', header: 'address', format: addressLine },
       { key: 'order_date', header: 'order_date', format: (o: any) => o.created_at ? format(new Date(o.created_at), 'yyyy-MM-dd H:mm:ss') : '' },
       { key: 'courier', header: 'courier', format: courierName },
       { key: 'courier_service', header: 'courier_service', format: courierService },
       { key: 'payment_method', header: 'payment_method', format: () => 'cod' },
-      { key: 'currency_code', header: 'currency_code', format: () => 'BGN' },
-      { key: 'payment_amount', header: 'payment_amount', format: (o: any) => eurToLev(o.price || 0).toFixed(2) },
+      { key: 'currency_code', header: 'currency_code', format: (o: any) => cod(o).currency },
+      { key: 'payment_amount', header: 'payment_amount', format: (o: any) => String(cod(o).amount) },
       { key: 'note', header: 'note', format: (o: any) => dash(o.delivery_instructions || '') },
       { key: 'other', header: 'other', format: (o: any) => dash(o.gift_note || '') },
       { key: 'call_center', header: 'call_center', format: () => '1' },
-      // Extra reference columns: COD amount shown in both currencies.
-      { key: 'amount_bgn', header: 'amount_bgn', format: (o: any) => eurToLev(o.price || 0).toFixed(2) },
+      // Reference column: the stored EUR value the denar COD was derived from.
+      // The old `amount_bgn` twin is gone — a lev column in a Macedonian courier
+      // file is a live foot-gun for whoever maps the importer.
       { key: 'amount_eur', header: 'amount_eur', format: (o: any) => Number(o.price || 0).toFixed(2) },
     ], ',', false);
 
@@ -676,8 +686,8 @@ export default function Orders() {
         'CONFIRMED BY': o.confirmed_by_name || o.last_action_by || o.assigned_agent_name || '',
         'SOURCE': o.source_type === 'monadon_legacy' ? 'MONADLIST'
           : o.source_type === 'affiliate' ? 'Affiliate'
-          : o.source_type === 'opencart' ? 'naturatherapy.bg'
-          : o.source_type === 'opencart_abandoned' ? 'naturatherapy.bg (abandoned)'
+          : o.source_type === 'opencart' ? 'naturatherapy.mk'
+          : o.source_type === 'opencart_abandoned' ? 'naturatherapy.mk (abandoned)'
           : o.source_type === 'inbound_lead' ? 'Webhook'
           : o.source_type === 'prediction_lead' ? 'Lead'
           : (o.source_type || 'manual'),
@@ -1107,8 +1117,7 @@ export default function Orders() {
                   <td className="px-4 py-3">{productLabel(order)}</td>
                   <td className="px-4 py-3 text-center">{order.quantity || 1}</td>
                   <td className="px-4 py-3">
-                    <div className="font-bold text-primary leading-tight">{formatEur(order.price)}</div>
-                    <div className="text-[10px] text-muted-foreground tabular-nums">{formatLev(order.price)}</div>
+                    <div className="font-bold text-primary leading-tight">{formatMoney(order.price)}</div>
                   </td>
                   <td className="px-4 py-3">
                     {(order.confirmed_by_name || order.last_action_by || order.assigned_agent_name) ? (
@@ -1266,7 +1275,7 @@ export default function Orders() {
                                 {order.order_items.map((item: any, idx: number) => (
                                   <div key={idx}>
                                     {item.product_name || '—'} × {item.quantity || 1}
-                                    {item.price_per_unit && ` ${t('ordersPage.each', { price: formatEur(item.price_per_unit) })}`}
+                                    {item.price_per_unit && ` ${t('ordersPage.each', { price: formatMoney(item.price_per_unit) })}`}
                                   </div>
                                 ))}
                               </div>
@@ -1368,7 +1377,7 @@ export default function Orders() {
               />
               <MobileCardField label={t('ordersPage.colProduct')} value={productLabel(order)} />
               <MobileCardField label={t('ordersPage.colQty')} value={order.quantity || 1} />
-              <MobileCardField label={t('createOrder.total')} value={<>{formatEur(order.price)} <span className="text-muted-foreground font-normal">({formatLev(order.price)})</span></>} />
+              <MobileCardField label={t('createOrder.total')} value={<>{formatMoney(order.price)}</>} />
               <MobileCardField label={t('ordersPage.colConfirmedBy')} value={confirmedBy || '—'} />
               <MobileCardField label={t('ordersPage.colSource')} value={sourceLabel} />
               <MobileCardField label={t('ordersPage.colDate')} value={`${new Date(order.created_at).toLocaleDateString()}, ${new Date(order.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`} />

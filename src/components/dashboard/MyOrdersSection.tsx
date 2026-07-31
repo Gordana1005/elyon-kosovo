@@ -12,7 +12,7 @@ import { EmptyState } from '@/components/EmptyState';
 import { MobileCard, MobileCardActions, MobileCardField, MobileCardHeader } from '@/components/ui/mobile-card';
 import { statusLabel } from '@/types';
 import { formatDistanceToNow } from '@/i18n/dates';
-import { formatEur, formatLev } from '@/lib/currency';
+import { formatMoney } from '@/lib/currency';
 import { cn } from '@/lib/utils';
 import { apiGetAppSettings, apiGetMyOrders, type MyOrderRow, type MyOrdersTab } from '@/lib/api';
 
@@ -42,7 +42,7 @@ const EVENT_FIELD: Record<MyOrdersTab, keyof MyOrderRow> = {
   returned: 'returned_at',
 };
 
-// Display-only grouping (+359 88 812 3456). NEVER used for matching — the raw
+// Display-only grouping (+389 70 123 456). NEVER used for matching — the raw
 // E.164 value is what the Call button passes to /calls.
 function prettyPhone(p: string | null): string {
   const s = (p || '').trim();
@@ -191,8 +191,7 @@ export function MyOrdersSection(
                         )}
                       </td>
                       <td className="py-2.5 align-top text-right tabular-nums font-mono">
-                        <div className="font-semibold">{formatEur(o.price)}</div>
-                        <div className="text-[10px] text-muted-foreground">{formatLev(o.price)}</div>
+                        <div className="font-semibold">{formatMoney(o.price)}</div>
                       </td>
                       <td
                         className={cn('py-2.5 align-top text-[11px] whitespace-nowrap pl-4', TONE_TEXT[age.tone])}
@@ -229,7 +228,7 @@ export function MyOrdersSection(
                   <MobileCardField label={t('dashboard.colProduct')} value={productSummary(o)} />
                   <MobileCardField
                     label={t('dashboard.colPrice')}
-                    value={<>{formatEur(o.price)} <span className="text-muted-foreground font-normal">({formatLev(o.price)})</span></>}
+                    value={<>{formatMoney(o.price)}</>}
                   />
                   {tab === 'returned' && o.return_reason && (
                     <MobileCardField

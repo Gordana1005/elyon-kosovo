@@ -36,7 +36,7 @@ import {
   apiUpdateCustomer, apiUpdateOrderStatus, apiSyncOrderItems,
   apiGetOrder, apiCorrectOrderAttribution, apiGetAgents,
 } from '@/lib/api';
-import { formatEur, formatLev } from '@/lib/currency';
+import { formatMoney } from '@/lib/currency';
 import { cleanNoteForDisplay } from '@/lib/notes';
 import { DeliveryMethodPicker, type DeliveryValue } from '@/components/DeliveryMethodPicker';
 import { resolveDeliveryPrefill, composeHomeAddress } from '@/lib/address';
@@ -983,7 +983,6 @@ export function OrderModal({ open, onClose, data, contextType, readOnly = false 
                             />
                             <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-sm text-primary">€</span>
                           </div>
-                          <div className="mt-0.5 text-right text-[10px] tabular-nums text-muted-foreground">{formatLev(calcRowTotal(item.quantity, item.price_per_unit))}</div>
                         </div>
                       </div>
 
@@ -1056,16 +1055,14 @@ export function OrderModal({ open, onClose, data, contextType, readOnly = false 
                 <div className="flex justify-between text-xs text-muted-foreground">
                   <span>{t('orderModal.subtotal', { count: activeItems.length })}</span>
                   <span className="font-mono tabular-nums text-right leading-tight">
-                    <span className="block">{formatEur(subtotal)}</span>
-                    <span className="block text-[10px]">{formatLev(subtotal)}</span>
+                    <span className="block">{formatMoney(subtotal)}</span>
                   </span>
                 </div>
 
                 <div className="border-t border-dashed pt-2 flex justify-between text-sm font-bold">
                   <span>{t('orderModal.finalTotal')}</span>
                   <span className="text-primary font-mono tabular-nums text-right leading-tight">
-                    <span className="block text-base">{formatEur(finalTotal)}</span>
-                    <span className="block text-[11px] font-medium text-muted-foreground">{formatLev(finalTotal)}</span>
+                    <span className="block text-base">{formatMoney(finalTotal)}</span>
                   </span>
                 </div>
 
@@ -1084,8 +1081,7 @@ export function OrderModal({ open, onClose, data, contextType, readOnly = false 
                   <div className="flex justify-between text-xs">
                     <span className="text-muted-foreground">{t('orderModal.remainingBalance')}</span>
                     <span className={cn('font-mono tabular-nums font-medium text-right leading-tight', remainingBalance > 0 ? 'text-destructive' : 'text-emerald-600')}>
-                      <span className="block">{formatEur(remainingBalance)}</span>
-                      <span className="block text-[10px] opacity-70">{formatLev(remainingBalance)}</span>
+                      <span className="block">{formatMoney(remainingBalance)}</span>
                     </span>
                   </div>
                 )}
