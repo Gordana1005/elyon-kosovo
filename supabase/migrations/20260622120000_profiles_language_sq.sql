@@ -1,4 +1,4 @@
--- Allow Albanian ('sq', Kosovo standard) as a third UI language preference.
+-- Allow Albanian ('sq') as a third UI language preference.
 -- The frontend keeps 'sq' out of the visible switcher until the professional
 -- translation review is signed off, so this is safe to apply independently of
 -- (and ahead of) the frontend deploy.
