@@ -20,7 +20,8 @@ This design means the landing page itself stays simple.
 - Every POST **must** include `x-webhook-signature: <hex(HMAC_SHA256(rawBody, WEBHOOK_SECRET))>`
 - If the signature is missing or wrong → 401
 - The secret (`WEBHOOK_SECRET`) lives only on the Supabase Edge Function (never in browser code).
-- If the secret is unset in production, the function logs a warning and falls back to accepting unsigned requests — **this is dangerous**. Never leave it unset.
+- If the secret is unset, the function **rejects every request** (fail-closed) — it does not fall back to accepting unsigned traffic. An unset secret therefore breaks lead intake loudly rather than silently accepting forgeries. Never leave it unset.
+- The signature is verified **before** the slug is looked up, so a caller without a valid signature gets an identical 401 whether the slug exists, is disabled, or was never real. Keep that order: reversing it turns the endpoint into an oracle that enumerates the product catalogue.
 
 ## Slug → Product Mapping
 
@@ -56,6 +57,6 @@ This design means the landing page itself stays simple.
 - Putting the `WEBHOOK_SECRET` in frontend JavaScript (never do this).
 - Forgetting to re-run the seeding script after adding new products.
 - Changing slugs instead of deleting + recreating (breaks live landing pages).
-- Assuming unsigned requests will be rejected in production (they won't if the secret is missing).
+- Assuming a missing `WEBHOOK_SECRET` degrades gracefully — it does not; intake stops dead until the secret is restored.
 
 This pipeline is the primary source of new real customer leads. Treat the security and mapping rules as sacred.

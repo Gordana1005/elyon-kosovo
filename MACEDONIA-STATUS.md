@@ -17,9 +17,21 @@ operation. It shares **nothing at runtime** with Bulgaria (own repo / own Supaba
 ## 🟢 Current state
 
 - **Frontend (Vercel):** https://elyon-natura.vercel.app (`gordanas-projects-a53c0208/elyon-natura`, GitHub-connected → **push to `main` auto-deploys production**)
-- **Backend (Supabase):** `bmfxhgznttcnnlqloqzp` — **159 migrations applied**, edge function `api` deployed, `WEBHOOK_SECRET` set, `pg_cron` on.
-- **Data:** empty (0 orders / 0 customers / 0 call logs). 67 products, 4 admin profiles.
-- **Logins:** `@elyon-mk.local`, usernames `MileStoev` / `MikiMitrov` / `TomeDonchev` / `ntmacedonia`. Password still the seeded one — **rotate**.
+- **Backend (Supabase):** `bmfxhgznttcnnlqloqzp` — **161 migrations applied**, edge function `api` deployed, `WEBHOOK_SECRET` set, `pg_cron` on.
+- **Data:** empty (0 orders / 0 customers / 0 call logs). **67 products, all priced in clean denar and 46 carrying a real unit cost** (2026-08-04).
+- **Logins (4, verified live 2026-08-04):**
+  | Login | Role | Notes |
+  |---|---|---|
+  | `milestoev@elyon-mk.local` | admin | typed as the bare username `milestoev` |
+  | `mile@elyon.com` | admin | typed in full |
+  | `hedi@naturatherapy.mk` | admin ("Суперадмин") | typed in full |
+  | `dragana@naturatherapy.mk` | manager | typed in full |
+
+  Any address containing `@` is typed **in full** at the login box — the form only appends
+  `elyon-mk.local` when the input has no `@`, and the field is labelled "Username".
+  All four still use seeded/simple passwords — **rotate**.
+- **Public signup is disabled** (2026-08-04). Accounts are created only by an admin, via the
+  `/users` screen or `node scripts/create-user-mk.mjs`.
 - **Secrets:** `docs/VAULT.md` (gitignored).
 
 ### Code parity with Bulgaria — done 2026-07-31
@@ -73,23 +85,113 @@ was actually quoted on the phone.
 ## ⏳ Before go-live
 
 **Needs your input:**
-1. **Denar shelf prices.** The catalogue still carries Bulgarian-style EUR points (39.90 → an
-   untidy `2.454 ден`). Run `node scripts/reprice-catalogue-mk.mjs --plan` to see the mapping,
-   then supply the real advertised denar prices. Cheapest to do now, while `orders = 0`.
+1. ~~**Denar shelf prices.**~~ **Done 2026-08-04** — the catalogue was re-priced off the Bulgarian
+   EUR points onto clean denar shelf prices (2.490 / 1.890 / 1.490 / 1.290 / 950 / 790 / 590 / 450 /
+   150 ден). Every price now ends in 0, so the COD collected equals the advertised figure. Map kept
+   at `scripts/data/reprice-2026-08.json`, pre-change state at `…-before.txt`.
+   **Still open:** the **29 products with no price at all.** They are not free in practice — the
+   order form silently defaults them to `max(cost × 3, €15)`. Price them or deactivate them.
 2. **VAT rate.** 18% is Macedonia's standard rate, but food supplements may fall under the
    preferential 5%/10% band. `VAT_RATE` (edge fn) feeds every profit report.
-3. **Commission tiers.** Still `<25€→1, 25–35€→2, ≥35€→3`. With a ~€32 hero product almost every
-   order lands in tier 2. A comp-plan decision, not a port decision. Note `MarginLabTab.tsx`
-   duplicates the tier logic — change both.
+3. **Commission tiers.** Still `<25€→1, 25–35€→2, ≥35€→3`. Note the hero band is now **tier 3**:
+   twelve products sit at 2.490 ден (€40.49), i.e. €3/package, not the €2 assumed when this was
+   written. A comp-plan decision, not a port decision. `MarginLabTab.tsx` duplicates the tier
+   logic — change both.
 4. **Macedonian couriers + city list**, replacing Speedy/Econt and `bg_settlements`.
+5. **Confirm the imported unit costs.** `products.cost_price` was populated on 2026-08-04 from the
+   Bulgarian catalogue (46 of 67 matched by name; the other 21 have no cost recorded in BG either).
+   These are **Bulgarian sourcing figures** — check them against real Macedonian supplier invoices,
+   because they now drive Pure Profit, Margin Lab and the floor-price calculator.
+   Re-run with `node scripts/import-costs-from-bg.mjs` (dry run) to see the current mapping.
 
 **🛑 Hard go-live blocker:** the fulfilment CSV is BigArena's **Bulgarian 3PL format**. Until a
 Macedonian carrier confirms the column contract (and whether they want whole denars), **it must
 not be used for real shipments**. `.grok/skills/elyon-fulfilment-csv/SKILL.md` describes a
 Bulgarian warehouse serving a Skopje call centre — for MK that relationship inverts.
 
-**Also pending:** rotate the seeded admin password and the credentials in `docs/VAULT.md`;
-real production domain (replaces `elyon-mk.com` in CORS + `EMAIL_DOMAIN`); Phase-2 telephony.
+**Also pending:** rotate the seeded admin passwords and the credentials in `docs/VAULT.md`
+(**still open — see H2 in the security audit**); a real production domain (the `elyon-mk.com`
+placeholders were *removed* from the CORS allowlist on 2026-08-04 because we do not own that
+domain — a real one must be **added** when registered, and it also replaces `EMAIL_DOMAIN`);
+Phase-2 telephony.
+
+---
+
+## 🔐 Security — audit of 2026-08-04
+
+Full findings, evidence and verification: **`docs/SECURITY-AUDIT-2026-08-04.md`**.
+
+**Fixed:** manager→admin privilege escalation via PostgREST (`user_roles` had a `FOR ALL` policy
+with no `WITH CHECK`); customer phone numbers readable by any logged-in account, affiliates
+included (`personal_list_holds`); **public self-registration, which was enabled**; affiliate API
+keys readable by managers; the CORS allowlist (legacy alias was missing, unowned placeholder was
+present); admin/manager logins now recorded in `admin_login_logs`; webhook slug-enumeration oracle;
+missing REVOKEs on service-role-only tables; and a full set of HTTP security headers including CSP.
+
+**Knowingly accepted:** the live admin password committed in `scripts/create-superadmin-mile.mjs`
+(H2). Rotating it is a one-line change whenever you want it — note that rotation does not scrub
+git history.
+
+**Deferred:** webhook replay protection, durable rate limiting, SSRF hardening on affiliate
+postback URLs, server-side shift enforcement, MFA, and an RLS conformance test in CI. That last one
+is the recommended next project — three lockdown sweeps have each missed tables the next one found.
+
+⚠️ **Adding a column to `public.affiliates`** now requires adding it to the explicit column GRANT in
+`20260909000000_security_quickwins_lockdown.sql`, or it will be invisible to PostgREST readers.
+⚠️ **Adding a custom domain or a second Supabase project** requires updating `connect-src` in
+`vercel.json`, or every API call will fail silently in the browser.
+
+---
+
+## 🧩 What we still lack (consolidated, 2026-08-04)
+
+Everything above is the *market* layer. These are the gaps found while auditing the whole system —
+mostly small, but each one bites somebody eventually.
+
+**Role and permission plumbing**
+- **`inbound_agent` cannot be assigned through the API.** It is missing from `validRoles` in both
+  `createUserSchema` and `PUT /users/:id/roles`, although the enum has it and both original accounts
+  hold it (granted by the admin trigger, not by the API).
+- **The admin UI's role list omits `agent`, `inbound_agent` and `affiliate`** — three of the nine
+  enum values are invisible on the `/users` screen.
+- **Hardcoded module fallbacks were never seeded** into `module_settings`: `calls`, `missed_calls`,
+  `segments`, `recordings`, `products`, `webhooks`. The code comment says to remove them once the
+  seed lands; they still ship. Side effect: `warehouse` and `ads_admin` see call surfaces that were
+  never granted to them.
+
+**Documentation that actively misleads**
+- `.grok/skills/elyon-currency/SKILL.md` documents the **opposite of the shipped code** — it says
+  "Macedonia is euro-native, display EUR only" and references `formatEur`/`formatLev`, none of which
+  exist. Anyone following it would break the denar display. **Rewrite before relying on it.**
+- `.grok/skills/elyon-logistics-costs/SKILL.md` teaches **VAT 20%** and the lev peg (Bulgarian).
+  The code is 18%.
+- `.grok/skills/elyon-fulfilment-csv/SKILL.md` describes a Bulgarian warehouse serving a Skopje
+  call centre; for Macedonia that relationship inverts.
+- `docs/USERS_ROLES_PERMISSIONS.md` describes "the 7 roles" (there are nine) and the Bulgarian
+  `@elyoncrm.local` login domain.
+- `docs/SECURITY.md` describes the **Bulgarian** Supabase project's auth settings, not this one —
+  which is exactly how the open-signup misconfiguration went unnoticed for a month.
+- `docs/VAULT.md` is still titled "Kosovo" and its §3 lists three accounts that do not exist.
+- `CLAUDE.md` says a repo-root `MEMORY.md` is loaded each session; **no such file exists** here.
+- `RESUME.md` was retired on 2026-08-04 — it was the pre-fork Bulgarian handoff doc and instructed
+  the reader to run commands in the forbidden BG folder.
+- `.grok/memory/INITIAL_PROJECT_MEMORY_SEED.md` is Bulgarian-era content and describes live A1
+  two-way calling as "what's live". It is not.
+
+**Product data**
+- 29 products have **no shelf price** and 8 have neither price nor cost.
+- Several product names are still **Bulgarian**, not Macedonian — e.g. `CHIA THERAPY - с вкус на
+  диня`, `IMMUNO BOOST - с вкус на къпина, лимон и лайм`, `Whey Protein 1.5 kg с вкус на ванилия`.
+  They are customer-visible on the agent screen and in the fulfilment CSV.
+- A few names carry typos that matter only because matching is by name:
+  `ELIXY-Дневенкрем снаил 50ml` and `ELIXY Серум со 20%снаил екстракт` are missing spaces.
+
+**Telephony (Phase 2, deferred)**
+- `docs/SIP-TRUNK-PLAN.md` holds the decision (build our own Asterisk PBX) and the ready-to-send
+  Macedonian procurement emails. The one gating unknown is whether A1 sells a bare SIP trunk.
+- Nine Bulgarian values are still hardcoded in the edge function, including
+  `REC_HOST = pbx.elyoncall.com` and 20 Sofia DIDs. Latent while `VITE_USE_REAL_VOIP=false`, but
+  they contradict "shares nothing at runtime with Bulgaria" and must be resolved before Phase 2.
 
 ---
 
