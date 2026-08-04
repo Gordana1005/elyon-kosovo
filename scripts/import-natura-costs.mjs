@@ -1,3 +1,16 @@
+// ⛔ SUPERSEDED 2026-08-04 — use scripts/import-costs-from-bg.mjs instead.
+//
+// This script carries costs hand-transcribed from a spreadsheet, and several of
+// them now disagree with the live Bulgarian catalogue that MK costs are sourced
+// from (Curcumactiv 4.23 here vs 6.30 there; Saw Palmetto 1.27 vs 1.60; Matcha
+// Collagen 5.23 vs no recorded cost at all). Eight of its pairings are also only
+// marked 'likely'. Running it would silently overwrite the imported figures with
+// older, less reliable ones.
+//
+// Kept for provenance — it records where the 2026 spreadsheet numbers came from.
+// It also predates the Macedonian fork's safety rules: it has no tripwire, so it
+// writes to whatever project VITE_SUPABASE_URL happens to point at.
+//
 // Load Natura Therapy "original" (cost) prices into products.cost_price.
 // Matching is by an explicit map (CRM names are partly Cyrillic / renamed).
 // Dry-run by default — prints the plan. Pass --commit to write.
@@ -8,6 +21,11 @@
 import { createClient } from '@supabase/supabase-js';
 
 const COMMIT = process.argv.includes('--commit');
+if (COMMIT) {
+  console.error('\x1b[31mSuperseded — this would overwrite live costs with stale spreadsheet values.\x1b[0m');
+  console.error('Use: node scripts/import-costs-from-bg.mjs --commit');
+  process.exit(1);
+}
 const sb = createClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
 
 // sheet product → { crm: <exact CRM product name>, cost, confidence }

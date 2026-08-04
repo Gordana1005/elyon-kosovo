@@ -1,0 +1,76 @@
+
+Current catalogue, and what each price DERIVES to today:
+
+       EUR       derived           COD  product
+  --------------------------------------------------------------------------
+     39.90     2.454 ден     2.450 ден  Brain active (30cps)
+     39.90     2.454 ден     2.450 ден  Broncho Complex
+     39.90     2.454 ден     2.450 ден  Diet shake chocolate 500g
+     39.90     2.454 ден     2.450 ден  Diet shake strawberry  500g
+     39.90     2.454 ден     2.450 ден  Diet shake vanilla  500g
+     39.90     2.454 ден     2.450 ден  Enduro Max 30 капсули
+     39.90     2.454 ден     2.450 ден  Hemoro Forte
+     39.90     2.454 ден     2.450 ден  Uro Protect
+     39.90     2.454 ден     2.450 ден  Диабетол Форте
+     39.90     2.454 ден     2.450 ден  Колаген Пептид со ВАНИЛА 200 гр
+     39.90     2.454 ден     2.450 ден  Простатол Комплекс
+     39.90     2.454 ден     2.450 ден  ХОЛЕСТОЛ КОМПЛЕКС 30 cps
+     29.90     1.839 ден     1.840 ден  A4 - antioxidant matrix
+     29.90     1.839 ден     1.840 ден  Curcumactiv (500ml)
+     29.90     1.839 ден     1.840 ден  ELIXY-hyaluronic acid-collagen&aloe vera
+     29.90     1.839 ден     1.840 ден  Snail Complex
+     29.90     1.839 ден     1.840 ден  НЕВРО АКТИВ - 60капсули
+     24.90     1.531 ден     1.530 ден  CALM
+     24.90     1.531 ден     1.530 ден  Hepatol
+     24.90     1.531 ден     1.530 ден  Hyaluron 5
+     20.90     1.285 ден     1.290 ден  Femme 7
+     14.90       916 ден       920 ден  ELIXY Серум со 20%снаил екстракт
+     14.90       916 ден       920 ден  ELIXY Серум со витамин Ц
+     14.90       916 ден       920 ден  ELIXY-Дневенкрем снаил 50ml
+     14.90       916 ден       920 ден  ELIXY-Ноќен крем снаил 50ml
+     14.90       916 ден       920 ден  OSTEOfix
+     12.90       793 ден       790 ден  Aloe Vera 500ml
+     12.90       793 ден       790 ден  BCAA powder 200 gr.
+     12.90       793 ден       790 ден  CREATINE powder 200 gr.
+     12.90       793 ден       790 ден  L-GLUTAMINE powder 200 gr.
+      9.90       609 ден       610 ден  C 1000
+      9.90       609 ден       610 ден  SAW Palmetto
+      6.90       424 ден       420 ден  Reishi
+      6.90       424 ден       420 ден  Tribulus
+      2.00       123 ден       120 ден  CHIA THERAPY - с вкус на диня
+      2.00       123 ден       120 ден  CHIA THERAPY - с вкус на ябълка
+      2.00       123 ден       120 ден  IMMUNO BOOST - с вкус на къпина, лимон и лайм
+      2.00       123 ден       120 ден  IMMUNO BOOST - с вкус на портокал и ананас
+      0.00         0 ден         0 ден  DR.SLIM 90cps
+      0.00         0 ден         0 ден  ELIXY DNEVNA & HYALURONIC +35  50 ml
+      0.00         0 ден         0 ден  ELIXY DNEVNA & HYALURONIC +45  50 ml
+      0.00         0 ден         0 ден  ELIXY DNEVNA & HYALURONIC +55  50 ml
+      0.00         0 ден         0 ден  ELIXY-Шампон Алое вера 500 мл.
+      0.00         0 ден         0 ден  Jade Roler
+      0.00         0 ден         0 ден  MAGNESIUM CITRAT 325mg
+      0.00         0 ден         0 ден  NUTRI SHAKE- strawberry 500 g
+      0.00         0 ден         0 ден  NUTRI SHAKE-chocolate 500 g
+      0.00         0 ден         0 ден  Prosta Flow 30 капсули
+      0.00         0 ден         0 ден  SLIM Complex
+      0.00         0 ден         0 ден  SLIM Fiber
+      0.00         0 ден         0 ден  Slimrush 30 капсули
+      0.00         0 ден         0 ден  TURMERIC BOOST - Куркума буст - 500мл.
+      0.00         0 ден         0 ден  Vitamin B6
+      0.00         0 ден         0 ден  Vitamin C complex
+      0.00         0 ден         0 ден  Vitamin D3
+      0.00         0 ден         0 ден  Whey Protein 1.5 kg с вкус на ванилия
+      0.00         0 ден         0 ден  Whey Protein 1.5 kg с вкус на шоколад
+      0.00         0 ден         0 ден  Zinc 30 cps
+      0.00         0 ден         0 ден  Амино Енерджи Бустер - 500 мл.
+      0.00         0 ден         0 ден  АШВАГАНДА  ЕКСТРАКТ 60/1 cps
+      0.00         0 ден         0 ден  ВИТАМИН Б6 365/1 таб
+      0.00         0 ден         0 ден  ВИТАМИН Д3 365/1 таб
+      0.00         0 ден         0 ден  ДР.СЛИМ РАСТИТЕЛЕН 210 гр
+      0.00         0 ден         0 ден  МАЧА с КОЛАГЕН 175 гр
+      0.00         0 ден         0 ден  МЕЛАТОНИН 365/1 таб
+      0.00         0 ден         0 ден  САМБУКУС сирoп 250 мл
+      0.00         0 ден         0 ден  ЦИНК 365/1 таб
+
+To re-price: put your real denar shelf prices in a JSON map and pass --map.
+See the header of this file for the accepted shapes.
+

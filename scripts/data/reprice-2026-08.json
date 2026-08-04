@@ -1,0 +1,14 @@
+{
+  "_comment": "Macedonian denar shelf prices, 2026-08-04. Values are the DENAR price we advertise; reprice-catalogue-mk.mjs stores denar/61.5 as the EUR value so the derived figure matches the marketed one exactly. Keys are the CURRENT stored EUR price as a 2-decimal string. The catalogue was seeded with Bulgarian EUR points (39.90, 29.90...) which derive to untidy figures like 2.454 ден. Every target ends in 0 so codFor()'s round-to-10 leaves the COD equal to the advertised price. 24.90 -> 1490 stores 24.23 EUR, deliberately below the 25 EUR agent-commission boundary; 1550+ would cross it and double the per-package bonus. The 29 products stored at 0.00 are intentionally absent - they need real shelf prices decided by the business, not a bulk rule.",
+  "byEurPrice": {
+    "39.90": 2490,
+    "29.90": 1890,
+    "24.90": 1490,
+    "20.90": 1290,
+    "14.90": 950,
+    "12.90": 790,
+    "9.90": 590,
+    "6.90": 450,
+    "2.00": 150
+  }
+}
