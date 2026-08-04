@@ -17,6 +17,12 @@ import {
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { EmptyState } from '@/components/EmptyState';
+// Prices are STORED in EUR and the denar is derived at display time from the
+// frozen MKD_PER_EUR. This screen is the one place an operator types the stored
+// EUR value directly, so it shows both: the denar the customer sees, and the EUR
+// actually held in the row. Showing only the raw number invites someone to
+// "correct" 40.49 to 2490 and create a 153.135 ден product.
+import { formatMoney, formatEurExact } from '@/lib/currency';
 
 interface ProductRow {
   id: string;
@@ -211,8 +217,16 @@ export default function ProductsPage() {
                   <td className="px-4 py-3 text-muted-foreground">{product.sku || '—'}</td>
                   <td className="px-4 py-3 text-muted-foreground">{product.category || '—'}</td>
                   <td className="px-4 py-3 text-muted-foreground">{product.suppliers?.name || '—'}</td>
-                  {isStrictAdmin && <td className="px-4 py-3 text-muted-foreground">{Number(product.cost_price || 0).toFixed(2)}</td>}
-                  <td className="px-4 py-3 font-semibold text-primary">{Number(product.price).toFixed(2)}</td>
+                  {isStrictAdmin && (
+                    <td className="px-4 py-3 text-muted-foreground">
+                      <div>{formatMoney(product.cost_price || 0)}</div>
+                      <div className="text-[10px] opacity-60">{formatEurExact(product.cost_price || 0)}</div>
+                    </td>
+                  )}
+                  <td className="px-4 py-3 font-semibold text-primary">
+                    <div>{formatMoney(product.price)}</div>
+                    <div className="text-[10px] font-normal opacity-60 text-muted-foreground">{formatEurExact(product.price)}</div>
+                  </td>
                   <td className="px-4 py-3">
                     <StockBadge qty={product.stock_quantity} threshold={product.low_stock_threshold} />
                   </td>
@@ -270,13 +284,19 @@ export default function ProductsPage() {
                 <div>
                   <label className="text-xs text-muted-foreground">{t('products.costPriceAdmin')}</label>
                   <input value={formCostPrice} onChange={e => setFormCostPrice(e.target.value)} placeholder={t('products.colCostPrice')} type="number" className={inputClass} />
+                  <p className="text-[10px] text-muted-foreground mt-0.5">
+                    {formatEurExact(parseFloat(formCostPrice) || 0)} = {formatMoney(parseFloat(formCostPrice) || 0)}
+                  </p>
                 </div>
               )}
               <div>
                 <label className="text-xs text-muted-foreground">{t('products.sellingPriceDesc')}</label>
                 <input value={formPrice} onChange={e => setFormPrice(e.target.value)} placeholder={t('products.colSellingPrice')} type="number" className={inputClass} />
                 <p className="text-[10px] text-muted-foreground mt-0.5">
-                  Agents' default: €{suggestedSell(formCostPrice, formPrice).toFixed(2)}{(parseFloat(formPrice) || 0) > 0 ? '' : ' (no retail set → cost×3 / €15 floor)'} · editable per order
+                  {formatEurExact(parseFloat(formPrice) || 0)} = <span className="font-medium">{formatMoney(parseFloat(formPrice) || 0)}</span>
+                </p>
+                <p className="text-[10px] text-muted-foreground mt-0.5">
+                  Agents' default: {formatMoney(suggestedSell(formCostPrice, formPrice))}{(parseFloat(formPrice) || 0) > 0 ? '' : ' (no retail set → cost×3 / €15 floor)'} · editable per order
                 </p>
               </div>
             </div>
@@ -332,13 +352,19 @@ export default function ProductsPage() {
                 <div>
                   <label className="text-xs text-muted-foreground">{t('products.costPriceAdmin')}</label>
                   <input value={formCostPrice} onChange={e => setFormCostPrice(e.target.value)} placeholder={t('products.colCostPrice')} type="number" className={inputClass} />
+                  <p className="text-[10px] text-muted-foreground mt-0.5">
+                    {formatEurExact(parseFloat(formCostPrice) || 0)} = {formatMoney(parseFloat(formCostPrice) || 0)}
+                  </p>
                 </div>
               )}
               <div>
                 <label className="text-xs text-muted-foreground">{t('products.sellingPriceDesc')}</label>
                 <input value={formPrice} onChange={e => setFormPrice(e.target.value)} placeholder={t('products.colSellingPrice')} type="number" className={inputClass} />
                 <p className="text-[10px] text-muted-foreground mt-0.5">
-                  Agents' default: €{suggestedSell(formCostPrice, formPrice).toFixed(2)}{(parseFloat(formPrice) || 0) > 0 ? '' : ' (no retail set → cost×3 / €15 floor)'} · editable per order
+                  {formatEurExact(parseFloat(formPrice) || 0)} = <span className="font-medium">{formatMoney(parseFloat(formPrice) || 0)}</span>
+                </p>
+                <p className="text-[10px] text-muted-foreground mt-0.5">
+                  Agents' default: {formatMoney(suggestedSell(formCostPrice, formPrice))}{(parseFloat(formPrice) || 0) > 0 ? '' : ' (no retail set → cost×3 / €15 floor)'} · editable per order
                 </p>
               </div>
             </div>
