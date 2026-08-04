@@ -756,9 +756,12 @@ const corsHeaders = {
 // callers (e.g. webhook senders without an Origin header) bypass CORS
 // entirely and are gated by the HMAC signature instead.
 const ALLOWED_ORIGINS = [
-  "https://elyon-mk.com",       // TODO(mk): real Macedonian prod domain
-  "https://www.elyon-mk.com",   // TODO(mk): real Macedonian prod domain
+  // TODO(mk): add the real Macedonian production domain once one is registered.
+  // The former placeholders (elyon-mk.com / www.elyon-mk.com) were removed on
+  // 2026-08-04: we do not own that domain, so listing it meant whoever registers
+  // it gets a credentialed cross-origin channel to this API.
   "https://elyon-natura.vercel.app",
+  "https://elyon-macedonia.vercel.app", // legacy project alias, still resolves and is in use
   "http://localhost:8080",
   "http://localhost:5173",
   "http://localhost:3000",
@@ -1529,6 +1532,16 @@ async function handleRequest(req: Request): Promise<Response> {
       if (!checkWebhookRateLimit(`slug:${slug}`) || !checkWebhookRateLimit(`ip:${ip}`)) {
         return json({ error: "Rate limit exceeded" }, 429);
       }
+      // Signature FIRST, slug lookup second. The other order let an unsigned
+      // caller tell a live slug (404) from a disabled one (403) from a real one
+      // (401), which maps the product catalogue and the live landing pages. The
+      // secret is global over the raw body and slug-independent, so verifying
+      // first costs nothing and makes every unauthenticated response identical.
+      const rawBody = await req.text();
+      if (!(await verifyWebhookSignature(req, rawBody))) {
+        return json({ error: "Invalid or missing signature" }, 401);
+      }
+
       const { data: webhook } = await adminClient
         .from("webhooks")
         .select("id, product_name, status, total_leads")
@@ -1537,10 +1550,6 @@ async function handleRequest(req: Request): Promise<Response> {
       if (!webhook) return json({ error: "Webhook not found" }, 404);
       if (webhook.status !== "active") return json({ error: "Webhook is disabled" }, 403);
 
-      const rawBody = await req.text();
-      if (!(await verifyWebhookSignature(req, rawBody))) {
-        return json({ error: "Invalid or missing signature" }, 401);
-      }
       let body;
       try { body = parseBody(inboundLeadSchema, JSON.parse(rawBody)); } catch (e: any) { return json({ error: e.message }, 400); }
 
@@ -10337,8 +10346,22 @@ async function handleRequest(req: Request): Promise<Response> {
       const userName = userProfile?.full_name || user.email || "Unknown";
       const primaryRole = roles[0] || "agent";
 
-      // Admins and managers bypass shift restrictions
+      // Admins and managers bypass shift restrictions.
+      // They still get logged: the client only writes shift_login_logs on the
+      // non-bypass branch, so before this the highest-privilege accounts were the
+      // only ones with no login trail at all. Written here rather than in the
+      // browser so it cannot be skipped by calling the auth endpoint directly.
+      // Best-effort — a logging failure must never block a login.
       if (isAdminOrManager) {
+        try {
+          await adminClient.from("admin_login_logs").insert({
+            user_id: user.id,
+            email: user.email ?? null,
+            roles,
+            ip: req.headers.get("x-forwarded-for")?.split(",")[0].trim() || null,
+            user_agent: req.headers.get("user-agent") || null,
+          });
+        } catch (_e) { /* ignore — logging is not worth failing a login over */ }
         return json({ allowed: true, bypass: true });
       }
 
