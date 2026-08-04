@@ -10,6 +10,8 @@ import { useToast } from '@/hooks/use-toast';
 import { apiErrorText } from '@/i18n/apiErrors';
 import { usePermissions } from '@/contexts/PermissionsContext';
 import { EmptyState } from '@/components/EmptyState';
+// Courier rates are stored in EUR but entered in denari — convert at the input.
+import { eurToDen, denToEur } from '@/lib/currency';
 import {
   apiGetUsers, apiToggleUserActive, apiSetUserRoles, apiDeleteUser,
   apiGetProducts, apiUpdateProduct,
@@ -664,7 +666,7 @@ function SystemRulesTab() {
 
   const sendAllTestNotifications = async () => {
     const tests = [
-      ['order_paid', 'Order #TEST-88421 has been paid', '2× items, total 187.50 BGN. Customer paid in full.', '/orders'],
+      ['order_paid', 'Order #TEST-88421 has been paid', '2× items, total 11.530 ден. Customer paid in full.', '/orders'],
       ['order_returned', 'Order #TEST-39102 returned by customer', 'Reason: changed mind. Will be restocked.', '/orders'],
       ['missed_call', 'Missed call from +38970765432', 'Called at 15:47. No answer after 4 rings.', '/missed-calls'],
       ['low_stock', 'Low stock alert: Product XYZ-500ml', 'Only 4 units remaining (threshold: 10).', '/products'],
@@ -892,7 +894,7 @@ function SystemRulesTab() {
             </p>
             <div className="flex flex-wrap gap-1.5 mb-2">
               <button
-                onClick={() => sendTestNotification('order_paid', 'Order #TEST-88421 has been paid', '2× items, total 187.50 BGN. Customer paid in full via cash on delivery.', '/orders')}
+                onClick={() => sendTestNotification('order_paid', 'Order #TEST-88421 has been paid', '2× items, total 11.530 ден. Customer paid in full via cash on delivery.', '/orders')}
                 className="text-xs px-2.5 py-1 rounded-md border border-emerald-500/40 hover:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 transition-colors"
               >
                 🎉 Test Order Paid (happy + $ rain)
@@ -1714,20 +1716,22 @@ function CourierRatesTab() {
               return (
                 <tr key={`${courier}_${service}`} className="border-b last:border-0">
                   <td className="px-4 py-2.5 font-medium">{t(labelKey)}</td>
+                  {/* Rates are STORED in EUR (courier_rates.deliver_cost /
+                      return_cost) but are entered and shown in denari. */}
                   <td className="px-4 py-2.5 text-right">
                     <input
-                      type="number" step="0.01" min="0"
+                      type="number" step="1" min="0"
                       className="w-24 rounded-md border bg-background px-2 py-1 text-right"
-                      value={r?.deliver_cost ?? 0}
-                      onChange={(e) => setField(courier, service, 'deliver_cost', Number(e.target.value))}
+                      value={eurToDen(r?.deliver_cost ?? 0)}
+                      onChange={(e) => setField(courier, service, 'deliver_cost', denToEur(Number(e.target.value)))}
                     />
                   </td>
                   <td className="px-4 py-2.5 text-right">
                     <input
-                      type="number" step="0.01" min="0"
+                      type="number" step="1" min="0"
                       className="w-24 rounded-md border bg-background px-2 py-1 text-right"
-                      value={r?.return_cost ?? 0}
-                      onChange={(e) => setField(courier, service, 'return_cost', Number(e.target.value))}
+                      value={eurToDen(r?.return_cost ?? 0)}
+                      onChange={(e) => setField(courier, service, 'return_cost', denToEur(Number(e.target.value)))}
                     />
                   </td>
                 </tr>

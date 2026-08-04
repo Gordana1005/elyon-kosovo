@@ -51,8 +51,11 @@ export default function PureProfitExportDialog({ data, range }: { data: Insights
 
     if (picked.summary && pp) {
       const vatPct = Math.round((pp.vat_rate ?? 0.18) * 100);
+      // Denars only. The figures are stored in EUR but this report goes to
+      // Macedonian readers, and a two-currency sheet invites someone to quote
+      // the wrong column.
       const money = (metric: string, eur: number) => ({
-        'Metric': metric, 'EUR': n2(eur), 'MKD': eurToDen(eur),
+        'Metric': metric, 'MKD': eurToDen(eur),
       });
       // Unchecked topics disappear from the Summary too (e.g. a report shared
       // without commission info must not carry the commissions line). Clear
@@ -79,11 +82,12 @@ export default function PureProfitExportDialog({ data, range }: { data: Insights
         + (picked.commissions ? 0 : commissions);
       rows.push(money(excluded.length ? `Clear profit (excl. ${excluded.join(' & ')})` : 'Clear profit', clear));
       rows.push(
-        { 'Metric': 'Paid orders', 'EUR': pp.paid_orders ?? 0, 'MKD': '' },
-        { 'Metric': 'Paid packages', 'EUR': pp.paid_packages ?? 0, 'MKD': '' },
-        { 'Metric': 'Cost coverage %', 'EUR': n2((pp.cost_coverage ?? 1) * 100), 'MKD': '' },
+        // Counts and percentages, not money — they share the value column.
+        { 'Metric': 'Paid orders', 'MKD': pp.paid_orders ?? 0 },
+        { 'Metric': 'Paid packages', 'MKD': pp.paid_packages ?? 0 },
+        { 'Metric': 'Cost coverage %', 'MKD': n2((pp.cost_coverage ?? 1) * 100) },
       );
-      out.push({ name: 'Summary', widths: [40, 14, 14], rows });
+      out.push({ name: 'Summary', widths: [40, 16], rows });
     }
 
     if (picked.products && pp?.by_product?.length) {
@@ -94,13 +98,13 @@ export default function PureProfitExportDialog({ data, range }: { data: Insights
           'Product': p.product,
           'Packages': p.packages,
           'Orders': p.orders,
-          'Unit Price (EUR)': n2(p.unit_price),
-          'Unit Cost (EUR)': p.unit_cost > 0 ? n2(p.unit_cost) : '',
-          'Revenue (EUR)': n2(p.revenue),
-          'Net Revenue (EUR)': n2(p.net_revenue ?? p.revenue),
-          'Cost (EUR)': n2(p.cogs),
-          'Profit (EUR)': n2(p.profit),
-          'Net Profit (EUR)': n2(p.net_profit ?? p.profit),
+          'Unit Price (MKD)': eurToDen(p.unit_price),
+          'Unit Cost (MKD)': p.unit_cost > 0 ? eurToDen(p.unit_cost) : '',
+          'Revenue (MKD)': eurToDen(p.revenue),
+          'Net Revenue (MKD)': eurToDen(p.net_revenue ?? p.revenue),
+          'Cost (MKD)': eurToDen(p.cogs),
+          'Profit (MKD)': eurToDen(p.profit),
+          'Net Profit (MKD)': eurToDen(p.net_profit ?? p.profit),
         })),
       });
     }
@@ -114,9 +118,9 @@ export default function PureProfitExportDialog({ data, range }: { data: Insights
           'Service': l.service,
           'Delivered': l.delivered,
           'Returned': l.returned,
-          'Delivery Cost (EUR)': n2(l.deliver_cost),
-          'Return Loss (EUR)': n2(l.return_cost),
-          'Total (EUR)': n2(l.total_cost),
+          'Delivery Cost (MKD)': eurToDen(l.deliver_cost),
+          'Return Loss (MKD)': eurToDen(l.return_cost),
+          'Total (MKD)': eurToDen(l.total_cost),
         })),
       });
     }
@@ -131,7 +135,7 @@ export default function PureProfitExportDialog({ data, range }: { data: Insights
           widths: [24, 13, 14],
           rows: agents.map((a: any) => ({
             'Agent': a.name,
-            'Payout (EUR)': n2(a.payout_earned),
+            'Payout (MKD)': eurToDen(a.payout_earned),
             'Packages Sold': a.packages_sold ?? a.units ?? 0,
           })),
         });

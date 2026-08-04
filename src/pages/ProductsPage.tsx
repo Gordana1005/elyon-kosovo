@@ -17,12 +17,12 @@ import {
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { EmptyState } from '@/components/EmptyState';
-// Prices are STORED in EUR and the denar is derived at display time from the
-// frozen MKD_PER_EUR. This screen is the one place an operator types the stored
-// EUR value directly, so it shows both: the denar the customer sees, and the EUR
-// actually held in the row. Showing only the raw number invites someone to
-// "correct" 40.49 to 2490 and create a 153.135 ден product.
-import { formatMoney, formatEurExact } from '@/lib/currency';
+// Prices are STORED in EUR (frozen MKD_PER_EUR) but the euro is an internal
+// accounting unit and must never surface in this Macedonian UI. Both price
+// fields on this screen therefore take DENARI: the form state holds denars, and
+// the values are converted to EUR only at the API boundary in handleCreate /
+// handleUpdate, and back again in openEdit.
+import { formatMoney, eurToDen, denToEur } from '@/lib/currency';
 
 interface ProductRow {
   id: string;
@@ -83,11 +83,18 @@ export default function ProductsPage() {
   // Cost price is sensitive — superadmins (admin role) only. Managers can edit
   // products but never see/enter cost.
   const isStrictAdmin = !!user?.isAdmin;
-  // Agents' default = website retail (Selling Price) when set, else cost×3 / €15 floor.
+  // Agents' default = website retail (Selling Price) when set, else cost×3 or the
+  // floor, whichever is larger. Kept in EUR because that is what the server
+  // computes (see the same rule in the products API handler); the callers below
+  // convert the denar form values in and the result out.
+  const PRICE_FLOOR_EUR = 15;
   const suggestedSell = (cost: any, price: any) => {
     const pr = parseFloat(String(price)) || 0;
-    return pr > 0 ? pr : Math.max((parseFloat(String(cost)) || 0) * 3, 15);
+    return pr > 0 ? pr : Math.max((parseFloat(String(cost)) || 0) * 3, PRICE_FLOOR_EUR);
   };
+  // The two price fields hold DENARI; the API speaks EUR.
+  const priceEur = () => denToEur(parseFloat(formPrice) || 0);
+  const costEur = () => denToEur(parseFloat(formCostPrice) || 0);
 
   const fetchProducts = () => {
     setLoading(true);
@@ -108,8 +115,8 @@ export default function ProductsPage() {
     setSaving(true);
     try {
       await apiCreateProduct({
-        name: formName, description: formDesc, price: parseFloat(formPrice) || 0,
-        cost_price: parseFloat(formCostPrice) || 0,
+        name: formName, description: formDesc, price: priceEur(),
+        cost_price: costEur(),
         sku: formSku || null, stock_quantity: parseInt(formStock) || 0, low_stock_threshold: parseInt(formThreshold) || 5,
         days_of_supply_per_unit: parseInt(formSupply) || 15,
         category: formCategory, supplier_id: formSupplierId || null,
@@ -123,8 +130,8 @@ export default function ProductsPage() {
 
   const openEdit = (p: ProductRow) => {
     setEditProduct(p);
-    setFormName(p.name); setFormDesc(p.description || ''); setFormPrice(String(p.price));
-    setFormCostPrice(String(p.cost_price || 0));
+    setFormName(p.name); setFormDesc(p.description || ''); setFormPrice(String(eurToDen(p.price)));
+    setFormCostPrice(String(eurToDen(p.cost_price || 0)));
     setFormSku(p.sku || ''); setFormStock(String(p.stock_quantity)); setFormThreshold(String(p.low_stock_threshold));
     setFormSupply(String(p.days_of_supply_per_unit ?? 15));
     setFormCategory(p.category || ''); setFormSupplierId(p.supplier_id || '');
@@ -135,8 +142,8 @@ export default function ProductsPage() {
     setSaving(true);
     try {
       await apiUpdateProduct(editProduct.id, {
-        name: formName, description: formDesc, price: parseFloat(formPrice) || 0,
-        cost_price: parseFloat(formCostPrice) || 0,
+        name: formName, description: formDesc, price: priceEur(),
+        cost_price: costEur(),
         sku: formSku || null, stock_quantity: parseInt(formStock) || 0, low_stock_threshold: parseInt(formThreshold) || 5,
         days_of_supply_per_unit: parseInt(formSupply) || 15,
         is_active: editProduct.is_active, category: formCategory, supplier_id: formSupplierId || null,
@@ -217,16 +224,8 @@ export default function ProductsPage() {
                   <td className="px-4 py-3 text-muted-foreground">{product.sku || '—'}</td>
                   <td className="px-4 py-3 text-muted-foreground">{product.category || '—'}</td>
                   <td className="px-4 py-3 text-muted-foreground">{product.suppliers?.name || '—'}</td>
-                  {isStrictAdmin && (
-                    <td className="px-4 py-3 text-muted-foreground">
-                      <div>{formatMoney(product.cost_price || 0)}</div>
-                      <div className="text-[10px] opacity-60">{formatEurExact(product.cost_price || 0)}</div>
-                    </td>
-                  )}
-                  <td className="px-4 py-3 font-semibold text-primary">
-                    <div>{formatMoney(product.price)}</div>
-                    <div className="text-[10px] font-normal opacity-60 text-muted-foreground">{formatEurExact(product.price)}</div>
-                  </td>
+                  {isStrictAdmin && <td className="px-4 py-3 text-muted-foreground">{formatMoney(product.cost_price || 0)}</td>}
+                  <td className="px-4 py-3 font-semibold text-primary">{formatMoney(product.price)}</td>
                   <td className="px-4 py-3">
                     <StockBadge qty={product.stock_quantity} threshold={product.low_stock_threshold} />
                   </td>
@@ -283,20 +282,20 @@ export default function ProductsPage() {
               {isStrictAdmin && (
                 <div>
                   <label className="text-xs text-muted-foreground">{t('products.costPriceAdmin')}</label>
-                  <input value={formCostPrice} onChange={e => setFormCostPrice(e.target.value)} placeholder={t('products.colCostPrice')} type="number" className={inputClass} />
-                  <p className="text-[10px] text-muted-foreground mt-0.5">
-                    {formatEurExact(parseFloat(formCostPrice) || 0)} = {formatMoney(parseFloat(formCostPrice) || 0)}
-                  </p>
+                  <div className="relative">
+                    <input value={formCostPrice} onChange={e => setFormCostPrice(e.target.value)} placeholder={t('products.colCostPrice')} type="number" className={`${inputClass} pr-10`} />
+                    <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">ден</span>
+                  </div>
                 </div>
               )}
               <div>
                 <label className="text-xs text-muted-foreground">{t('products.sellingPriceDesc')}</label>
-                <input value={formPrice} onChange={e => setFormPrice(e.target.value)} placeholder={t('products.colSellingPrice')} type="number" className={inputClass} />
+                <div className="relative">
+                  <input value={formPrice} onChange={e => setFormPrice(e.target.value)} placeholder={t('products.colSellingPrice')} type="number" className={`${inputClass} pr-10`} />
+                  <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-sm text-primary">ден</span>
+                </div>
                 <p className="text-[10px] text-muted-foreground mt-0.5">
-                  {formatEurExact(parseFloat(formPrice) || 0)} = <span className="font-medium">{formatMoney(parseFloat(formPrice) || 0)}</span>
-                </p>
-                <p className="text-[10px] text-muted-foreground mt-0.5">
-                  Agents' default: {formatMoney(suggestedSell(formCostPrice, formPrice))}{(parseFloat(formPrice) || 0) > 0 ? '' : ' (no retail set → cost×3 / €15 floor)'} · editable per order
+                  {t('products.agentDefaultHint', { amount: formatMoney(suggestedSell(costEur(), priceEur())) })}
                 </p>
               </div>
             </div>
@@ -351,20 +350,20 @@ export default function ProductsPage() {
               {isStrictAdmin && (
                 <div>
                   <label className="text-xs text-muted-foreground">{t('products.costPriceAdmin')}</label>
-                  <input value={formCostPrice} onChange={e => setFormCostPrice(e.target.value)} placeholder={t('products.colCostPrice')} type="number" className={inputClass} />
-                  <p className="text-[10px] text-muted-foreground mt-0.5">
-                    {formatEurExact(parseFloat(formCostPrice) || 0)} = {formatMoney(parseFloat(formCostPrice) || 0)}
-                  </p>
+                  <div className="relative">
+                    <input value={formCostPrice} onChange={e => setFormCostPrice(e.target.value)} placeholder={t('products.colCostPrice')} type="number" className={`${inputClass} pr-10`} />
+                    <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">ден</span>
+                  </div>
                 </div>
               )}
               <div>
                 <label className="text-xs text-muted-foreground">{t('products.sellingPriceDesc')}</label>
-                <input value={formPrice} onChange={e => setFormPrice(e.target.value)} placeholder={t('products.colSellingPrice')} type="number" className={inputClass} />
+                <div className="relative">
+                  <input value={formPrice} onChange={e => setFormPrice(e.target.value)} placeholder={t('products.colSellingPrice')} type="number" className={`${inputClass} pr-10`} />
+                  <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-sm text-primary">ден</span>
+                </div>
                 <p className="text-[10px] text-muted-foreground mt-0.5">
-                  {formatEurExact(parseFloat(formPrice) || 0)} = <span className="font-medium">{formatMoney(parseFloat(formPrice) || 0)}</span>
-                </p>
-                <p className="text-[10px] text-muted-foreground mt-0.5">
-                  Agents' default: {formatMoney(suggestedSell(formCostPrice, formPrice))}{(parseFloat(formPrice) || 0) > 0 ? '' : ' (no retail set → cost×3 / €15 floor)'} · editable per order
+                  {t('products.agentDefaultHint', { amount: formatMoney(suggestedSell(costEur(), priceEur())) })}
                 </p>
               </div>
             </div>

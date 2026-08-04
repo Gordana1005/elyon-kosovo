@@ -12,6 +12,8 @@ import { OrderModal, OrderModalData } from '@/components/OrderModal';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/contexts/AuthContext';
+// Orders are stored in EUR; the warehouse export reports denars.
+import { eurToDen } from '@/lib/currency';
 import { usePermissions } from '@/contexts/PermissionsContext';
 import { useToast } from '@/hooks/use-toast';
 import {
@@ -242,7 +244,10 @@ function IncomingOrdersTab() {
     if (orders.length === 0) return;
     const headers = [
       'Order_ID', 'Customer_Name', 'Phone', 'Product_List', 'Quantity_Total',
-      'Total_Price', 'Status', 'Agent', 'Source', 'Address', 'City', 'Postal_Code', 'Created_At',
+      // Denars, and the currency is named in the header. The column used to be a
+      // bare EUR figure with no currency anywhere in the file, which is exactly
+      // the ambiguity codFor() exists to prevent on the courier hand-off.
+      'Total_Price_MKD', 'Status', 'Agent', 'Source', 'Address', 'City', 'Postal_Code', 'Created_At',
     ];
     const esc = (v: string) => `"${(v || '').replace(/"/g, '""')}"`;
     const rows = orders.map((o: any) => {
@@ -263,7 +268,7 @@ function IncomingOrdersTab() {
         o.customer_phone || '',
         esc(productList),
         qtyTotal,
-        Number(o.price || 0).toFixed(2),
+        eurToDen(o.price || 0),
         o.status || '',
         o.assigned_agent_name || '',
         o.source === 'prediction_lead' ? 'Prediction Lead' : 'Standard Order',

@@ -1,40 +1,89 @@
 ---
 name: elyon-currency
-description: Use when dealing with any prices, money, totals, stock value, revenue, or financial calculations in the Macedonia Elyon CRM. Macedonia is euro-native — display EUR only. There is NO lev, NO 1.95583 peg, and NO dual EUR/LEV display (that was the Bulgarian system). Critical for warehouse, orders, dashboard, and any user-facing money.
+description: Use when touching any price, total, cost, payout, commission, COD amount, revenue figure or money input in the Macedonian Elyon CRM. Money is STORED in EUR and shown ONLY in Macedonian denari, derived from a frozen constant. There is no lev, no dual display, and no euro anywhere in the UI. Read before writing any money UI, any money input, or any export column.
 ---
 
-# Elyon Currency Skill — MACEDONIA (euro-native)
+# Elyon Currency Skill — MACEDONIA
 
-**Macedonia uses the euro natively. Money is shown in EUR only.**
+**Stored in EUR. Shown in денари. Never both, never euro.**
 
-> This is the Macedonia fork. The Bulgarian rule (a fixed `BGN_PER_EUR = 1.95583` peg with dual
-> EUR/LEV display) **does NOT apply here.** There is no lev. Never display "лв", never apply a
-> peg, never fetch FX. If you see lev/BGN/1.95583 anywhere user-facing, it's a leftover from the
-> BG fork — remove it.
+> Two corrections to older versions of this file, which described a different market:
+> Macedonia is **not** euro-native (that was the Kosovo phase of this deployment), and the
+> Bulgarian lev peg does not apply either. `formatEur` and `formatLev` no longer exist.
 
-## Storage vs Display
-- **Database storage:** EUR (cent precision), as in Bulgaria.
-- **Display to users:** EUR only — `€30.63`. No second currency.
-- Helpers (from `src/lib/currency.ts`, already neutralized for Macedonia):
-  - `formatEur(eur)` → `€30.63` ✅ use this everywhere
-  - `formatLev(eur)` → returns `''` (no-op; kept only so old call sites don't break)
-  - `formatPriceInline(eur)` → `€30.63` (EUR only; was dual in BG)
+## The model
+
+| | |
+|---|---|
+| **Database / API** | EUR, cent precision. This is an internal accounting unit. |
+| **Everything a human sees** | Macedonian denari only. |
+| **Conversion** | `MKD_PER_EUR = 61.5` in `src/lib/currency.ts`, applied at render time. |
+
+### The constant is FROZEN — never "update it to today's rate"
+
+The Bulgarian lev is legally fixed to the euro, so deriving it at display time is safe forever.
+The denar is a *managed* NBRM peg, which is not the same promise. The moment someone edits
+`MKD_PER_EUR`, every historical order, closed agent payout, past revenue report and already-collected
+COD silently re-prices — with no audit trail, and no way to tell what was actually quoted on the
+phone. `src/lib/currency.test.ts` pins the value so an edit fails CI.
+
+**If the market moves, re-price the catalogue in EUR instead** — `scripts/reprice-catalogue-mk.mjs`
+takes the denar shelf prices you actually advertise and stores `denar / 61.5`.
+
+Two other copies of the constant must stay in step: `supabase/functions/api/index.ts` (webhook FX)
+and `scripts/reprice-catalogue-mk.mjs`. Only the `src/lib` one is test-guarded — another reason not
+to touch any of them.
+
+## Helpers — `src/lib/currency.ts`
+
+| Function | Returns | Use for |
+|---|---|---|
+| `formatMoney(eur)` | `"2.490 ден"` | **Every** money value shown to a user |
+| `eurToDen(eur)` | `2490` (integer) | Prefilling a denar input; export columns |
+| `denToEur(den)` | `40.49` (2dp) | Reading a denar input back before sending to the API |
+| `codFor(eur)` | `{ amount, currency: 'MKD' }` | The courier COD figure — returns amount **and** currency together so they cannot be exported apart |
+| `formatEurExact(eur)` | `"€40.49"` | **Affiliate/CPA partner surfaces only** — see below |
+
+`formatPriceInline` is an alias of `formatMoney`, kept for old call sites.
 
 ## Rules
-1. **Any money shown to a human** → `formatEur`. EUR only.
-2. **Calculations** → do math in EUR; there is nothing to convert.
-3. **New money UI** → import `formatEur`. Never hand-format with a currency symbol, never add a
-   second currency line.
-4. **Polish TODO:** some dashboard cards still render an (now-empty) `levValue` subline left over
-   from the dual display — safe to remove for a cleaner UI.
+
+1. **Displaying money → `formatMoney`.** Never hand-format, never print a bare number, never add a
+   currency symbol yourself.
+2. **A money INPUT takes денари.** The field holds denars; convert with `denToEur` on the way to the
+   API and `eurToDen` on the way in. Put a `ден` adornment on the field. This applies to product
+   prices, order line prices and totals, courier rates, leaderboard bonus tiers, prediction value
+   brackets, the Margin Lab target and simulator, and payout amounts — all already converted.
+   *Never* label a field `ден` while it still writes a raw EUR number; that is a live money bug.
+3. **Whole-denar values round-trip exactly** (verified for 1–20 000), so `denToEur(eurToDen(x))` is
+   safe for anything an operator can type. Prefer whole denars; use `step={1}`.
+4. **Export columns must name the currency** — `Total_Price_MKD`, `Revenue (MKD)`. A bare number in
+   a CSV is the ambiguity `codFor()` exists to prevent.
+5. **Calculations stay in EUR.** Convert only at the display or input boundary, never in the middle
+   of a computation, or rounding compounds.
+
+## The one legitimate exception: affiliates
+
+`formatEurExact` and the `payout_eur` / `price_eur` fields under `src/components/affiliates/**` are
+**deliberately EUR**. Affiliate and CPA partners are external companies on euro-denominated
+contracts; their payouts are a real euro obligation, not Macedonian retail pricing. Leave those
+surfaces alone — converting them would misstate what the partner is owed.
+
+Everything else in the product is denar-only.
 
 ## Red flags (stop and correct)
-- Any `лв`, `BGN`, `1.95583`, `eurToLev`, or a second currency shown to users.
-- Re-introducing a peg or live FX.
-- Storing a non-EUR amount in a price column.
 
-## Exact file references
-- Constant & helpers: `src/lib/currency.ts` (Macedonia: `formatLev`→`''`, `formatPriceInline`→EUR-only).
-- Used in: Dashboard, Orders, WarehousePage, Products, Insights, CreateOrderModal, OrderModal, etc.
+- A `€` in any staff- or customer-facing string outside `src/components/affiliates/**`.
+- Any `лв`, `BGN`, `1.95583`, `formatLev`, `eurToLev` — Bulgarian leftovers.
+- An edit to `MKD_PER_EUR`, or a live FX fetch.
+- A price input labelled `ден` that stores what the user typed without `denToEur`.
+- Storing a denar amount in a price column (they are EUR columns).
+- A money column in a CSV with no currency in its header.
 
-**If the user asks about the lev or a peg → that's the Bulgarian system; this is Macedonia (EUR only).**
+## Commission tiers depend on the EUR unit price
+
+`packageBonusRate` in the edge function reads `order_items.price_per_unit` **in EUR**:
+`<25€ → 1€`, `25–35€ → 2€`, `≥35€ → 3€`. In denar terms the boundaries fall at **1.538 ден** and
+**2.153 ден**. Re-pricing across one of those lines changes what every agent is paid per package —
+check before moving a price near them. The tier table is duplicated in
+`src/components/insights/MarginLabTab.tsx`; change both.

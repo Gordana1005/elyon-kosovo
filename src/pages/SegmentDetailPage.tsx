@@ -6,6 +6,7 @@ import { AppLayout } from '@/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
+import { formatMoney } from '@/lib/currency';
 import { useAuth } from '@/contexts/AuthContext';
 import { apiGetSegment, apiAssignSegmentMembers, apiGetAgents } from '@/lib/api';
 import { ArrowLeft, Users, Loader2, UserPlus, UserX } from 'lucide-react';
@@ -102,12 +103,12 @@ export default function SegmentDetailPage() {
       parts.push(`${lo}-${hi}m since ${list.trigger_event.replace('last_', '')}`);
     }
     if (list.single_price_min !== null) {
-      const lo = list.single_price_min;
-      const hi = list.single_price_max == null ? '∞' : list.single_price_max;
-      parts.push(`order €${lo}–${hi}`);
+      const lo = formatMoney(list.single_price_min);
+      const hi = list.single_price_max == null ? '∞' : formatMoney(list.single_price_max);
+      parts.push(`order ${lo}–${hi}`);
     }
     if (list.min_paid_count !== null) parts.push(`OR ${list.min_paid_count}+ paid`);
-    if (list.lifetime_min !== null) parts.push(`lifetime ≥ €${list.lifetime_min}`);
+    if (list.lifetime_min !== null) parts.push(`lifetime ≥ ${formatMoney(list.lifetime_min)}`);
     return parts.join(' · ');
   }, [list]);
 

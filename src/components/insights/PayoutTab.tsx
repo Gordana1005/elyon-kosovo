@@ -28,7 +28,7 @@ import {
   type AgentPayoutSettlement,
   type AgentPayoutPreview,
 } from '@/lib/api';
-import { formatMoney, formatPriceInline } from '@/lib/currency';
+import { formatMoney, formatPriceInline, eurToDen, denToEur } from '@/lib/currency';
 
 export default function PayoutTab() {
   const { t } = useTranslation();
@@ -52,7 +52,8 @@ export default function PayoutTab() {
   // seeds it, so the operator can settle a period other than the one on screen.
   const [dlgFrom, setDlgFrom] = useState(monthStart);
   const [dlgTo, setDlgTo] = useState(today);
-  // Free-typed amount. Kept as a string so the field can be emptied while typing.
+  // Free-typed amount, in DENARI (the API stores EUR — converted at the edges).
+  // Kept as a string so the field can be emptied while typing.
   const [amountInput, setAmountInput] = useState('');
   const [overrideReason, setOverrideReason] = useState('');
 
@@ -116,7 +117,7 @@ export default function PayoutTab() {
       });
       setPreview(p);
       // Keep the amount field on the calculated number until it's touched.
-      setAmountInput(p.amount_eur.toFixed(2));
+      setAmountInput(String(eurToDen(p.amount_eur)));
       return p;
     } finally {
       setPreviewBusy(false);
@@ -149,10 +150,17 @@ export default function PayoutTab() {
     }
   };
 
+  // `parsedAmount` is DENARI — the same unit the field is prefilled in, so the
+  // "operator changed the calculated figure" test is an exact integer compare.
   const parsedAmount = Number(amountInput);
   const amountValid = amountInput.trim() !== '' && Number.isFinite(parsedAmount) && parsedAmount >= 0;
   const amountOverridden = !!preview && amountValid
-    && Math.round(parsedAmount * 100) !== Math.round(preview.amount_eur * 100);
+    && Math.round(parsedAmount) !== eurToDen(preview.amount_eur);
+  // An untouched field pays out the calculated EUR verbatim. Round-tripping it
+  // through denars can drift by a cent, which would look like a manual override
+  // of an amount nobody edited.
+  const amountEur = (v: number, computedEur: number, overridden: boolean) =>
+    (overridden ? denToEur(v) : computedEur);
 
   const confirmMarkPaid = async () => {
     if (!preview) return;
@@ -169,7 +177,7 @@ export default function PayoutTab() {
         paid_on: paidOn,
         method,
         notes: notes || undefined,
-        amount_eur: Math.round(parsedAmount * 100) / 100,
+        amount_eur: amountEur(parsedAmount, preview.amount_eur, amountOverridden),
         override_reason: amountOverridden ? (overrideReason || undefined) : undefined,
       });
       toast({ title: t('payout.markedPaid') });
@@ -186,7 +194,7 @@ export default function PayoutTab() {
 
   const openEdit = (h: AgentPayoutSettlement) => {
     setEditRow(h);
-    setEditAmount(Number(h.amount_eur).toFixed(2));
+    setEditAmount(String(eurToDen(h.amount_eur)));
     setEditPaidOn(String(h.paid_on).slice(0, 10));
     setEditFrom(String(h.period_from).slice(0, 10));
     setEditTo(String(h.period_to).slice(0, 10));
@@ -198,7 +206,7 @@ export default function PayoutTab() {
 
   const saveEdit = async () => {
     if (!editRow) return;
-    const amt = Number(editAmount);
+    const amt = Number(editAmount); // denari
     if (editAmount.trim() === '' || !Number.isFinite(amt) || amt < 0) {
       toast({ title: t('common.error'), description: t('payout.amountInvalid'), variant: 'destructive' });
       return;
@@ -210,7 +218,7 @@ export default function PayoutTab() {
     setEditBusy(true);
     try {
       await apiUpdateAgentPayout(editRow.id, {
-        amount_eur: Math.round(amt * 100) / 100,
+        amount_eur: amountEur(amt, editRow.amount_eur, Math.round(amt) !== eurToDen(editRow.amount_eur)),
         paid_on: editPaidOn,
         period_from: editFrom,
         period_to: editTo,
@@ -558,7 +566,7 @@ export default function PayoutTab() {
                 <Label className="text-xs">{t('payout.amountToPay')}</Label>
                 <Input
                   type="number"
-                  step="0.01"
+                  step="1"
                   min="0"
                   value={amountInput}
                   onChange={(e) => setAmountInput(e.target.value)}
@@ -567,13 +575,12 @@ export default function PayoutTab() {
                 <div className="mt-1 flex items-center justify-between gap-2 text-xs">
                   <span className="text-muted-foreground">
                     {t('payout.calculatedWas', { amount: formatMoney(preview.amount_eur) })}
-                    {amountValid && ` · ${formatMoney(parsedAmount)}`}
                   </span>
                   {amountOverridden && (
                     <button
                       type="button"
                       className="flex items-center gap-1 text-primary hover:underline"
-                      onClick={() => setAmountInput(preview.amount_eur.toFixed(2))}
+                      onClick={() => setAmountInput(String(eurToDen(preview.amount_eur)))}
                     >
                       <RotateCcw className="h-3 w-3" />
                       {t('payout.resetAmount')}
@@ -610,7 +617,7 @@ export default function PayoutTab() {
                       <tr key={it.order_id} className="border-t">
                         <td className="p-1">{it.display_id || it.order_id.slice(0, 8)}</td>
                         <td className="p-1 text-right">{it.package_units}</td>
-                        <td className="p-1 text-right">{it.bonus_eur.toFixed(2)}</td>
+                        <td className="p-1 text-right">{formatMoney(it.bonus_eur)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -674,7 +681,7 @@ export default function PayoutTab() {
                 <Label className="text-xs">{t('payout.amountToPay')}</Label>
                 <Input
                   type="number"
-                  step="0.01"
+                  step="1"
                   min="0"
                   value={editAmount}
                   onChange={(e) => setEditAmount(e.target.value)}
@@ -690,7 +697,7 @@ export default function PayoutTab() {
                     type="button"
                     className="flex items-center gap-1 text-primary hover:underline"
                     onClick={() =>
-                      setEditAmount(Number(editRow.computed_amount_eur ?? editRow.amount_eur).toFixed(2))}
+                      setEditAmount(String(eurToDen(editRow.computed_amount_eur ?? editRow.amount_eur)))}
                   >
                     <RotateCcw className="h-3 w-3" />
                     {t('payout.resetAmount')}

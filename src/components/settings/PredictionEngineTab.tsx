@@ -8,6 +8,8 @@ import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { apiErrorText } from '@/i18n/apiErrors';
+// Value brackets are stored in EUR, set in denari.
+import { eurToDen, denToEur } from '@/lib/currency';
 import {
   apiGetSegmentEngineConfig, apiSaveSegmentEngineConfig, apiGetSegmentEngineDiff,
   apiGetSegmentEngineControls, apiSetShadowEngine, apiRecomputeShadow, apiRecomputeSegments,
@@ -233,7 +235,7 @@ export function PredictionEngineTab() {
       {/* Value bands */}
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-base flex items-center gap-2"><DollarSign className="h-4 w-4" /> {t('predEngine.valueTitle', { defaultValue: 'Value brackets (last paid order price, €)' })}</CardTitle>
+          <CardTitle className="text-base flex items-center gap-2"><DollarSign className="h-4 w-4" /> {t('predEngine.valueTitle', { defaultValue: 'Value brackets (last paid order price, ден)' })}</CardTitle>
           <p className="text-sm text-muted-foreground">{t('predEngine.valueDesc', { defaultValue: 'Splits each non-holding-pen band by order price. Last bracket must be open-ended.' })}</p>
         </CardHeader>
         <CardContent className="space-y-2">
@@ -241,8 +243,14 @@ export function PredictionEngineTab() {
             <div key={i} className="flex flex-wrap items-center gap-2">
               <Input className="h-8 w-32" value={b.label} placeholder={t('predEngine.label', { defaultValue: 'Label' })}
                 onChange={(e) => patch((c) => { c.value_bands[i].label = e.target.value; })} />
-              <span className="text-xs text-muted-foreground">≤ €</span>
-              <NumOrNull value={b.max_price} onChange={(v) => patch((c) => { c.value_bands[i].max_price = v; })} placeholder={t('predEngine.openEnded', { defaultValue: 'open-ended' })} />
+              <span className="text-xs text-muted-foreground">≤</span>
+              {/* max_price is stored in EUR; the bracket is set in denari. */}
+              <NumOrNull
+                value={b.max_price == null ? null : eurToDen(b.max_price)}
+                onChange={(v) => patch((c) => { c.value_bands[i].max_price = v == null ? null : denToEur(v); })}
+                placeholder={t('predEngine.openEnded', { defaultValue: 'open-ended' })}
+              />
+              <span className="text-xs text-muted-foreground">ден</span>
               <Button variant="ghost" size="icon" className="h-8 w-8 ml-auto" onClick={() => patch((c) => { c.value_bands.splice(i, 1); })}>
                 <Trash2 className="h-4 w-4 text-destructive" />
               </Button>

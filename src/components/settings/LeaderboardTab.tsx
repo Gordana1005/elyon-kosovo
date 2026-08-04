@@ -13,6 +13,8 @@ import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { apiErrorText } from '@/i18n/apiErrors';
+// Bonus thresholds and amounts are stored in EUR, entered in denari.
+import { eurToDen, denToEur } from '@/lib/currency';
 import {
   apiGetAgents,
   apiGetLeaderboardAdmin, apiSetLeaderboardRoster, apiSetLeaderboardRule, apiManageLeaderboardToken,
@@ -23,9 +25,9 @@ import {
 // (never shown as-is) that picks which tier-column header to render.
 const METRIC_META: Record<LeaderboardMetric, { labelKey: string; hintKey: string; unit: string }> = {
   confirmed_count: { labelKey: 'settings.lbMetricConfirmed', hintKey: 'settings.lbMetricConfirmedHint', unit: 'orders' },
-  avg_order_value: { labelKey: 'settings.lbMetricAvgOrder', hintKey: 'settings.lbMetricAvgOrderHint', unit: '€' },
+  avg_order_value: { labelKey: 'settings.lbMetricAvgOrder', hintKey: 'settings.lbMetricAvgOrderHint', unit: 'ден' },
   conversion_rate: { labelKey: 'settings.lbMetricConversion', hintKey: 'settings.lbMetricConversionHint', unit: '%' },
-  revenue_target: { labelKey: 'settings.lbMetricRevenueTarget', hintKey: 'settings.lbMetricRevenueTargetHint', unit: '€' },
+  revenue_target: { labelKey: 'settings.lbMetricRevenueTarget', hintKey: 'settings.lbMetricRevenueTargetHint', unit: 'ден' },
 };
 // Which bonus metrics each motion uses (per-package commission is automatic on both).
 const METRICS_BY_MODE: Record<LeaderboardMode, LeaderboardMetric[]> = {
@@ -174,6 +176,9 @@ function RuleCard({ mode, rule, onSaved, toast }: { mode: LeaderboardMode; rule:
   const [saving, setSaving] = useState(false);
   useEffect(() => { setTiers(rule.tiers); setActive(rule.is_active); }, [rule]);
 
+  // `min` is a money threshold only for the value-based metrics; for the rest it
+  // is an order count or a percentage and is not converted.
+  const isMoneyMin = meta.unit === 'ден';
   const upd = (i: number, field: 'min' | 'bonus', v: string) =>
     setTiers((prev) => prev.map((tier, idx) => idx === i ? { ...tier, [field]: Number(v) || 0 } : tier));
   const addTier = () => setTiers((prev) => [...prev, { min: 0, bonus: 0 }]);
@@ -202,13 +207,26 @@ function RuleCard({ mode, rule, onSaved, toast }: { mode: LeaderboardMode; rule:
       </div>
       <div className="space-y-1.5">
         <div className="grid grid-cols-[1fr_1fr_auto] gap-1.5 text-[11px] uppercase tracking-wide text-muted-foreground">
-          <span>{meta.unit === '€' ? t('settings.lbColMinValue') : meta.unit === '%' ? t('settings.lbColMinRate') : t('settings.lbColMinOrders')}</span>
+          <span>{isMoneyMin ? t('settings.lbColMinValue') : meta.unit === '%' ? t('settings.lbColMinRate') : t('settings.lbColMinOrders')}</span>
           <span>{t('settings.lbColBonus')}</span><span />
         </div>
         {tiers.map((tier, i) => (
+          // Thresholds and bonuses are STORED in EUR; both are entered in denari.
+          // `min` is only money for the value-based metrics — for the others it
+          // counts orders or percent and must pass through untouched.
           <div key={i} className="grid grid-cols-[1fr_1fr_auto] gap-1.5">
-            <Input type="number" value={tier.min} onChange={(e) => upd(i, 'min', e.target.value)} className="h-8" />
-            <Input type="number" value={tier.bonus} onChange={(e) => upd(i, 'bonus', e.target.value)} className="h-8" />
+            <Input
+              type="number"
+              value={isMoneyMin ? eurToDen(tier.min) : tier.min}
+              onChange={(e) => upd(i, 'min', isMoneyMin ? String(denToEur(Number(e.target.value) || 0)) : e.target.value)}
+              className="h-8"
+            />
+            <Input
+              type="number"
+              value={eurToDen(tier.bonus)}
+              onChange={(e) => upd(i, 'bonus', String(denToEur(Number(e.target.value) || 0)))}
+              className="h-8"
+            />
             <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => delTier(i)}><Trash2 className="h-4 w-4" /></Button>
           </div>
         ))}

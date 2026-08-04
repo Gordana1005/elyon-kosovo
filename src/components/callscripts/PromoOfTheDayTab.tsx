@@ -14,7 +14,7 @@ import { apiErrorText } from '@/i18n/apiErrors';
 import i18n, { type AppLanguage } from '@/i18n';
 import { BASE_SCRIPT_LANG } from '@/lib/callScripts';
 import { apiGetAppSettings, apiGetProducts, apiUpdateAppSettings, type PromoConfig } from '@/lib/api';
-import { formatMoney, formatPriceInline } from '@/lib/currency';
+import { denToEur, eurToDen, formatMoney, formatPriceInline } from '@/lib/currency';
 import { cleanCustomText, plainPromoText, renderPromoText, resolveCustomText } from '@/lib/promoText';
 
 const EMPTY: PromoConfig = {
@@ -24,7 +24,7 @@ const EMPTY: PromoConfig = {
 
 /**
  * Call Scripts → Promo. The operator picks the Product of the Day, the minimum
- * price it must be sold at, and the extra € an agent takes for up-selling it.
+ * price it must be sold at, and the extra denari an agent takes for up-selling it.
  *
  * Motivational only: nothing here feeds the payout ledger or the per-package
  * commission (elyon-agent-commissions). The agent-side counter is recomputed
@@ -86,6 +86,14 @@ export function PromoOfTheDayTab({ isAdmin }: { isAdmin: boolean }) {
     const n = Number(v);
     return Number.isFinite(n) ? n : null;
   };
+  // price_eur / bonus_eur stay EUR in the config (that is what the API and the
+  // agent-side counter read); the operator types and reads denari.
+  const denField = (v: string): number | null => {
+    const n = numField(v);
+    return n == null ? null : denToEur(Math.max(0, n));
+  };
+  const denValue = (eur: number | null | undefined): number | string =>
+    (eur == null ? '' : eurToDen(eur));
 
   const dirty = JSON.stringify(draft) !== JSON.stringify(saved);
   // A promo can be saved half-finished as long as it stays OFF (a draft for
@@ -184,9 +192,9 @@ export function PromoOfTheDayTab({ isAdmin }: { isAdmin: boolean }) {
               <div className="space-y-1.5">
                 <Label className="text-xs font-semibold">{t('promo.priceLabel')}</Label>
                 <Input
-                  type="number" step="0.01" min="0" inputMode="decimal"
-                  value={draft.price_eur ?? ''}
-                  onChange={e => patch({ price_eur: numField(e.target.value) })}
+                  type="number" step="10" min="0" inputMode="numeric"
+                  value={denValue(draft.price_eur)}
+                  onChange={e => patch({ price_eur: denField(e.target.value) })}
                   disabled={!isAdmin} className="h-9"
                 />
                 <p className="text-[10px] text-muted-foreground">{t('promo.priceHint')}</p>
@@ -194,9 +202,9 @@ export function PromoOfTheDayTab({ isAdmin }: { isAdmin: boolean }) {
               <div className="space-y-1.5">
                 <Label className="text-xs font-semibold">{t('promo.bonusLabel')}</Label>
                 <Input
-                  type="number" step="0.01" min="0" inputMode="decimal"
-                  value={draft.bonus_eur ?? ''}
-                  onChange={e => patch({ bonus_eur: numField(e.target.value) })}
+                  type="number" step="10" min="0" inputMode="numeric"
+                  value={denValue(draft.bonus_eur)}
+                  onChange={e => patch({ bonus_eur: denField(e.target.value) })}
                   disabled={!isAdmin} className="h-9"
                 />
                 <p className="text-[10px] text-muted-foreground">{t('promo.bonusHint')}</p>

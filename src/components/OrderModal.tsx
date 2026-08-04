@@ -36,7 +36,9 @@ import {
   apiUpdateCustomer, apiUpdateOrderStatus, apiSyncOrderItems,
   apiGetOrder, apiCorrectOrderAttribution, apiGetAgents,
 } from '@/lib/api';
-import { formatMoney } from '@/lib/currency';
+// Order lines are STORED in EUR; the agent only ever sees and types denari.
+// Convert at the input boundary — never let a euro figure reach the screen.
+import { formatMoney, eurToDen, denToEur } from '@/lib/currency';
 import { cleanNoteForDisplay } from '@/lib/notes';
 import { DeliveryMethodPicker, type DeliveryValue } from '@/components/DeliveryMethodPicker';
 import { resolveDeliveryPrefill, composeHomeAddress } from '@/lib/address';
@@ -964,8 +966,8 @@ export function OrderModal({ open, onClose, data, contextType, readOnly = false 
                         <div>
                           <label className="mb-1 block text-[10px] uppercase tracking-wide text-muted-foreground">{t('orderModal.colPrice')}</label>
                           <Input
-                            type="number" min={0} step="0.01" value={Number(item.price_per_unit.toFixed(2))}
-                            onChange={e => updateItem(idx, 'price_per_unit', Math.max(0, parseFloat(e.target.value) || 0))}
+                            type="number" min={0} step="1" value={eurToDen(item.price_per_unit)}
+                            onChange={e => updateItem(idx, 'price_per_unit', denToEur(Math.max(0, parseFloat(e.target.value) || 0)))}
                             className="h-8 text-sm text-right tabular-nums"
                             disabled={!isEditable}
                           />
@@ -974,14 +976,14 @@ export function OrderModal({ open, onClose, data, contextType, readOnly = false 
                           <label className="mb-1 block text-[10px] uppercase tracking-wide text-muted-foreground">{t('orderModal.colTotal')}</label>
                           <div className="relative">
                             <Input
-                              type="text" inputMode="decimal"
-                              value={totalDraft[idx] ?? calcRowTotal(item.quantity, item.price_per_unit).toFixed(2)}
-                              onChange={e => { const v = e.target.value; setTotalDraft(d => ({ ...d, [idx]: v })); setLineTotal(idx, parseFloat(v) || 0); }}
+                              type="text" inputMode="numeric"
+                              value={totalDraft[idx] ?? String(eurToDen(calcRowTotal(item.quantity, item.price_per_unit)))}
+                              onChange={e => { const v = e.target.value; setTotalDraft(d => ({ ...d, [idx]: v })); setLineTotal(idx, denToEur(parseFloat(v) || 0)); }}
                               onBlur={() => setTotalDraft(d => { const c = { ...d }; delete c[idx]; return c; })}
-                              className="h-8 pr-6 text-sm text-right font-semibold text-primary tabular-nums"
+                              className="h-8 pr-9 text-sm text-right font-semibold text-primary tabular-nums"
                               disabled={!isEditable}
                             />
-                            <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-sm text-primary">€</span>
+                            <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-sm text-primary">ден</span>
                           </div>
                         </div>
                       </div>

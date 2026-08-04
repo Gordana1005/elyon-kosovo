@@ -8,11 +8,11 @@ import {
 } from '@/components/ui/select';
 import { Beaker, Package, FlaskConical, Coins, TrendingUp } from 'lucide-react';
 import { KpiCard as Kpi } from '@/components/insights/KpiCard';
-import { formatMoney } from '@/lib/currency';
+import { formatMoney, eurToDen, denToEur } from '@/lib/currency';
 import { cn } from '@/lib/utils';
 import type { InsightsResponse } from '@/lib/api';
 
-// Dual EUR/ЛВ money (elyon-currency): EUR primary, LEV muted.
+// Stored EUR in, denars out (elyon-currency). Macedonia shows denars only.
 function Money({ eur, className }: { eur: number; className?: string }) {
   return (
     <span className={className}>
@@ -91,12 +91,14 @@ export default function MarginLabTab({ data }: { data: InsightsResponse }) {
           <div className="text-sm text-muted-foreground max-w-xl">{t('insights.mlIntro')}</div>
           <label className="flex items-center gap-2 shrink-0 text-sm font-medium">
             {t('insights.mlTargetLabel')}
-            <span className="text-muted-foreground">€</span>
+            {/* target is held in EUR (it feeds the floor-price maths); the
+                operator sets it in denari. */}
             <Input
-              type="number" min={0} step={0.5} value={target}
-              onChange={(e) => setTarget(Math.max(0, Number(e.target.value) || 0))}
-              className="h-9 w-20 text-right tabular-nums"
+              type="number" min={0} step={10} value={eurToDen(target)}
+              onChange={(e) => setTarget(denToEur(Math.max(0, Number(e.target.value) || 0)))}
+              className="h-9 w-24 text-right tabular-nums"
             />
+            <span className="text-muted-foreground">ден</span>
           </label>
         </CardContent>
       </Card>
@@ -184,7 +186,13 @@ export default function MarginLabTab({ data }: { data: InsightsResponse }) {
             </label>
             <label className="space-y-1">
               <span className="text-xs text-muted-foreground">{t('insights.mlSimPrice')}</span>
-              <Input type="number" min={0} step={1} value={simPrice} onChange={(e) => setSimPrice(Number(e.target.value))} className="h-9 tabular-nums" />
+              {/* Held in EUR (it feeds the net/floor maths below); the operator
+                  types the denar figure the customer actually pays. */}
+              <Input
+                type="number" min={0} step={10} value={eurToDen(simPrice)}
+                onChange={(e) => setSimPrice(denToEur(Math.max(0, Number(e.target.value) || 0)))}
+                className="h-9 tabular-nums"
+              />
             </label>
           </div>
 

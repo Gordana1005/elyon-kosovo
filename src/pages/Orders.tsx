@@ -23,7 +23,9 @@ import { Check } from 'lucide-react';
 import { MobileCard, MobileCardHeader, MobileCardField, MobileCardActions } from '@/components/ui/mobile-card';
 import { apiGetOrders, apiGetAgents, apiGetProducts, apiBulkStatusUpdate, apiDuplicateOrder } from '@/lib/api';
 import { Checkbox } from '@/components/ui/checkbox';
-import { formatMoney, codFor } from '@/lib/currency';
+// The price filter talks EUR to the API (orders are stored in EUR) but the
+// operator picks and types denari — convert at the boundary, show ден only.
+import { formatMoney, codFor, eurToDen, denToEur } from '@/lib/currency';
 import { toCsv, downloadCsv } from '@/lib/csv';
 import { composeHomeAddress, effectiveHomeParts } from '@/lib/address';
 import { validateOrderForFulfilment } from '@/lib/fulfilmentValidation';
@@ -369,22 +371,22 @@ export default function Orders() {
   };
 
   const priceLabel = priceMin != null && priceMax != null
-    ? `€${priceMin}–€${priceMax}`
+    ? `${formatMoney(priceMin)}–${formatMoney(priceMax)}`
     : priceMin != null
-      ? `€${priceMin}+`
+      ? `${formatMoney(priceMin)}+`
       : priceMax != null
-        ? `≤ €${priceMax}`
+        ? `≤ ${formatMoney(priceMax)}`
         : null;
 
   const applyPricePreset = (min: number | null, max: number | null) => {
     setPriceMin(min); setPriceMax(max);
-    setPriceMinDraft(min != null ? String(min) : '');
-    setPriceMaxDraft(max != null ? String(max) : '');
+    setPriceMinDraft(min != null ? String(eurToDen(min)) : '');
+    setPriceMaxDraft(max != null ? String(eurToDen(max)) : '');
   };
 
   const applyPriceCustom = () => {
-    const minN = priceMinDraft.trim() === '' ? null : Number(priceMinDraft);
-    const maxN = priceMaxDraft.trim() === '' ? null : Number(priceMaxDraft);
+    const minN = priceMinDraft.trim() === '' ? null : denToEur(Number(priceMinDraft));
+    const maxN = priceMaxDraft.trim() === '' ? null : denToEur(Number(priceMaxDraft));
     setPriceMin(Number.isFinite(minN as number) ? (minN as number) : null);
     setPriceMax(Number.isFinite(maxN as number) ? (maxN as number) : null);
   };
@@ -841,11 +843,14 @@ export default function Orders() {
                 <div className="text-[10px] uppercase tracking-wider text-muted-foreground px-2 pt-1 pb-1.5">{t('ordersPage.quickFilters')}</div>
                 <div className="space-y-0.5">
                   {[
+                    // Thresholds are chosen as round DENAR figures and converted
+                    // to the EUR the API filters on, so the menu reads 500 ден
+                    // rather than the 615 ден that a €10 preset would produce.
                     { label: t('ordersPage.anyPrice'), min: null, max: null },
-                    { label: '€10 +', min: 10, max: null },
-                    { label: '€50 +', min: 50, max: null },
-                    { label: '€100 +', min: 100, max: null },
-                    { label: '€200 +', min: 200, max: null },
+                    { label: '500 ден +', min: denToEur(500), max: null },
+                    { label: '1.000 ден +', min: denToEur(1000), max: null },
+                    { label: '2.000 ден +', min: denToEur(2000), max: null },
+                    { label: '5.000 ден +', min: denToEur(5000), max: null },
                   ].map(p => {
                     const active = priceMin === p.min && priceMax === p.max;
                     return (
