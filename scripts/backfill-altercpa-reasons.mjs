@@ -86,13 +86,31 @@ for (const o of orders) {
   const label = REASON[raw] ?? `reason ${raw}`;
   const key = `${isCancel ? 'cancel' : 'trash'}:${value}`;
   tally[key] = (tally[key] || 0) + 1;
+
+  // The _notes column is what the Orders page prints next to the reason
+  // (src/pages/Orders.tsx:333-344 — trashed renders "label — notes", cancelled
+  // renders the notes alone). So it has to carry the OPERATOR'S OWN words, not
+  // a restatement of the reason: "Купил веќе" or "бројот не постои" tells you
+  // something, "AlterCPA: changed mind" just repeats the chip beside it.
+  //
+  // Newlines are collapsed because this renders inside a table cell.
+  const comment = String(o.comment || '').replace(/\s+/g, ' ').trim();
+  let notes = comment;
+  if (value === 'other') {
+    // Nothing else records what the original disposition was once it has been
+    // flattened into the catch-all, so keep it — ahead of the comment.
+    notes = comment ? `${label} — ${comment}` : label;
+  }
   rows.push({
     id: String(o.id),
     col: isCancel ? 'cancellation_reason' : 'trash_reason',
     notesCol: isCancel ? 'cancellation_reason_notes' : 'trash_reason_notes',
     value,
-    // Keep the original wording so an 'other' still says what happened.
-    notes: `AlterCPA: ${label}`,
+    // 1000, not 2000: the API's zod schema caps these columns at 1000
+    // (supabase/functions/api/index.ts), so a longer value would store fine
+    // here and then reject the first time someone edited the order in the UI.
+    notes: notes.slice(0, 1000),
+    hasComment: !!comment,
   });
 }
 
@@ -132,7 +150,7 @@ for (const col of ['cancellation_reason', 'trash_reason']) {
     // read these columns without re-checking status.
     const wantStatus = col === 'cancellation_reason' ? 'cancelled' : 'trashed';
     const out = await sql(`update public.orders o
-      set ${col} = v.val, ${notesCol} = v.notes
+      set ${col} = v.val, ${notesCol} = nullif(v.notes, '')
       from (values ${vs}) as v(ext, val, notes)
       where o.external_source = '${SOURCE}' and o.external_order_id = v.ext
         and o.status = '${wantStatus}'

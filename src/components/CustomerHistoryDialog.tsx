@@ -182,7 +182,7 @@ export function CustomerHistoryDialog({ open, onClose, customerPhone, customerNa
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-2">
                               <span className="font-mono text-xs font-semibold">{o.display_id}</span>
-                              <StatusBadge status={o.status as OrderStatus} />
+                              <StatusBadge status={o.status as OrderStatus} order={o} />
                               {o.assigned_agent_name && (
                                 <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
                                   <User className="h-2.5 w-2.5" />{o.assigned_agent_name}

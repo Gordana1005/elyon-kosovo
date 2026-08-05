@@ -162,7 +162,7 @@ function OrdersTable({ orders, onOpenOrder }: { orders: any[]; onOpenOrder?: (id
                   </td>
                   <td className="py-1.5 pl-3">
                     {o.status
-                      ? <StatusBadge status={o.status as OrderStatus} className="text-[10px]" />
+                      ? <StatusBadge status={o.status as OrderStatus} order={o} className="text-[10px]" />
                       : <span className="text-muted-foreground/40 text-[10px]">—</span>}
                   </td>
                   <td className="py-1.5 pl-3 max-w-[200px]">

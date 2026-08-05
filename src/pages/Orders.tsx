@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, Fragment } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AppLayout } from '@/layouts/AppLayout';
 import { StatusBadge } from '@/components/StatusBadge';
+import { orderReasonText as sharedOrderReasonText } from '@/lib/orderReason';
 import { SmartPagination } from '@/components/SmartPagination';
 import { ALL_STATUSES, statusLabel, STATUS_COLORS, OrderStatus } from '@/types';
 import { Badge } from '@/components/ui/badge';
@@ -351,14 +352,10 @@ export default function Orders() {
   // orders.trash_reason (translated with the same trashReason.* labels as the
   // picker) + optional free-text note; cancelled ones keep the legacy
   // free-text chain.
-  const orderReasonText = (order: any): string | null => {
-    if (order.status === 'trashed' && order.trash_reason) {
-      const label = t(`trashReason.${order.trash_reason}`, { defaultValue: String(order.trash_reason).replace(/_/g, ' ') });
-      const extra = (order.trash_reason_notes || '').trim();
-      return extra ? `${label} — ${extra}` : label;
-    }
-    return order.cancellation_reason_notes || order.notes || order.cancellation_reason || null;
-  };
+  // Shared with the status-badge tooltip (src/lib/orderReason.ts) so the panel
+  // and the hover can never disagree about the same order.
+  const orderReasonText = (order: any): string | null =>
+    sharedOrderReasonText(order) || order.notes || null;
 
   const totalPages = Math.ceil(total / PAGE_SIZE);
   const toggleStatus = (s: OrderStatus) => {
@@ -1097,7 +1094,7 @@ export default function Orders() {
                       aria-label={t('ordersPage.selectOrderForExport', { id: order.display_id })}
                     />
                   </td>
-                  <td className="px-4 py-3"><StatusBadge status={order.status} /></td>
+                  <td className="px-4 py-3"><StatusBadge status={order.status} order={order} /></td>
                   <td className="px-4 py-3 font-mono text-xs font-semibold">
                     {order.display_id}
                     {order.duplicated_from && (
@@ -1363,7 +1360,7 @@ export default function Orders() {
                       </span>
                     }
                     subtitle={order.customer_phone}
-                    badge={<StatusBadge status={order.status} />}
+                    badge={<StatusBadge status={order.status} order={order} />}
                   />
                 </div>
               </div>

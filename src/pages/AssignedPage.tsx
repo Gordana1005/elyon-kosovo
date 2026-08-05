@@ -80,7 +80,7 @@ export default function AssignedPage() {
           <tbody>
             {myOrders.map(order => (
               <tr key={order.id} className="border-b last:border-0 hover:bg-muted/30 transition-colors cursor-pointer" onClick={() => setModalOrder(order)}>
-                <td className="px-4 py-3"><StatusBadge status={order.status} /></td>
+                <td className="px-4 py-3"><StatusBadge status={order.status} order={order} /></td>
                 <td className="px-4 py-3 font-mono text-xs font-semibold">{order.display_id}</td>
                 <td className="px-4 py-3">{order.customer_name}</td>
                 <td className="px-4 py-3">
@@ -122,7 +122,7 @@ export default function AssignedPage() {
             <MobileCardHeader
               title={order.customer_name}
               subtitle={order.customer_phone}
-              badge={<StatusBadge status={order.status} />}
+              badge={<StatusBadge status={order.status} order={order} />}
             />
             <MobileCardField label={t('ordersPage.colOrderId')} value={<span className="font-mono">{order.display_id}</span>} />
             <MobileCardField
