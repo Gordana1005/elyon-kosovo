@@ -890,6 +890,15 @@ function inPaidWindow(o: any, from: string | null, to: string | null): boolean {
 function salesOwnerId(o: any): string | null {
   return o?.confirmed_by_agent_id ?? o?.assigned_agent_id ?? null;
 }
+
+// Merge operator-name variants ("Елена Т." / "Елена Т" → "Елена"); blank → Unknown.
+// Shared so every name-attributed report groups operators identically.
+function normAgentName(raw: any): string {
+  let n = String(raw || "").trim().replace(/\s+/g, " ");
+  if (!n) return "Unknown operator";
+  n = n.replace(/\s+\p{L}\.?$/u, "").trim(); // strip a trailing single-letter initial
+  return n || "Unknown operator";
+}
 function salesOwnerName(o: any): string | null {
   return o?.confirmed_by_name ?? o?.assigned_agent_name ?? null;
 }
@@ -7463,17 +7472,16 @@ async function handleRequest(req: Request): Promise<Response> {
       // Whether cancelled counts as a *lead* / rate denominator is decided per-agent
       // below via includeCancelled — exactly how trashed is always kept out of leads.
       const statusesToFetch = ["take", "call_again", "confirmed", "shipped", "delivered", "returned", "paid", "trashed", "cancelled"];
-      const ORDER_PERF_SELECT = "id, status, assigned_agent_id, confirmed_by_agent_id, price, quantity, product_id, created_at, paid_at, confirmed_at, returned_at, shipped_at, source_type, prediction_list_id, order_items(price_per_unit, quantity, total_price, product_id)";
+      const ORDER_PERF_SELECT = "id, status, assigned_agent_id, confirmed_by_agent_id, assigned_agent_name, confirmed_by_name, price, quantity, product_id, created_at, paid_at, confirmed_at, returned_at, shipped_at, source_type, prediction_list_id, order_items(price_per_unit, quantity, total_price, product_id)";
 
       const baseOrdersFilter = (q: any) => {
         let qq = q.in("status", statusesToFetch)
           .or("source_type.is.null,source_type.neq.monadon_legacy")
-          // Only orders that HAVE an owner can contribute: the attribution loop
-          // below does `if (!ownerId) continue`. Filtering server-side instead
-          // of streaming and discarding is semantically identical and, on the
-          // imported AlterCPA history — 80k orders that carry a confirmer NAME
-          // but no user id — turns a 40s full-table stream into nothing at all.
-          .or("confirmed_by_agent_id.not.is.null,assigned_agent_id.not.is.null");
+          // Only orders with SOME attribution can contribute — the loop below
+          // skips anything with neither an owner id nor an operator name.
+          // Filtering server-side instead of streaming and discarding is
+          // semantically identical and keeps unattributed rows off the wire.
+          .or("confirmed_by_agent_id.not.is.null,assigned_agent_id.not.is.null,confirmed_by_name.not.is.null,assigned_agent_name.not.is.null");
         if (sourceFilter) qq = qq.eq("source_type", sourceFilter);
         if (statusFilter) qq = qq.eq("status", statusFilter);
         return qq;
@@ -7515,26 +7523,54 @@ async function handleRequest(req: Request): Promise<Response> {
       // Build per-agent metrics + collect everyone who has any attribution
       // (assigned_agent_id OR confirmed_by_agent_id). This is the key for showing
       // SuperAdmins who make manual sales.
+      // Get all active profiles (needed BEFORE attribution so a name-only order
+      // can be resolved onto a real account when the name matches one).
+      const { data: agents } = await adminClient
+        .from("profiles")
+        .select("user_id, full_name, email")
+        .eq("is_active", true);
+
+      // Name → account, so an imported order that carries only "Sanela Dzogovich"
+      // still lands on Sanela's real profile rather than a parallel ghost row.
+      const profileIdByName: Record<string, string> = {};
+      for (const p of agents || []) profileIdByName[normAgentName(p.full_name)] = p.user_id;
+
       const agentOrderMap: Record<string, any[]> = {};
       const allAttributedUserIds = new Set<string>();
+      // Operators who exist only as a name on imported orders — no CRM account.
+      const virtualAgents: Record<string, string> = {};   // key → display name
 
       // ONE owner per order = the first agent who confirmed it (the assignee is
       // only a legacy fallback). Crediting BOTH assignee and confirmer used to
       // double-count an order's sale + bonus, and let a super-admin who edits &
       // re-confirms an agent's order share the credit. See salesOwnerId() and
       // the elyon-agent-commissions skill.
-      for (const o of allOrders || []) {
-        const ownerId = salesOwnerId(o);
-        if (!ownerId) continue;
-        allAttributedUserIds.add(ownerId);
-        (agentOrderMap[ownerId] ??= []).push(o);
-      }
+      //
+      // The imported AlterCPA history records WHO sold each order as a name
+      // (70,467 orders — 100% of paid, 84% of cancelled, 77% of trashed) but
+      // never a user id, because those 26 operators never had CRM logins. Keying
+      // this report on the id alone made every one of those orders invisible and
+      // the whole tab read empty. So: id when present, otherwise the operator's
+      // normalised name — the same attribution management-insights already uses,
+      // which is why Pure Profit could always see these operators and this tab
+      // could not.
+      const ownerKeyOf = (o: any): string | null => {
+        const id = salesOwnerId(o);
+        if (id) return id;
+        const nm = salesOwnerName(o);
+        if (!nm) return null;
+        const k = normAgentName(nm);
+        if (k === "Unknown operator") return null;
+        return profileIdByName[k] ?? `name:${k}`;
+      };
 
-      // Get all active profiles
-      const { data: agents } = await adminClient
-        .from("profiles")
-        .select("user_id, full_name, email")
-        .eq("is_active", true);
+      for (const o of allOrders || []) {
+        const ownerKey = ownerKeyOf(o);
+        if (!ownerKey) continue;
+        allAttributedUserIds.add(ownerKey);
+        if (ownerKey.startsWith("name:")) virtualAgents[ownerKey] = ownerKey.slice(5);
+        (agentOrderMap[ownerKey] ??= []).push(o);
+      }
 
       // Traditional call agents (for the base list)
       const { data: agentRoles } = await adminClient
@@ -7556,7 +7592,9 @@ async function handleRequest(req: Request): Promise<Response> {
 
       // Add any extra users who have sales attributed to them (SuperAdmins etc.)
       const existingIds = new Set(agentProfiles.map((p: any) => p.user_id));
-      const missingIds = Array.from(allAttributedUserIds).filter(id => !existingIds.has(id));
+      // `name:` keys are not uuids — they'd make the .in() below a 400.
+      const missingIds = Array.from(allAttributedUserIds)
+        .filter((id) => !existingIds.has(id) && !id.startsWith("name:"));
 
       if (missingIds.length > 0) {
         const { data: extraProfiles } = await adminClient
@@ -7567,6 +7605,14 @@ async function handleRequest(req: Request): Promise<Response> {
         if (extraProfiles?.length) {
           agentProfiles = [...agentProfiles, ...extraProfiles];
         }
+      }
+
+      // Operators who only ever existed as a name on the imported history. They
+      // have no login and no email; is_virtual lets the UI mark them as historic
+      // rather than pretending they are staff accounts.
+      for (const [key, name] of Object.entries(virtualAgents)) {
+        if (existingIds.has(key)) continue;
+        agentProfiles.push({ user_id: key, full_name: name, email: "", is_virtual: true });
       }
 
       // Apply search / single agent filter on the final list
@@ -7713,6 +7759,10 @@ async function handleRequest(req: Request): Promise<Response> {
         return {
           user_id: agent.user_id,
           full_name: agent.full_name,
+          // true = an operator who exists only as a name on the imported
+          // history and has no CRM account, so the UI can label them historic
+          // instead of implying they are staff who can log in.
+          is_virtual: agent.is_virtual === true,
           email: agent.email,
           leads_assigned: leadsAssigned,
           total_confirmed: confirmedCount,
