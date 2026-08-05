@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react';
 import { format, subDays, subMonths, subYears } from 'date-fns';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
@@ -44,6 +45,15 @@ const MORE: PresetDef[] = [
 /** The default range every consumer should start on. */
 export const defaultRange = (): DateRange => todayRange();
 
+// `<input type="date">` fires onChange on EVERY keystroke, and every intermediate
+// value is a valid date: typing "2025" into the year box emits 0002-…, 0020-…,
+// 0202-… before 2025-…. Each one used to fire a full re-query, and the first three
+// span two millennia — i.e. three accidental all-time aggregates racing the one the
+// operator actually wanted. So: keep the typed value local, never propagate a year
+// before 2000, and wait for typing to settle. Preset buttons still apply instantly.
+const COMMIT_DELAY_MS = 400;
+const plausible = (d: string) => !d || Number(d.slice(0, 4)) >= 2000;
+
 export function DateRangePicker({ value, onChange, className, simple = false }: {
   value: DateRange;
   onChange: (r: DateRange) => void;
@@ -52,6 +62,22 @@ export function DateRangePicker({ value, onChange, className, simple = false }: 
   simple?: boolean;
 }) {
   const { t } = useTranslation();
+
+  // What the two date boxes show while the operator is still typing. Re-syncs
+  // whenever the range changes from outside (a preset button, or a reset).
+  const [draft, setDraft] = useState<DateRange>(value);
+  useEffect(() => { setDraft(value); }, [value.from, value.to]);
+
+  const timer = useRef<ReturnType<typeof setTimeout>>();
+  useEffect(() => () => clearTimeout(timer.current), []);
+
+  const typeRange = (next: DateRange) => {
+    setDraft(next);
+    clearTimeout(timer.current);
+    if (!plausible(next.from) || !plausible(next.to)) return;   // still mid-year
+    timer.current = setTimeout(() => onChange(next), COMMIT_DELAY_MS);
+  };
+
   const isAllTime = !value.from && !value.to;
   const matches = (def: PresetDef) => {
     const r = def.range();
@@ -86,12 +112,12 @@ export function DateRangePicker({ value, onChange, className, simple = false }: 
       )}
 
       <div className="flex items-center gap-1 shrink-0">
-        <Input type="date" value={value.from} max={value.to || undefined}
-          onChange={e => onChange({ from: e.target.value, to: value.to || e.target.value })}
+        <Input type="date" value={draft.from} max={draft.to || undefined}
+          onChange={e => typeRange({ from: e.target.value, to: draft.to || e.target.value })}
           className="h-8 w-[140px] text-xs" />
         <span className="text-muted-foreground text-xs">–</span>
-        <Input type="date" value={value.to} min={value.from || undefined}
-          onChange={e => onChange({ from: value.from || e.target.value, to: e.target.value })}
+        <Input type="date" value={draft.to} min={draft.from || undefined}
+          onChange={e => typeRange({ from: draft.from || e.target.value, to: e.target.value })}
           className="h-8 w-[140px] text-xs" />
       </div>
 

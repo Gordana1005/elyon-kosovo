@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import i18n from '@/i18n';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import { AppLayout } from '@/layouts/AppLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -80,11 +80,17 @@ export default function ManagementInsightsPage() {
 
   // Heavy aggregate is only needed by the insights tabs + the Call Activity
   // summary, so don't fetch (or block) for Performance/Activity-only users.
-  const { data, isLoading } = useQuery<InsightsResponse>({
+  const { data, isLoading, isFetching } = useQuery<InsightsResponse>({
     queryKey: ['insights', range.from, range.to],
     queryFn: () => apiGetManagementInsights({ from: range.from || undefined, to: range.to || undefined }),
     staleTime: 60_000,
     enabled: canInsights,
+    // Keep the previous range's numbers on screen while the new ones load, instead
+    // of blanking every tab to a spinner. On a wide range that spinner is the whole
+    // wait. `retry` is 0 rather than the global 1 because retrying a heavy aggregate
+    // silently doubles an already-long wait before the operator sees any error.
+    placeholderData: keepPreviousData,
+    retry: 0,
   });
 
   // Date range drives the aggregate tabs; Agents/Payout bring their own filter bars.
@@ -95,7 +101,17 @@ export default function ManagementInsightsPage() {
   return (
     <AppLayout title={t('nav.insights')}>
       <div className="space-y-5">
-        {showRangePicker && <DateRangePicker value={range} onChange={setRange} simple />}
+        {showRangePicker && (
+          <div className="flex items-center gap-2">
+            <DateRangePicker value={range} onChange={setRange} simple />
+            {/* keepPreviousData leaves the OLD numbers on screen while a new range
+                loads. Without this the operator can't tell they're looking at the
+                previous range's figures. */}
+            {isFetching && !isLoading && (
+              <Loader2 className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" aria-hidden />
+            )}
+          </div>
+        )}
 
         <Tabs value={activeTab} onValueChange={(v) => setSearchParams({ tab: v })}>
           <TabsList className="h-auto">

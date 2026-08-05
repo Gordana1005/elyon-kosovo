@@ -4737,7 +4737,12 @@ async function handleRequest(req: Request): Promise<Response> {
       if (toUpdate.length > 0) {
         // Stock deduction when bulk-setting to "shipped"
         if (new_status === "shipped") {
-          for (const oid of toUpdate) {
+          // Walk a SNAPSHOT. The stock check below drops orders out of toUpdate,
+          // and splicing the very array a for...of is walking makes the iterator
+          // skip the next element — so an order could be marked shipped with its
+          // stock never deducted. Collect the rejects and remove them after.
+          const stockBlocked = new Set<string>();
+          for (const oid of [...toUpdate]) {
             const prev = (currentOrders || []).find((o: any) => o.id === oid);
             if (prev?.status === "shipped") continue; // already shipped
             
@@ -4755,9 +4760,7 @@ async function handleRequest(req: Request): Promise<Response> {
                 }
               }
               if (!stockOk) {
-                // Remove from toUpdate
-                const idx = toUpdate.indexOf(oid);
-                if (idx > -1) toUpdate.splice(idx, 1);
+                stockBlocked.add(oid);   // removed from toUpdate after the loop
                 continue;
               }
               // Deduct stock
@@ -4787,8 +4790,7 @@ async function handleRequest(req: Request): Promise<Response> {
                 const orderQty = fullOrder.quantity || 1;
                 if (product && product.stock_quantity < orderQty) {
                   skipped.push(prev?.display_id || oid);
-                  const idx = toUpdate.indexOf(oid);
-                  if (idx > -1) toUpdate.splice(idx, 1);
+                  stockBlocked.add(oid);   // removed from toUpdate after the loop
                   continue;
                 }
                 if (product) {
@@ -4807,6 +4809,11 @@ async function handleRequest(req: Request): Promise<Response> {
                 }
               }
             }
+          }
+          // Drop everything that failed its stock check, now that the walk is done.
+          for (const oid of stockBlocked) {
+            const idx = toUpdate.indexOf(oid);
+            if (idx > -1) toUpdate.splice(idx, 1);
           }
         }
 
@@ -6681,42 +6688,27 @@ async function handleRequest(req: Request): Promise<Response> {
       const from = url.searchParams.get("from");
       const to = url.searchParams.get("to");
 
-      // Paginate past PostgREST's 1000-row default so the counts reflect EVERY
-      // matching order, not just the first page (this endpoint backs the Dashboard).
-      const orders: any[] = [];
-      for (let offset = 0; ; offset += 1000) {
-        let query = adminClient
-          .from("orders")
-          .select("status, created_at, assigned_agent_id, assigned_agent_name")
-          .or("source_type.is.null,source_type.neq.monadon_legacy") // exclude Monadon legacy from status counts
-          .range(offset, offset + 999);
-        if (from) query = query.gte("created_at", from);
-        if (to) query = query.lte("created_at", to);
-        // Agents never see duplicated orders — keep their status counts clean.
-        if (!isAdminOrManager) query = query.is("duplicated_from", null);
-        const { data, error } = await query;
-        if (error) return json({ error: sanitizeDbError(error) }, 400);
-        if (!data || data.length === 0) break;
-        orders.push(...data);
-        if (data.length < 1000) break;
-      }
+      // Three GROUP BYs in one call. This used to stream every matching order in
+      // 1000-row pages and tally in JS — and the Dashboard calls it with NO date
+      // filter (Dashboard.tsx: `apiGetOrderStats()`), so it walked the entire
+      // orders table on every load: 80 sequential round-trips today, 200 at 200k,
+      // to produce three counters. COUNT/GROUP BY is arithmetically identical, so
+      // no displayed number moves. See 20260910000000_report_count_rpcs.sql.
+      // Agents never see duplicated orders — keep their status counts clean.
+      const { data: stats, error: statsErr } = await adminClient.rpc("orders_status_stats", {
+        p_from: from || null,
+        p_to: to || null,
+        p_exclude_duplicated: !isAdminOrManager,
+      });
+      if (statsErr) return json({ error: sanitizeDbError(statsErr) }, 400);
 
       // Status counts — orders only (do NOT mix prediction_leads into order stats)
-      const statusCounts: Record<string, number> = {};
-      const agentCounts: Record<string, number> = {};
-      const dailyCounts: Record<string, number> = {};
-      
-      for (const o of orders || []) {
-        statusCounts[o.status] = (statusCounts[o.status] || 0) + 1;
-        if (o.assigned_agent_name) {
-          agentCounts[o.assigned_agent_name] = (agentCounts[o.assigned_agent_name] || 0) + 1;
-        }
-        const day = o.created_at.substring(0, 10);
-        dailyCounts[day] = (dailyCounts[day] || 0) + 1;
-      }
-
-      const total = orders?.length || 0;
-      return json({ statusCounts, agentCounts, dailyCounts, total });
+      return json({
+        statusCounts: stats?.statusCounts ?? {},
+        agentCounts: stats?.agentCounts ?? {},
+        dailyCounts: stats?.dailyCounts ?? {},
+        total: stats?.total ?? 0,
+      });
     }
 
     // ============================================================
@@ -12069,35 +12061,29 @@ async function handleRequest(req: Request): Promise<Response> {
         .order("display_order", { ascending: true });
       if (listsErr) return json({ error: sanitizeDbError(listsErr) }, 400);
 
-      // Membership counts. PostgREST caps each select at 1000 rows by default,
-      // so we paginate via .range() until exhausted. With ~10k memberships
-      // and 3 small columns this is fast.
-      const PAGE = 1000;
+      // Membership counts, as one GROUP BY. This used to stream the whole
+      // prediction_segment_members table in 1000-row pages and tally in JS — 57
+      // sequential round-trips at 56,807 rows, on an endpoint the Assigner polls
+      // every 30s and Segments every 60s (~114 round-trips/min per admin).
+      // COUNT/GROUP BY is arithmetically identical to that tally, so no displayed
+      // number moves. See migration 20260910000000_report_count_rpcs.sql.
+      // "open" = not done = what the operator counts as real work in a list;
+      // "distributable" additionally has no agent — exactly the pool the
+      // auto-assign 'unassigned' scope pulls, so badge and Distribute agree.
+      const { data: countRows, error: countsErr } = await adminClient.rpc("segment_list_counts");
+      if (countsErr) return json({ error: sanitizeDbError(countsErr) }, 400);
       const counts: Record<string, { total: number; assigned: number; completed: number; open: number; distributable: number }> = {};
       let engineDataAsOf: string | null = null;
-      for (let from = 0; ; from += PAGE) {
-        const { data, error } = await adminClient
-          .from("prediction_segment_members")
-          .select("list_id, assigned_agent_id, is_completed, updated_at")
-          .range(from, from + PAGE - 1);
-        if (error) return json({ error: sanitizeDbError(error) }, 400);
-        if (!data || data.length === 0) break;
-        for (const r of data) {
-          const id = r.list_id;
-          if (!counts[id]) counts[id] = { total: 0, assigned: 0, completed: 0, open: 0, distributable: 0 };
-          counts[id].total++;
-          if (r.assigned_agent_id) counts[id].assigned++;
-          if (r.is_completed) counts[id].completed++;
-          else {
-            // "open" = not done = what the operator counts as real work in a list;
-            // "distributable" additionally has no agent — exactly the pool the
-            // auto-assign 'unassigned' scope pulls, so badge and Distribute agree.
-            counts[id].open++;
-            if (!r.assigned_agent_id) counts[id].distributable++;
-          }
-          if (r.updated_at && (!engineDataAsOf || r.updated_at > engineDataAsOf)) engineDataAsOf = r.updated_at;
+      for (const r of countRows || []) {
+        counts[r.list_id] = {
+          total: r.total, assigned: r.assigned, completed: r.completed,
+          open: r.open_count, distributable: r.distributable,
+        };
+        // Global max(updated_at), repeated on every row by the RPC — matches the
+        // single shared variable the old loop maintained across all lists.
+        if (r.engine_data_as_of && (!engineDataAsOf || r.engine_data_as_of > engineDataAsOf)) {
+          engineDataAsOf = r.engine_data_as_of;
         }
-        if (data.length < PAGE) break;
       }
 
       // Managers (investors) see that lists EXIST but not how many people are in
@@ -13356,30 +13342,35 @@ async function handleRequest(req: Request): Promise<Response> {
         if (toEnd) q = q.lte("created_at", toEnd);
         return q;
       });
-      const products = await paginate(() => adminClient.from("products").select("id,name,stock_quantity,low_stock_threshold,cost_price,price,is_active"));
-      const callLogs = await paginate(() => {
-        let q = adminClient.from("call_logs").select("agent_id,outcome,connection_state,talk_seconds,total_seconds,started_at,created_at");
-        if (from) q = q.gte("created_at", from);
-        if (toEnd) q = q.lte("created_at", toEnd);
-        return q;
-      });
-      const invLogs = await paginate(() => {
-        let q = adminClient.from("inventory_logs").select("reason,change_amount,created_at");
-        if (from) q = q.gte("created_at", from);
-        if (toEnd) q = q.lte("created_at", toEnd);
-        return q;
-      });
-      const profiles = await paginate(() => adminClient.from("profiles").select("user_id,full_name"));
+      // None of these five depend on each other, so they run concurrently
+      // instead of nine serial waits. (`orders` above stays separate only
+      // because it is by far the largest and starts first.)
+      const [products, callLogs, invLogs, profiles, roleRowsRes] = await Promise.all([
+        paginate(() => adminClient.from("products").select("id,name,stock_quantity,low_stock_threshold,cost_price,price,is_active")),
+        paginate(() => {
+          let q = adminClient.from("call_logs").select("agent_id,outcome,connection_state,talk_seconds,total_seconds,started_at,created_at");
+          if (from) q = q.gte("created_at", from);
+          if (toEnd) q = q.lte("created_at", toEnd);
+          return q;
+        }),
+        paginate(() => {
+          let q = adminClient.from("inventory_logs").select("reason,change_amount,created_at");
+          if (from) q = q.gte("created_at", from);
+          if (toEnd) q = q.lte("created_at", toEnd);
+          return q;
+        }),
+        paginate(() => adminClient.from("profiles").select("user_id,full_name")),
+        // Who is a real AGENT (vs super-admin)? Commission is paid only to agents,
+        // so a super-admin-confirmed order costs the business nothing in bonus.
+        // A super-admin = anyone with admin OR manager role, and they earn €0 EVEN
+        // IF they also hold an agent role (e.g. Miki, a founder who also confirms).
+        adminClient.from("user_roles").select("user_id, role")
+          .in("role", ["agent", "pending_agent", "prediction_agent", "admin", "manager"]),
+      ]);
       const nameById: Record<string, string> = {};
       for (const p of profiles) nameById[p.user_id] = p.full_name;
 
-      // Who is a real AGENT (vs super-admin)? Commission is paid only to agents,
-      // so a super-admin-confirmed order costs the business nothing in bonus.
-      // A super-admin = anyone with admin OR manager role, and they earn €0 EVEN
-      // IF they also hold an agent role (e.g. Miki, a founder who also confirms).
-      const { data: roleRowsForPay } = await adminClient
-        .from("user_roles").select("user_id, role")
-        .in("role", ["agent", "pending_agent", "prediction_agent", "admin", "manager"]);
+      const roleRowsForPay = (roleRowsRes as any)?.data;
       const agentUserIds = new Set<string>();
       const superAdminIds = new Set<string>();
       for (const r of roleRowsForPay || []) {
@@ -13566,23 +13557,42 @@ async function handleRequest(req: Request): Promise<Response> {
         callByAgentName[an].calls++; if (answered) callByAgentName[an].answered++; callByAgentName[an].talk_seconds += num(c.talk_seconds);
       }
 
+      // Bucket the real orders by payout key ONCE. This was three full
+      // orders.filter() scans PER AGENT — O(agents × orders) — and each predicate
+      // evaluated normAgent twice per order (a Unicode regex), so ~29 operators
+      // over a 12-month range meant millions of regex executions per request.
+      //
+      // ⚠️ The key is normAgent(ownerOf(o)) — normAgent applied TWICE, because
+      // ownerOf() already normalises. normAgent is NOT idempotent: "Ана М Б" →
+      // "Ана М" → "Ана". So an agent whose name has 3+ tokens ending in a single
+      // letter is bucketed under a key that never matches a.name, and reads 0 for
+      // payout/packages while their revenue is fine. Reproduced verbatim on
+      // purpose — fixing it moves real payout figures and must be its own
+      // reviewed change. No current operator name triggers it (verified against
+      // all 29 names carrying paid orders, 2026-08-05).
+      const byPayoutKey: Record<string, any[]> = {};
+      for (const o of orders) {
+        if (!REAL_ORDER(o)) continue;
+        (byPayoutKey[normAgent(ownerOf(o))] ??= []).push(o);
+      }
+
       const perAgent = Object.values(agMap).map((a: any) => {
         const cs = callByAgentName[a.name] || { calls: 0, answered: 0, talk_seconds: 0 };
 
+        // Every one of the three old filters also required REAL_ORDER, so the
+        // bucket IS `orders.filter(REAL_ORDER && key === a.name)`. packagesSoldOf
+        // / packagesAwaitingOf / packagesReturnedOf each re-filter by status
+        // internally, so handing them the whole bucket is identical.
+        const ownedReal = byPayoutKey[a.name] || [];
         // Per-package payout on this agent's owned paid orders (every paid order).
-        const agentOrdersForPayout = orders.filter(
-          (o: any) => PAID(o) && REAL_ORDER(o) && normAgent(ownerOf(o)) === a.name,
-        );
+        // Kept as its own array because avg_per_package sums price over it.
+        const agentOrdersForPayout = ownedReal.filter(PAID);
         // Super-admins earn no bonus — only real agents are on commission.
         const agentPayout = agentNames.has(a.name) ? calcAgentBonus(agentOrdersForPayout) : 0;
         // packages_sold = PAID units only (aligns with payout). a.units stays pipeline SOLD.
         const packagesSoldPaid = packagesSoldOf(agentOrdersForPayout);
-        const packagesAwaiting = packagesAwaitingOf(
-          orders.filter((o: any) => REAL_ORDER(o) && normAgent(ownerOf(o)) === a.name),
-        );
-        const packagesReturned = packagesReturnedOf(
-          orders.filter((o: any) => o.status === "returned" && REAL_ORDER(o) && normAgent(ownerOf(o)) === a.name),
-        );
+        const packagesAwaiting = packagesAwaitingOf(ownedReal);
+        const packagesReturned = packagesReturnedOf(ownedReal);
 
         return {
           ...a,
@@ -13636,15 +13646,18 @@ async function handleRequest(req: Request): Promise<Response> {
         if (agentNames.has(ownerOf(o))) r.bonus_paid += orderPackageBonus(o);
       }
       // Enrich with current membership counts (segment members + uploaded leads).
+      // One GROUP BY instead of streaming both tables in full. The old code paid
+      // ~57 sequential round-trips over 56,807 membership rows on EVERY insights
+      // request — including Pure Profit, which never displays these counts — and
+      // ignored the date range while doing it. Skip entirely when no order in
+      // range carries a prediction-list attribution.
       const memberCounts: Record<string, number> = {};
-      try {
-        const segMembers = await paginate(() =>
-          adminClient.from("prediction_segment_members").select("list_id"));
-        for (const m of segMembers) memberCounts[m.list_id] = (memberCounts[m.list_id] || 0) + 1;
-        const leadRows = await paginate(() =>
-          adminClient.from("prediction_leads").select("list_id"));
-        for (const l of leadRows) if (l.list_id) memberCounts[l.list_id] = (memberCounts[l.list_id] || 0) + 1;
-      } catch (_e) { /* membership enrichment is best-effort */ }
+      if (Object.keys(plMap).length) {
+        try {
+          const { data: memberRows } = await adminClient.rpc("prediction_list_member_counts");
+          for (const r of memberRows || []) memberCounts[r.list_id] = r.members;
+        } catch (_e) { /* membership enrichment is best-effort */ }
+      }
       const predictionLists = Object.values(plMap).map((r: any) => ({
         ...r,
         members: memberCounts[r.list_id] || 0,
