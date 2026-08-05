@@ -47,7 +47,7 @@ Legend: **PK** primary key · **FK** foreign key · _italic_ = added by a later 
 
 ### 3.1 Orders & fulfilment (the core)
 
-**`orders`** — central table (~14k rows). Columns:
+**`orders`** — central table (**80,360 rows** as of 2026-08-05). Columns:
 - `id` PK, `display_id` (human ID, auto via trigger), `created_at`, `updated_at`
 - Customer: `customer_name`, `customer_phone` (stored `+359…`), `customer_city`, `customer_address`, `postal_code`
 - _Granular address (Phase 3+):_ `street`, _`quarter`_, `apartment`, `floor`, `building`, `delivery_instructions`, `gift_note`

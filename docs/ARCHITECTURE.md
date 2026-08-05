@@ -118,7 +118,7 @@ See [CALLS.md](CALLS.md) §3b and the go‑live record [CALLING_PLAN_SIP.md](CAL
 
 ## 4. The data spine
 
-The central table is **`orders`** (~14k rows incl. historical imports). Almost everything hangs off it:
+The central table is **`orders`** (**80,360 rows** as of 2026-08-05, incl. historical imports). Almost everything hangs off it:
 
 ```
 prediction_lists ─┐                         ┌─ order_items ── products ── inventory_logs

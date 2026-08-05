@@ -19,7 +19,11 @@
 
 Pages: [Dashboard.tsx](../src/pages/Dashboard.tsx), [ManagementInsightsPage.tsx](../src/pages/ManagementInsightsPage.tsx),
 [AgentPerformancePage.tsx](../src/pages/AgentPerformancePage.tsx), [OperationsPage.tsx](../src/pages/OperationsPage.tsx).
-All aggregation happens **in the Edge Function** ([BACKEND_API.md](BACKEND_API.md) §4) over paginated reads.
+`management-insights` aggregates **in Postgres** (SQL RPCs, 2026-08-05 — see
+`supabase/migrations/20260911000000_insights_aggregate_rpcs.sql`); the rest still aggregate **in the
+Edge Function** ([BACKEND_API.md](BACKEND_API.md) §4) over paginated reads. The insights engine is
+chosen by the `INSIGHTS_ENGINE` secret — set it to `legacy` for an instant rollback with no deploy,
+or pass `?engine=legacy` on a single request.
 
 ---
 
@@ -147,4 +151,8 @@ state = *on a call right now*.
   legacy orders with no `order_items`.
 - **Audit scripts** verify the numbers against the DB: `check-dashboard-numbers.mjs`,
   `check-insights-accuracy.mjs`, `check-customer-intelligence.mjs`, `check-segment-counts.mjs` ([IMPORT_EXPORT.md](IMPORT_EXPORT.md)).
-- All aggregates **paginate past PostgREST's 1000‑row cap** except `orders/stats`.
+- `management-insights`, `orders/stats` and `segments` aggregate in SQL (`GROUP BY`) and no longer
+  stream rows. The remaining aggregates still paginate past PostgREST's 1000-row cap.
+- **Before changing any insights maths, run `scripts/verify-insights-parity.mjs`** — it deep-diffs
+  every field of the response between the two engines across 11 date ranges and fails on any
+  count/string difference or any money difference >= half a cent.

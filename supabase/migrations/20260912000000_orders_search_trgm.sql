@@ -1,0 +1,35 @@
+-- ============================================================================
+-- ORDERS SEARCH: TRIGRAM INDEXES (2026-08-06)
+--
+-- GET /orders searches four columns with leading-wildcard ILIKE:
+--     display_id ILIKE '%s%' OR customer_name ILIKE '%s%'
+--  OR customer_phone ILIKE '%s%' OR product_name ILIKE '%s%'
+--
+-- No btree can serve a leading wildcard, so every search was a sequential scan
+-- of 80,360 rows. Trigram GIN indexes can, and they preserve the "contains
+-- anywhere" semantics exactly — which matters here because the CRM's phone
+-- workflow is last-8-digits matching, and a prefix index would silently stop
+-- finding a customer by the tail of their number.
+--
+-- Cost check before adding these (scripts/db-size-mk.mjs): the database was
+-- 157.3 MB of the 500 MB Supabase Free cap, so ~343 MB of headroom against an
+-- estimated ~8 MB for these four. Re-run that script afterwards.
+--
+-- Caveat worth knowing: trigram indexes only help for search terms of 3+
+-- characters. Shorter terms still fall back to a scan — acceptable, since a
+-- 1-2 character search matches most of the table anyway.
+--
+-- NOTE ON CONCURRENCY: a plain CREATE INDEX takes a SHARE lock, which blocks
+-- writes for the duration. A GIN trigram build over four text columns of an 80k
+-- table is seconds, not milliseconds, and this is a live call centre — so these
+-- are CONCURRENTLY. That means this file must contain EXACTLY ONE statement per
+-- migration run (CREATE INDEX CONCURRENTLY cannot run inside a transaction
+-- block, and scripts/apply-migration-mk.mjs POSTs the whole file as one query).
+-- The extension and the four indexes are therefore split across separate files;
+-- this one only installs the extension.
+--
+-- After the index files, verify none were left INVALID by an interrupted build:
+--     SELECT indexrelid::regclass FROM pg_index WHERE NOT indisvalid;
+-- ============================================================================
+
+CREATE EXTENSION IF NOT EXISTS pg_trgm;

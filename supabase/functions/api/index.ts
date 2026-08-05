@@ -4399,9 +4399,21 @@ async function handleRequest(req: Request): Promise<Response> {
       const isGlobalSearch = false;
       const client = isAdminOrManager ? adminClient : supabase;
 
+      // An exact COUNT(*) over 80k rows is a full scan on EVERY request — every
+      // page turn, every filter change, every keystroke in the search box. When
+      // nothing is filtered, nobody is reading that total to the unit ("80,360"
+      // vs "~80,300" changes no decision), so use the planner's estimate. As
+      // soon as a filter narrows the set the number starts mattering and the
+      // set is small, so go exact.
+      const isFiltered = Boolean(
+        (status && status !== "all") || (agentId && agentId !== "all") ||
+        (source && source !== "all") || from || to || priceMin || priceMax ||
+        search || readyOnly,
+      );
       let query = client
         .from("orders")
-        .select("*, order_items(id, product_id, product_name, quantity, price_per_unit, total_price)", { count: "exact" })
+        .select("*, order_items(id, product_id, product_name, quantity, price_per_unit, total_price)",
+                { count: isFiltered ? "exact" : "estimated" })
         .order("created_at", { ascending: false })
         .range((page - 1) * limit, page * limit - 1);
 
@@ -7456,7 +7468,13 @@ async function handleRequest(req: Request): Promise<Response> {
 
       const baseOrdersFilter = (q: any) => {
         let qq = q.in("status", statusesToFetch)
-          .or("source_type.is.null,source_type.neq.monadon_legacy");
+          .or("source_type.is.null,source_type.neq.monadon_legacy")
+          // Only orders that HAVE an owner can contribute: the attribution loop
+          // below does `if (!ownerId) continue`. Filtering server-side instead
+          // of streaming and discarding is semantically identical and, on the
+          // imported AlterCPA history — 80k orders that carry a confirmer NAME
+          // but no user id — turns a 40s full-table stream into nothing at all.
+          .or("confirmed_by_agent_id.not.is.null,assigned_agent_id.not.is.null");
         if (sourceFilter) qq = qq.eq("source_type", sourceFilter);
         if (statusFilter) qq = qq.eq("status", statusFilter);
         return qq;
