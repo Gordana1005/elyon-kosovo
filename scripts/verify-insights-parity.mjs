@@ -126,11 +126,15 @@ const RANGES = [
 const matrix = ONLY ? RANGES.filter((r) => r.key === ONLY) : RANGES;
 if (!matrix.length) fail(`--only=${ONLY} matched no range. Known: ${RANGES.map((r) => r.key).join(', ')}`);
 
-const qs = (r, extra = '') => {
+// Always name the engine explicitly. Once INSIGHTS_ENGINE flipped to 'sql',
+// omitting the param stopped meaning "legacy" and the harness was silently
+// comparing the SQL engine against itself — passing for the wrong reason.
+const qs = (r, eng = 'legacy') => {
   const sp = new URLSearchParams();
   if (r.from) sp.set('from', r.from);
   if (r.to) sp.set('to', r.to);
-  return `management-insights?${sp}${extra ? '&' + extra : ''}`;
+  sp.set('engine', eng);
+  return `management-insights?${sp}`;
 };
 
 // ── the deep diff ──────────────────────────────────────────────────────────
@@ -221,7 +225,7 @@ for (const r of matrix) {
   const row = { range: r.key, from: r.from, to: r.to, legacy_ms: Math.round(a.ms), bytes: a.bytes, stable, self_blockers: selfT.blocker };
 
   if (DO_PARITY) {
-    const s = await call(qs(r, 'engine=sql'));
+    const s = await call(qs(r, 'sql'));
     if (s.status !== 200) {
       console.log(`      \x1b[31mengine=sql → HTTP ${s.status}\x1b[0m ${s.raw ?? s.error ?? ''}`);
       totalBlockers++;
