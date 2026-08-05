@@ -55,6 +55,7 @@ scripts/cpa-import-*.txt
 scripts/outbound-import-*.txt
 # Per-run rollback snapshots and recovery reports (contain customer PII)
 scripts/*-rollback-*.json
+scripts/data/*-rollback-*.json
 phone-recovery-report-*.csv
 
 .vercel
