@@ -182,7 +182,8 @@ const diff = (a, b) => { const out = []; walk(a, b, '', out); return out; };
 const tally = (d) => ({ blocker: d.filter((x) => x.sev === 'BLOCKER').length, note: d.filter((x) => x.sev === 'NOTE').length });
 const ms = (n) => (n >= 1000 ? `${(n / 1000).toFixed(1)}s` : `${n.toFixed(0)}ms`);
 const kb = (n) => (n >= 1024 * 1024 ? `${(n / 1048576).toFixed(1)}MB` : `${(n / 1024).toFixed(0)}kB`);
-const show = (d, n = 8) => d.slice(0, n).forEach((x) =>
+// Blockers first — notes are expected float noise and must never bury a real diff.
+const show = (d, n = 8) => [...d].sort((a, b) => (a.sev === 'BLOCKER' ? 0 : 1) - (b.sev === 'BLOCKER' ? 0 : 1)).slice(0, n).forEach((x) =>
   console.log(`      ${x.sev === 'BLOCKER' ? '\x1b[31m' : '\x1b[33m'}${x.sev}\x1b[0m ${x.path}: ${JSON.stringify(x.a)} → ${JSON.stringify(x.b)}   (${x.why})`));
 
 // ══════════════════════════════════════════════════════════════════════════

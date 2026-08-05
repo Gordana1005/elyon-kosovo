@@ -13297,6 +13297,23 @@ async function handleRequest(req: Request): Promise<Response> {
       // Margin Lab: net-profit-per-package target the floor prices must clear (operator-tunable, €7 default).
       const marginTarget = Math.max(0, Number(url.searchParams.get("target")) || 7);
 
+      // ── Engine switch ──
+      // `legacy` streams every matching order (plus its order_items) into this
+      // function and aggregates ~630 lines of JS over them — 65 sequential
+      // round-trips and 28-42s at a 12-month range. `sql` does the same
+      // arithmetic as GROUP BY and returns a few hundred rows instead of 70,000.
+      //
+      // ONLY the four O(n) row loops differ between the two. Every .sort(),
+      // topN(), r2(), floorPriceFor(), pctl() and the final json({...}) literal
+      // below is shared, so the response SHAPE cannot drift between engines —
+      // the same code assembles it either way.
+      //
+      // Default comes from the INSIGHTS_ENGINE secret, so rollback is one
+      // `supabase secrets set INSIGHTS_ENGINE=legacy` with no deploy, and
+      // ?engine=legacy is a per-request escape hatch that needs nothing at all.
+      const engine = url.searchParams.get("engine") || Deno.env.get("INSIGHTS_ENGINE") || "legacy";
+      const useSql = engine === "sql";
+
       // Paginate past PostgREST's ~1000-row cap so every figure reflects ALL
       // matching rows, not the first page. (Same pattern as dashboard-stats.)
       const paginate = async (makeQuery: () => any, pageSize = 1000): Promise<any[]> => {
@@ -13321,7 +13338,11 @@ async function handleRequest(req: Request): Promise<Response> {
 
       // top-N with an "Others" rollup to bound payload size.
       const topN = (rows: any[], valueKey: string, label: string, n = 20) => {
-        const sorted = [...rows].sort((a, b) => Number(b[valueKey] || 0) - Number(a[valueKey] || 0));
+        // Tie-break on the label. sort() is stable, so equal values used to
+        // resolve by insertion order — which came from an unordered paginate()
+        // and was never deterministic run-to-run.
+        const sorted = [...rows].sort((a, b) => Number(b[valueKey] || 0) - Number(a[valueKey] || 0)
+          || String(a[label] ?? "").localeCompare(String(b[label] ?? "")));
         if (sorted.length <= n) return sorted;
         const head = sorted.slice(0, n);
         const rest = sorted.slice(n);
@@ -13334,7 +13355,9 @@ async function handleRequest(req: Request): Promise<Response> {
       };
 
       // ── Fetch (paginated where it matters) ──
-      const orders = await paginate(() => {
+      // The SQL engine never materialises order rows — this is the 70,000-row,
+      // 65-round-trip stream it exists to delete.
+      const orders = useSql ? [] : await paginate(() => {
         let q = adminClient.from("orders").select(
           "id,status,price,quantity,product_name,customer_city,courier_office_city,delivery_type,home_courier,assigned_agent_name,confirmed_by_name,cancelled_by_agent_id,source_type,created_at,cancellation_reason,return_reason,prediction_list_id,prediction_list_name,prediction_list_type,prediction_list_category,order_items(product_name,quantity,total_price,price_per_unit)"
         ).or("source_type.is.null,source_type.neq.monadon_legacy"); // exclude Monadon legacy from all insights (profit, payouts, predictions ROI)
@@ -13347,13 +13370,15 @@ async function handleRequest(req: Request): Promise<Response> {
       // because it is by far the largest and starts first.)
       const [products, callLogs, invLogs, profiles, roleRowsRes] = await Promise.all([
         paginate(() => adminClient.from("products").select("id,name,stock_quantity,low_stock_threshold,cost_price,price,is_active")),
-        paginate(() => {
+        // Both of these are rolled up by insights_calls_and_movement under the
+        // SQL engine, so don't stream their rows as well.
+        useSql ? Promise.resolve([] as any[]) : paginate(() => {
           let q = adminClient.from("call_logs").select("agent_id,outcome,connection_state,talk_seconds,total_seconds,started_at,created_at");
           if (from) q = q.gte("created_at", from);
           if (toEnd) q = q.lte("created_at", toEnd);
           return q;
         }),
-        paginate(() => {
+        useSql ? Promise.resolve([] as any[]) : paginate(() => {
           let q = adminClient.from("inventory_logs").select("reason,change_amount,created_at");
           if (from) q = q.gte("created_at", from);
           if (toEnd) q = q.lte("created_at", toEnd);
@@ -13384,6 +13409,34 @@ async function handleRequest(req: Request): Promise<Response> {
 
       // Editable courier rate card (deliver / round-trip return per courier+service).
       const { rates: courierRates, fallback: courierFallback } = await loadCourierRates(adminClient);
+
+      // ── SQL engine: one parallel batch of aggregates replaces the row stream ──
+      // insights_paid_basis needs the rate card, so this runs after
+      // loadCourierRates rather than inside the fetch batch above. The card is
+      // PASSED IN rather than re-read in SQL, so loadCourierRates() stays the
+      // single source of truth for money and the two can never disagree.
+      const SQLROLL = { rollup: null as any, prods: null as any, paid: null as any, calls: null as any };
+      if (useSql) {
+        const ratesForSql: Record<string, any> = {};
+        for (const [k, v] of Object.entries(courierRates)) {
+          ratesForSql[k] = { deliver: (v as any).deliver, return: (v as any).return_ };
+        }
+        const argsRange = { p_from: from || null, p_to_end: toEnd || null };
+        const [qRoll, qProd, qPaid, qCalls] = await Promise.all([
+          adminClient.rpc("insights_orders_rollup", argsRange),
+          adminClient.rpc("insights_products", argsRange),
+          adminClient.rpc("insights_paid_basis", {
+            ...argsRange, p_rates: ratesForSql, p_fallback_deliver: courierFallback.deliver,
+          }),
+          adminClient.rpc("insights_calls_and_movement", argsRange),
+        ]);
+        for (const [nm, q] of [["orders_rollup", qRoll], ["products", qProd],
+                               ["paid_basis", qPaid], ["calls", qCalls]] as any[]) {
+          if (q.error) return json({ error: `insights_${nm}: ${sanitizeDbError(q.error)}` }, 500);
+        }
+        SQLROLL.rollup = qRoll.data; SQLROLL.prods = qProd.data;
+        SQLROLL.paid = qPaid.data; SQLROLL.calls = qCalls.data;
+      }
 
       // Prediction-list payout is now attribution-gated (prediction_list_id on the
       // order), so management-insights no longer needs the special-agent role list.
@@ -13445,8 +13498,10 @@ async function handleRequest(req: Request): Promise<Response> {
         if (t > maxT) maxT = t;
       }
       if (!isFinite(minT)) { minT = Date.now(); maxT = Date.now(); }
-      const spanDays = Math.max(1, (maxT - minT) / 86400000);
-      const granularity = spanDays <= 92 ? "day" : spanDays <= 400 ? "week" : "month";
+      const spanDays = useSql ? Number(SQLROLL.rollup.span_days) : Math.max(1, (maxT - minT) / 86400000);
+      const granularity = useSql
+        ? SQLROLL.rollup.granularity
+        : (spanDays <= 92 ? "day" : spanDays <= 400 ? "week" : "month");
       const bucketKey = (d: Date) => {
         if (granularity === "day") return d.toISOString().slice(0, 10);
         if (granularity === "month") return d.toISOString().slice(0, 7);
@@ -13536,11 +13591,59 @@ async function handleRequest(req: Request): Promise<Response> {
         if (["confirmed", "shipped", "delivered"].includes(o.status)) pipelineValue += num(o.price);
       }
 
+      // ── SQL engine: fill the very same maps the loop above builds ──
+      // (`orders` is [] under the SQL engine, so that loop is a no-op and this
+      // populates instead. Everything downstream is shared and untouched.)
+      const payoutAgg: Record<string, { rev: number; bonus: number; pkgs: number; awaiting: number; ret: number }> = {};
+      if (useSql) {
+        const R = SQLROLL.rollup, P = SQLROLL.prods;
+        const S = R.scalars;
+        paidRevenue = num(S.paid_revenue); paidCount = S.paid_count;
+        soldRevenue = num(S.sold_revenue); soldCount = S.sold_count;
+        unitsSold = S.units_sold;
+        returnsValue = num(S.returns_value); pipelineValue = num(S.pipeline_value);
+
+        for (const r of R.status_distribution) statusDist[r.status] = { status: r.status, count: r.count, value: num(r.value) };
+        for (const r of R.trend)       trend[r.bucket]   = { bucket: r.bucket, revenue: num(r.revenue), orders: r.orders };
+        for (const r of R.by_city)     cityMap[r.city]   = { city: r.city, orders: r.orders, revenue: num(r.revenue) };
+        for (const r of R.by_delivery) deliveryMap[r.delivery] = { delivery: r.delivery, orders: r.orders, revenue: num(r.revenue) };
+        for (const r of R.by_source)   sourceMap[r.source] = { source: r.source, orders: r.orders, revenue: num(r.revenue) };
+        for (const r of P.prod)        prodMap[r.product] = { product: r.product, units: r.units, revenue: num(r.revenue), orders: r.orders };
+        for (const r of R.ret_reason)  retReason[r.reason] = { reason: r.reason, count: r.count };
+        for (const r of R.ret_city)    retCity[r.city]     = { city: r.city, count: r.count };
+        for (const r of P.ret_product) retProduct[r.product] = { product: r.product, count: r.count };
+        for (const r of R.can_reason)  canReason[r.reason] = { reason: r.reason, count: r.count };
+        for (const r of P.can_product) canProduct[r.product] = { product: r.product, count: r.count };
+
+        // Agents arrive at RAW-name grain; normAgent merges here exactly as the
+        // loop did. The payout key applies normAgent TWICE (ownerOf already
+        // normalises) — reproduced verbatim, see the byPayoutKey note below.
+        for (const r of R.agents) {
+          // The legacy loop only ever calls bucket() for a REAL order or a
+          // trashed one (cancels get their own canceller key below). SQL groups
+          // ALL orders, so an owner with nothing but pending/call_again rows
+          // would otherwise gain an all-zero agent row that legacy never had.
+          if (r.orders === 0 && r.trashed === 0) continue;
+          const a = bucket(normAgent(r.owner_raw));
+          a.orders += r.orders; a.sold += r.sold; a.paid += r.paid;
+          a.returned += r.returned; a.trashed += r.trashed;
+          a.revenue += num(r.revenue); a.units += r.units;
+
+          const pk = normAgent(normAgent(r.owner_raw));
+          const p = (payoutAgg[pk] ??= { rev: 0, bonus: 0, pkgs: 0, awaiting: 0, ret: 0 });
+          p.rev += num(r.paid_revenue); p.bonus += r.bonus_sum; p.pkgs += r.pkgs_paid;
+          p.awaiting += r.pkgs_awaiting; p.ret += r.pkgs_returned;
+        }
+        for (const r of R.cancels) bucket(normAgent(r.canceller_raw)).cancelled += r.cancelled;
+      }
+
       const returnedCount = statusDist["returned"]?.count || 0;
       const cancelledCount = statusDist["cancelled"]?.count || 0;
       const trashedCount = statusDist["trashed"]?.count || 0;
       const leadsPending = statusDist["pending"]?.count || 0;
-      const realOrdersCount = orders.filter(REAL_ORDER).length; // actual orders, not leads/cancels
+      const realOrdersCount = useSql
+        ? SQLROLL.rollup.scalars.real_orders_count
+        : orders.filter(REAL_ORDER).length; // actual orders, not leads/cancels
 
       // Per-agent derived rates + merge call stats.
       const callByAgentName: Record<string, any> = {};
@@ -13555,6 +13658,18 @@ async function handleRequest(req: Request): Promise<Response> {
         const an = normAgent(nameById[c.agent_id]);
         callByAgentName[an] ??= { calls: 0, answered: 0, talk_seconds: 0 };
         callByAgentName[an].calls++; if (answered) callByAgentName[an].answered++; callByAgentName[an].talk_seconds += num(c.talk_seconds);
+      }
+      if (useSql) {
+        const C = SQLROLL.calls;
+        callsTotal = C.total; callsAnswered = C.answered; talkTotal = Number(C.talk);
+        for (const r of C.by_outcome) byOutcome[r.outcome] = r.count;
+        for (const r of C.by_agent) {
+          // Same key as the loop: normAgent of the profile name, so several
+          // agent_ids collapsing to one operator name merge, exactly as before.
+          const an = normAgent(nameById[r.agent_id]);
+          const e = (callByAgentName[an] ??= { calls: 0, answered: 0, talk_seconds: 0 });
+          e.calls += r.calls; e.answered += r.answered; e.talk_seconds += Number(r.talk_seconds);
+        }
       }
 
       // Bucket the real orders by payout key ONCE. This was three full
@@ -13575,31 +13690,42 @@ async function handleRequest(req: Request): Promise<Response> {
         if (!REAL_ORDER(o)) continue;
         (byPayoutKey[normAgent(ownerOf(o))] ??= []).push(o);
       }
+      // Reduce the legacy buckets to the same shape the SQL engine returns, so
+      // perAgent below is engine-agnostic. Every one of the three old filters
+      // also required REAL_ORDER, so the bucket IS
+      // `orders.filter(REAL_ORDER && key === a.name)`; and packagesSoldOf /
+      // packagesAwaitingOf / packagesReturnedOf each re-filter by status
+      // internally, so handing them the whole bucket is identical.
+      for (const [k, list] of Object.entries(byPayoutKey)) {
+        const paidList = list.filter(PAID);
+        payoutAgg[k] = {
+          rev: paidList.reduce((s: number, o: any) => s + num(o.price), 0),
+          bonus: calcAgentBonus(paidList),
+          pkgs: packagesSoldOf(paidList),
+          awaiting: packagesAwaitingOf(list),
+          ret: packagesReturnedOf(list),
+        };
+      }
 
       const perAgent = Object.values(agMap).map((a: any) => {
         const cs = callByAgentName[a.name] || { calls: 0, answered: 0, talk_seconds: 0 };
 
-        // Every one of the three old filters also required REAL_ORDER, so the
-        // bucket IS `orders.filter(REAL_ORDER && key === a.name)`. packagesSoldOf
-        // / packagesAwaitingOf / packagesReturnedOf each re-filter by status
-        // internally, so handing them the whole bucket is identical.
-        const ownedReal = byPayoutKey[a.name] || [];
-        // Per-package payout on this agent's owned paid orders (every paid order).
-        // Kept as its own array because avg_per_package sums price over it.
-        const agentOrdersForPayout = ownedReal.filter(PAID);
+        const P = payoutAgg[a.name] || { rev: 0, bonus: 0, pkgs: 0, awaiting: 0, ret: 0 };
         // Super-admins earn no bonus — only real agents are on commission.
-        const agentPayout = agentNames.has(a.name) ? calcAgentBonus(agentOrdersForPayout) : 0;
+        // calcAgentBonus already rounded in the legacy path; the SQL sum is
+        // integer-valued (rate ∈ {1,2,3} × integer quantity), so both are exact.
+        const agentPayout = agentNames.has(a.name) ? P.bonus : 0;
         // packages_sold = PAID units only (aligns with payout). a.units stays pipeline SOLD.
-        const packagesSoldPaid = packagesSoldOf(agentOrdersForPayout);
-        const packagesAwaiting = packagesAwaitingOf(ownedReal);
-        const packagesReturned = packagesReturnedOf(ownedReal);
+        const packagesSoldPaid = P.pkgs;
+        const packagesAwaiting = P.awaiting;
+        const packagesReturned = P.ret;
 
         return {
           ...a,
           aov: a.sold > 0 ? a.revenue / a.sold : 0,
           // Pipeline avg/pkg (SOLD basis) for analytics; packages_sold is paid-only.
           avg_per_package: packagesSoldPaid > 0
-            ? (a.paid > 0 ? (agentOrdersForPayout.reduce((s: number, o: any) => s + num(o.price), 0) / packagesSoldPaid) : 0)
+            ? (a.paid > 0 ? (P.rev / packagesSoldPaid) : 0)
             : (a.units > 0 ? a.revenue / a.units : 0),
           packages_sold: packagesSoldPaid,
           packages_awaiting: packagesAwaiting,
@@ -13613,12 +13739,19 @@ async function handleRequest(req: Request): Promise<Response> {
           talk_seconds: cs.talk_seconds,
           payout_earned: agentPayout,
         };
-      }).sort((a: any, b: any) => b.revenue - a.revenue);
+      }).sort((a: any, b: any) => b.revenue - a.revenue || String(a.name).localeCompare(String(b.name)));
 
       // Total agent commission actually owed (a Pure Profit cost): every paid
       // order, but only those owned by a real agent — super-admins earn nothing.
+      // NB this gates on normAgent applied ONCE (ownerOf), unlike the payout
+      // buckets above which apply it twice — which is why
+      // Σ agents[].payout_earned need not equal this total.
       const totalSpecialAgentCommissions = Math.round(
-        orders.reduce((s: number, o: any) => s + (agentNames.has(ownerOf(o)) ? orderPackageBonus(o) : 0), 0) * 100,
+        (useSql
+          ? SQLROLL.rollup.agents.reduce(
+              (s: number, r: any) => s + (agentNames.has(normAgent(r.owner_raw)) ? r.bonus_sum : 0), 0)
+          : orders.reduce((s: number, o: any) => s + (agentNames.has(ownerOf(o)) ? orderPackageBonus(o) : 0), 0)
+        ) * 100,
       ) / 100;
 
       // ── Prediction Lists ROI ──
@@ -13645,6 +13778,17 @@ async function handleRequest(req: Request): Promise<Response> {
         if (SOLD(o)) r.revenue += num(o.price);
         if (agentNames.has(ownerOf(o))) r.bonus_paid += orderPackageBonus(o);
       }
+      if (useSql) {
+        // Rows arrive at (list × raw owner) grain so the agentNames gate on
+        // bonus_paid can be applied here, exactly as the loop does.
+        for (const r of SQLROLL.rollup.prediction) {
+          const row = plRow(r.list_id, r.name, r.type, r.category);
+          row.orders += r.orders; row.confirmed += r.confirmed; row.paid += r.paid;
+          row.returned += r.returned; row.cancelled += r.cancelled;
+          row.revenue += num(r.revenue); row.refund_value += num(r.refund_value);
+          if (agentNames.has(normAgent(r.owner_raw))) row.bonus_paid += r.bonus_sum;
+        }
+      }
       // Enrich with current membership counts (segment members + uploaded leads).
       // One GROUP BY instead of streaming both tables in full. The old code paid
       // ~57 sequential round-trips over 56,807 membership rows on EVERY insights
@@ -13667,7 +13811,7 @@ async function handleRequest(req: Request): Promise<Response> {
         bonus_paid: Math.round(r.bonus_paid * 100) / 100,
         conversion_rate: r.orders > 0 ? r.paid / r.orders : 0,
         return_rate: r.confirmed > 0 ? r.returned / r.confirmed : 0,
-      })).sort((a: any, b: any) => b.revenue - a.revenue);
+      })).sort((a: any, b: any) => b.revenue - a.revenue || String(a.name).localeCompare(String(b.name)));
 
       // ── Products & stock ──
       const stock = products.filter((p: any) => p.is_active).map((p: any) => {
@@ -13681,7 +13825,7 @@ async function handleRequest(req: Request): Promise<Response> {
           days_of_cover: daily > 0 ? Math.round(sq / daily) : null,
           cost_price: num(p.cost_price), price: num(p.price),
         };
-      }).sort((a: any, b: any) => a.stock_quantity - b.stock_quantity);
+      }).sort((a: any, b: any) => a.stock_quantity - b.stock_quantity || String(a.name).localeCompare(String(b.name)));
 
       // ── Profit (only where cost is known) ──
       const costByName: Record<string, number> = {};
@@ -13691,7 +13835,7 @@ async function handleRequest(req: Request): Promise<Response> {
         .map((p: any) => {
           const cogs = costByName[p.product] * p.units;
           return { product: p.product, revenue: p.revenue, cogs, profit: p.revenue - cogs, margin: p.revenue > 0 ? (p.revenue - cogs) / p.revenue : 0 };
-        }).sort((a: any, b: any) => b.profit - a.profit);
+        }).sort((a: any, b: any) => b.profit - a.profit || String(a.product).localeCompare(String(b.product)));
 
       // ── Logistics cost + actuals Pure Profit ──
       // Money OUT for shipping: deliver rate on everything shipped, full round-trip
@@ -13768,6 +13912,37 @@ async function handleRequest(req: Request): Promise<Response> {
           }
         }
       }
+      if (useSql) {
+        const B = SQLROLL.paid;
+        // Logistics: SQL returns per courier+service COUNTS; the editable rate
+        // card is applied here so loadCourierRates() remains the only place
+        // money comes from. Accumulate rate-by-rate (not rate × count) so the
+        // float addition order matches the legacy loop exactly.
+        for (const L of SQLROLL.rollup.logistics) {
+          const rate = (L.known && courierRates[`${L.courier}_${L.service}`]) || courierFallback;
+          const label = L.known ? `${L.courier}_${L.service}` : "unknown";
+          const M = (logisticsMap[label] ??= {
+            courier: L.courier, service: L.service,
+            delivered: 0, returned: 0, deliver_cost: 0, return_cost: 0,
+          });
+          M.delivered += L.delivered; M.returned += L.returned;
+          for (let k = 0; k < L.delivered; k++) { deliveryCost += rate.deliver; M.deliver_cost += rate.deliver; }
+          for (let k = 0; k < L.returned;  k++) { returnLoss   += rate.return_; M.return_cost  += rate.return_; }
+        }
+        // COGS keys on the RAW product name with (quantity || 1) units — a
+        // different key and unit count than by_product below, which is why the
+        // RPC returns cogs_units separately. Preserves the existing (real)
+        // discrepancy between pure_profit.cogs and Σ by_product.cogs.
+        for (const r of B.cogs_units) cogsPaid += (costByName[r.raw_product] || 0) * r.cogs_units;
+        paidPackages = B.paid_packages;
+        for (const m of B.by_product) {
+          paidProdMap[m.product] = {
+            product: m.product, packages: m.packages, orders: m.orders,
+            revenue: num(m.revenue), cogs: (costByName[m.product] || 0) * m.packages,
+            deliverSum: num(m.deliver_sum), _seen: new Set<string>(),
+          };
+        }
+      }
       deliveryCost = r2(deliveryCost); returnLoss = r2(returnLoss); cogsPaid = r2(cogsPaid);
       // VAT owed on collected cash (prices are gross / VAT-inclusive).
       const vatDue = r2(paidRevenue - paidRevenue / (1 + VAT_RATE));
@@ -13785,7 +13960,7 @@ async function handleRequest(req: Request): Promise<Response> {
       const logistics = Object.values(logisticsMap).map((L: any) => ({
         ...L, deliver_cost: r2(L.deliver_cost), return_cost: r2(L.return_cost),
         total_cost: r2(L.deliver_cost + L.return_cost),
-      })).sort((a: any, b: any) => b.total_cost - a.total_cost);
+      })).sort((a: any, b: any) => b.total_cost - a.total_cost || String(a.courier + a.service).localeCompare(String(b.courier + b.service)));
       const pureProfitByProduct = Object.values(paidProdMap).map((m: any) => ({
         product: m.product,
         packages: m.packages,
@@ -13797,7 +13972,10 @@ async function handleRequest(req: Request): Promise<Response> {
         profit: r2(m.revenue - m.cogs),
         net_revenue: r2(m.revenue / (1 + VAT_RATE)),
         net_profit: r2(m.revenue / (1 + VAT_RATE) - m.cogs),
-      })).sort((a: any, b: any) => b.packages - a.packages);
+        // Tie-break by name. Array.prototype.sort is stable, so equal package
+        // counts used to resolve by insertion order — which came from an
+        // unordered paginate() and was never deterministic run-to-run.
+      })).sort((a: any, b: any) => b.packages - a.packages || String(a.product).localeCompare(String(b.product)));
 
       // ── Margin Lab: realized per-package price + the floor each product needs ──
       // Floor solves  P − P/6 − cogs − deliver − commission = target  ⇒  P = 1.2·(target+cogs+deliver+m),
@@ -13808,7 +13986,16 @@ async function handleRequest(req: Request): Promise<Response> {
         return r2(GROSS * (target + cogs + deliver + 3));
       };
       const sortedPkg = realizedPkg.slice().sort((a, b) => a - b);
-      const pctl = (p: number) => (sortedPkg.length ? sortedPkg[Math.min(sortedPkg.length - 1, Math.max(0, Math.round((p / 100) * (sortedPkg.length - 1))))] : 0);
+      // The SQL engine returns the same order statistics without materialising
+      // one array element per physical package. js_pctl_index() reproduces the
+      // index this expression picks — note that is NOT percentile_disc, which
+      // picks ceil(f*N)-1 and disagrees (at N=4, f=0.5: index 1 vs 2).
+      const sqlReal = useSql ? SQLROLL.paid.realized : null;
+      const pctl = (p: number) => (sqlReal
+        ? Number(sqlReal[`p${p}`] ?? 0)
+        : (sortedPkg.length ? sortedPkg[Math.min(sortedPkg.length - 1, Math.max(0, Math.round((p / 100) * (sortedPkg.length - 1))))] : 0));
+      const pkgMin = sqlReal ? Number(sqlReal.min ?? 0) : (sortedPkg[0] || 0);
+      const pkgMax = sqlReal ? Number(sqlReal.max ?? 0) : (sortedPkg[sortedPkg.length - 1] || 0);
       const marginByProduct = (Object.values(paidProdMap) as any[]).map((m) => {
         const pkgs = m.packages;
         const avgPrice = pkgs > 0 ? m.revenue / pkgs : 0;
@@ -13824,7 +14011,7 @@ async function handleRequest(req: Request): Promise<Response> {
           floor_price: floorPriceFor(cogsUnit, avgDeliver, marginTarget),
           uplift_pct: avgPrice > 0 ? Math.round((floorPriceFor(cogsUnit, avgDeliver, marginTarget) / avgPrice - 1) * 100) : null,
         };
-      }).sort((a, b) => b.packages - a.packages);
+      }).sort((a, b) => b.packages - a.packages || String(a.product).localeCompare(String(b.product)));
       const marginLab = {
         target_profit_per_package: marginTarget,
         vat_rate: VAT_RATE,
@@ -13834,7 +14021,7 @@ async function handleRequest(req: Request): Promise<Response> {
           packages: paidPackages,
           avg: paidPackages > 0 ? r2(paidRevenue / paidPackages) : 0,
           median: r2(pctl(50)), p25: r2(pctl(25)), p75: r2(pctl(75)),
-          min: r2(sortedPkg[0] || 0), max: r2(sortedPkg[sortedPkg.length - 1] || 0),
+          min: r2(pkgMin), max: r2(pkgMax),
           net_profit_per_pkg: paidPackages > 0 ? r2(clearProfit / paidPackages) : 0,
         },
         by_product: marginByProduct,
@@ -13843,8 +14030,10 @@ async function handleRequest(req: Request): Promise<Response> {
       // ── Inventory movement summary ──
       const movement: Record<string, number> = {};
       for (const l of invLogs) movement[l.reason || "manual"] = (movement[l.reason || "manual"] || 0) + Math.abs(num(l.change_amount));
+      if (useSql) for (const [k, v] of Object.entries(SQLROLL.calls.movement || {})) movement[k] = num(v);
 
-      const topSellers = Object.values(prodMap).sort((a: any, b: any) => b.revenue - a.revenue).slice(0, 20);
+      const topSellers = Object.values(prodMap).sort((a: any, b: any) => b.revenue - a.revenue
+        || String(a.product).localeCompare(String(b.product))).slice(0, 20);
 
       return json({
         meta: { from, to, granularity, generated_at: new Date().toISOString() },
@@ -13867,13 +14056,16 @@ async function handleRequest(req: Request): Promise<Response> {
           trashed_count: trashedCount,
           leads_pending: leadsPending,
         },
-        status_distribution: Object.values(statusDist).sort((a: any, b: any) => b.count - a.count),
+        status_distribution: Object.values(statusDist).sort((a: any, b: any) => b.count - a.count
+          || String(a.status).localeCompare(String(b.status))),
         revenue_trend: Object.values(trend).sort((a: any, b: any) => a.bucket.localeCompare(b.bucket)),
         sales: {
           by_product: topN(Object.values(prodMap), "revenue", "product"),
           by_city: topN(Object.values(cityMap), "revenue", "city"),
-          by_delivery: Object.values(deliveryMap).sort((a: any, b: any) => b.revenue - a.revenue),
-          by_source: Object.values(sourceMap).sort((a: any, b: any) => b.revenue - a.revenue),
+          by_delivery: Object.values(deliveryMap).sort((a: any, b: any) => b.revenue - a.revenue
+            || String(a.delivery).localeCompare(String(b.delivery))),
+          by_source: Object.values(sourceMap).sort((a: any, b: any) => b.revenue - a.revenue
+            || String(a.source).localeCompare(String(b.source))),
         },
         agents: perAgent,
         products_stock: {
@@ -13886,14 +14078,14 @@ async function handleRequest(req: Request): Promise<Response> {
         returns: {
           rate: realOrdersCount > 0 ? returnedCount / realOrdersCount : 0,
           value_lost: returnsValue,
-          by_reason: Object.values(retReason).sort((a: any, b: any) => b.count - a.count),
+          by_reason: Object.values(retReason).sort((a: any, b: any) => b.count - a.count || String(a.reason).localeCompare(String(b.reason))),
           by_product: topN(Object.values(retProduct), "count", "product"),
           by_city: topN(Object.values(retCity), "count", "city"),
         },
         cancellations: {
           total: cancelledCount,
           trashed: trashedCount,
-          by_reason: Object.values(canReason).sort((a: any, b: any) => b.count - a.count),
+          by_reason: Object.values(canReason).sort((a: any, b: any) => b.count - a.count || String(a.reason).localeCompare(String(b.reason))),
           by_product: topN(Object.values(canProduct), "count", "product"),
         },
         calls: {
@@ -13901,7 +14093,7 @@ async function handleRequest(req: Request): Promise<Response> {
           answered: callsAnswered,
           answer_rate: callsTotal > 0 ? callsAnswered / callsTotal : 0,
           talk_seconds: talkTotal,
-          by_outcome: Object.entries(byOutcome).map(([outcome, count]) => ({ outcome, count })).sort((a, b) => b.count - a.count),
+          by_outcome: Object.entries(byOutcome).map(([outcome, count]) => ({ outcome, count })).sort((a, b) => b.count - a.count || String(a.outcome).localeCompare(String(b.outcome))),
           per_agent: perAgent.filter((a: any) => a.calls > 0).map((a: any) => ({ name: a.name, calls: a.calls, answered: a.answered, answer_rate: a.answer_rate, talk_seconds: a.talk_seconds })),
         },
         profit: { has_costs: profitRows.length > 0, by_product: profitRows, total_profit: profitRows.reduce((s: number, p: any) => s + p.profit, 0) },
