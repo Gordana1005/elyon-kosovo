@@ -39,17 +39,16 @@ operation. It shares **nothing at runtime** with Bulgaria (own repo / own Supaba
   > phone and no product, so only 10,8% of its 45.227 documents could be matched to AlterCPA by
   > name + date. The fix is a re-export with those two columns — the request is written and ready
   > to send at `docs/COLLABBOX-EXPORT-BARANJE.md`.
-- **Logins (4, verified live 2026-08-04):**
+- **Logins (3, verified live 2026-08-05):**
   | Login | Role | Notes |
   |---|---|---|
-  | `milestoev@elyon-mk.local` | admin | typed as the bare username `milestoev` |
   | `mile@elyon.com` | admin | typed in full |
   | `hedi@naturatherapy.mk` | admin ("Суперадмин") | typed in full |
   | `dragana@naturatherapy.mk` | manager | typed in full |
 
   Any address containing `@` is typed **in full** at the login box — the form only appends
   `elyon-mk.local` when the input has no `@`, and the field is labelled "Username".
-  All four still use seeded/simple passwords — **rotate**.
+  All three still use seeded/simple passwords — **rotate**.
 - **Public signup is disabled** (2026-08-04). Accounts are created only by an admin, via the
   `/users` screen or `node scripts/create-user-mk.mjs`.
 - **Secrets:** `docs/VAULT.md` (gitignored).
@@ -111,12 +110,12 @@ was actually quoted on the phone.
    at `scripts/data/reprice-2026-08.json`, pre-change state at `…-before.txt`.
    **Still open:** the **29 products with no price at all.** They are not free in practice — the
    order form silently defaults them to `max(cost × 3, €15)`. Price them or deactivate them.
-   **Also open (2026-08-05):** the **21 products created for the AlterCPA import** carry a proposed
-   shelf price but **`cost_price = 0`**, so Pure Profit and Margin Lab read 100% margin on them —
-   and they are the bulk of the history (49.190 of 80.360 orders, including the three biggest
-   earners ProstaFix, GlucoFix and ArthroFix). Load real unit costs before trusting any profit
-   figure. Proposed prices and the full mapping: `scripts/data/altercpa-product-map.json`,
-   reviewed in `…-review.md`.
+   **Also open (2026-08-05):** the **21 products created for the AlterCPA import** were given a
+   flat **180 ден (€2,93)** unit cost on request, so gross margin on the paid history reads 77,9%
+   instead of 100%. It is a placeholder, not a measurement — and those 21 carry 49.190 of the
+   80.360 orders, including the three biggest earners ProstaFix, GlucoFix and ArthroFix. Replace it
+   with real per-product costs before trusting any profit figure. Mapping and proposed shelf prices:
+   `scripts/data/altercpa-product-map.json`, reviewed in `…-review.md`.
 2. **VAT rate.** 18% is Macedonia's standard rate, but food supplements may fall under the
    preferential 5%/10% band. `VAT_RATE` (edge fn) feeds every profit report.
 3. **Commission tiers.** Still `<25€→1, 25–35€→2, ≥35€→3`. Note the hero band is now **tier 3**:

@@ -30,7 +30,8 @@
     "retry": "Обиди се повторно",
     "error": "Грешка",
     "clear": "Исчисти",
-    "moreRanges": "Уште периоди"
+    "moreRanges": "Уште периоди",
+    "done": "Готово"
   },
   "leadStatusModal": {
     "not_contacted": "Земен",
@@ -468,7 +469,14 @@
     "statusOffline": "Офлајн",
     "doneBadge": "Готово",
     "showClients": "Прикажи ги клиентите",
-    "hideClients": "Сокриј ги клиентите"
+    "hideClients": "Сокриј ги клиентите",
+    "agentPicker": {
+      "selected_one": "{{count}} избран",
+      "selected_other": "{{count}} избрани",
+      "search": "Пребарај агент…",
+      "noMatches": "Нема агент со тоа име",
+      "onlineOf": "{{online}} од {{total}} онлајн"
+    }
   },
   "promo": {
     "tab": "Промо",

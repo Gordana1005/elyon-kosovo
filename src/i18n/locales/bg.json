@@ -30,7 +30,8 @@
     "retry": "Опитай пак",
     "error": "Грешка",
     "clear": "Изчисти",
-    "moreRanges": "Още периоди"
+    "moreRanges": "Още периоди",
+    "done": "Готово"
   },
   "leadStatusModal": {
     "not_contacted": "Взет",
@@ -468,7 +469,14 @@
     "statusOffline": "Офлайн",
     "doneBadge": "Готово",
     "showClients": "Покажи клиентите",
-    "hideClients": "Скрий клиентите"
+    "hideClients": "Скрий клиентите",
+    "agentPicker": {
+      "selected_one": "{{count}} избран",
+      "selected_other": "{{count}} избрани",
+      "search": "Търсене на агент…",
+      "noMatches": "Няма агент с това име",
+      "onlineOf": "{{online}} от {{total}} онлайн"
+    }
   },
   "promo": {
     "tab": "Промо",

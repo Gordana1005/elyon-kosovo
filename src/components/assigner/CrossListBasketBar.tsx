@@ -3,7 +3,8 @@ import { useTranslation } from 'react-i18next';
 import { ShoppingBasket, UserPlus, UserX, X, Loader2, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { AgentPickerChips, type AgentChip } from './AgentPickerChips';
+import { type AgentChip } from './AgentPickerChips';
+import { AgentPickerPopover } from './AgentPickerPopover';
 import { cn } from '@/lib/utils';
 
 export interface BasketItem {
@@ -73,11 +74,12 @@ export function CrossListBasketBar({ items, agents, busy, onAssign, onUnassign, 
           </PopoverContent>
         </Popover>
 
-        {/* Agent multi-select */}
-        <div className="flex-1 min-w-[220px]">
-          <AgentPickerChips agents={agents} selected={pickedAgents} onToggle={(id) =>
-            setPickedAgents(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
-          } />
+        {/* Agent multi-select. A popover, not an inline chip list: this bar is
+            fixed to the bottom of the screen, so an inline list of ~45 agents
+            grew it upwards until its top — and most of the agents — sat above
+            the viewport, unreachable. */}
+        <div className="flex-1 min-w-[200px]">
+          <AgentPickerPopover agents={agents} selected={pickedAgents} onChange={setPickedAgents} disabled={busy} />
         </div>
 
         {/* Actions */}

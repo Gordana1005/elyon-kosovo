@@ -30,7 +30,8 @@
     "retry": "Provo përsëri",
     "error": "Gabim",
     "clear": "Pastro",
-    "moreRanges": "Më shumë periudha"
+    "moreRanges": "Më shumë periudha",
+    "done": "U krye"
   },
   "leadStatusModal": {
     "not_contacted": "I marrë",
@@ -468,7 +469,14 @@
     "statusOffline": "Offline",
     "doneBadge": "Kryer",
     "showClients": "Shfaq klientët",
-    "hideClients": "Fshih klientët"
+    "hideClients": "Fshih klientët",
+    "agentPicker": {
+      "selected_one": "{{count}} i zgjedhur",
+      "selected_other": "{{count}} të zgjedhur",
+      "search": "Kërko agjent…",
+      "noMatches": "Asnjë agjent me atë emër",
+      "onlineOf": "{{online}} nga {{total}} online"
+    }
   },
   "promo": {
     "tab": "Promo",

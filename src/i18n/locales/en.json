@@ -30,7 +30,8 @@
     "retry": "Retry",
     "error": "Error",
     "clear": "Clear",
-    "moreRanges": "More ranges"
+    "moreRanges": "More ranges",
+    "done": "Done"
   },
   "leadStatusModal": {
     "not_contacted": "Taken",
@@ -468,7 +469,14 @@
     "statusOffline": "Offline",
     "doneBadge": "Done",
     "showClients": "Show clients",
-    "hideClients": "Hide clients"
+    "hideClients": "Hide clients",
+    "agentPicker": {
+      "selected_one": "{{count}} selected",
+      "selected_other": "{{count}} selected",
+      "search": "Search agent…",
+      "noMatches": "No agent by that name",
+      "onlineOf": "{{online}} of {{total}} online"
+    }
   },
   "promo": {
     "tab": "Promo",
