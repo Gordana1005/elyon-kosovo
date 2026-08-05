@@ -98,8 +98,12 @@ for (const o of orders) {
   let notes = comment;
   if (value === 'other') {
     // Nothing else records what the original disposition was once it has been
-    // flattened into the catch-all, so keep it — ahead of the comment.
-    notes = comment ? `${label} — ${comment}` : label;
+    // flattened into the catch-all, so keep it — ahead of the comment. Unless
+    // the operator simply typed the reason back at us, which they do often
+    // ("враќа нарачки" under the reason meaning exactly that): prefixing then
+    // just stutters.
+    const same = comment.toLowerCase().startsWith(label.toLowerCase());
+    notes = comment ? (same ? comment : `${label} — ${comment}`) : label;
   }
   rows.push({
     id: String(o.id),

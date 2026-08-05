@@ -314,7 +314,7 @@ export default function Orders() {
   // Resolve the product label for an order (shared by the desktop table cell and
   // the mobile card). Handles real line items, clean names, and synthetic
   // cancelled/trashed rows that stash the prior product in notes.
-  const productLabel = (order: any): string => {
+  const productOnlyLabel = (order: any): string => {
     if (order.order_items && order.order_items.length > 0) {
       return order.order_items.map((i: any) => {
         const displayName = i.product_id && nameById[i.product_id] ? nameById[i.product_id] : (i.product_name || '—');
@@ -346,6 +346,34 @@ export default function Orders() {
     }
     return formatProductWithQuantity(resolveToCleanCatalogueName(pn), order.quantity || 1) || '—';
   };
+
+  // What actually goes in the Product column.
+  //
+  // On a cancelled or trashed row the product is not the useful fact — the
+  // reason is. Which product they declined stays on the cell as a hover title,
+  // and is one click away in the order; why they declined is the thing you scan
+  // a cancel list for.
+  //
+  // The reason check has to happen BEFORE the product is resolved. The old
+  // reason branch sat at the bottom of productOnlyLabel and only ever ran for
+  // legacy rows carrying a placeholder product name, so any row with a real
+  // product — every imported order, and every order an agent takes — returned
+  // the product and never reached it.
+  const isTerminated = (order: any) => order.status === 'cancelled' || order.status === 'trashed';
+
+  const productLabel = (order: any): string => {
+    if (isTerminated(order)) {
+      const reason = sharedOrderReasonText(order);
+      // No reason recorded at all → show the product rather than an empty cell.
+      if (reason) return reason;
+    }
+    return productOnlyLabel(order);
+  };
+
+  // Tooltip for the Product cell: on a terminated row it holds the product the
+  // reason displaced, so nothing is actually lost from the table.
+  const productLabelTitle = (order: any): string | undefined =>
+    isTerminated(order) && sharedOrderReasonText(order) ? productOnlyLabel(order) : undefined;
 
   // Human text for the rich reason panel on cancelled/trashed rows (desktop
   // expanded row + mobile card). Trashed orders carry a STRUCTURED reason in
@@ -1116,7 +1144,7 @@ export default function Orders() {
                     )}
                     <ActiveViewBadge phone={order.customer_phone} className="ml-2" />
                   </td>
-                  <td className="px-4 py-3">{productLabel(order)}</td>
+                  <td className="px-4 py-3" title={productLabelTitle(order)}>{productLabel(order)}</td>
                   <td className="px-4 py-3 text-center">{order.quantity || 1}</td>
                   <td className="px-4 py-3">
                     <div className="font-bold text-primary leading-tight">{formatMoney(order.price)}</div>

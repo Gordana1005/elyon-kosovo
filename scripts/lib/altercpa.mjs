@@ -20,14 +20,27 @@ export const PHASE_TO_STATUS = {
   5: 'trashed',
 };
 
-/** AlterCPA cancel reasons. 16-19 are custom and undocumented; labelled as seen. */
+/**
+ * AlterCPA cancel reasons. 1-15 are documented; 16-19 are this account's own
+ * custom codes and the API exposes no lookup for them.
+ *
+ * Their meaning is recovered from the comments operators left alongside them,
+ * which is unambiguous — 115 of the 276 commented reason-18 orders literally
+ * say "враќа нарачки", and reason 16 is "консултација" in every spelling. The
+ * labels below use the operators' own words because that is what surfaces in
+ * the UI, and because ~60% of these orders carry no comment at all, leaving the
+ * label as the only signal.
+ */
 export const REASON = {
   0: '—', 1: 'incorrect phone', 2: 'changed mind', 3: 'did not order',
   4: 'requires certificate', 5: 'wrong geo', 6: 'errors/fakes', 7: 'duplicate',
   8: 'ordered elsewhere', 9: 'expensive', 10: 'unhappy with delivery',
   11: 'could not reach', 12: 'possible fraud', 13: 'different language',
   14: "product didn't fit", 15: 'offer disabled',
-  16: 'custom-16', 17: 'custom-17', 18: 'custom-18', 19: 'custom-19',
+  16: 'само консултација',   // 357 orders — rang for advice, not to buy
+  17: 'недостапен',          // 12 — phone off / never answered
+  18: 'враќа нарачки',       // 755 — known parcel returner; a do-not-ship flag
+  19: 'custom-19',           // 1 order, no comment — nothing to infer from
 };
 
 /**
