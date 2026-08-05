@@ -18,7 +18,27 @@ operation. It shares **nothing at runtime** with Bulgaria (own repo / own Supaba
 
 - **Frontend (Vercel):** https://elyon-natura.vercel.app (`gordanas-projects-a53c0208/elyon-natura`, GitHub-connected → **push to `main` auto-deploys production**)
 - **Backend (Supabase):** `bmfxhgznttcnnlqloqzp` — **161 migrations applied**, edge function `api` deployed, `WEBHOOK_SECRET` set, `pg_cron` on.
-- **Data:** empty (0 orders / 0 customers / 0 call logs). **67 products, all priced in clean denar and 46 carrying a real unit cost** (2026-08-04).
+- **Data (2026-08-05): the historical order book is LOADED.** 80.360 orders · 47.231 customers ·
+  56.807 prediction-list memberships. 0 call logs. **88 products** (67 + 21 created for the import),
+  46 carrying a real unit cost.
+
+  | | |
+  |---|---|
+  | Source | AlterCPA `api.cpa.moe`, 81.657 MK orders 2025-04-14 → 2026-08-05 |
+  | Imported | 80.360 — paid **27.276** · cancelled 35.328 · trashed 17.714 · pending 42 |
+  | Paid revenue | **€665k** (≈40,9M ден) across 16 months |
+  | Excluded | 977 unusable phones · 314 AlterCPA smoke-test orders · 6 remaining ids |
+  | Corrections | **2.609 orders proven paid by collabBox** and flipped from cancelled/trash |
+  | Idempotency | `external_source = 'altercpa'`, `external_order_id` = the AlterCPA id. **Re-running the importer is a no-op** (verified: 600 re-posted → 600 duplicates, 0 created). |
+
+  Scripts: `export-altercpa-mk.mjs` → `analyze-altercpa-mk.mjs` → `build-product-map.mjs` →
+  `match-collabbox.mjs` → `import-altercpa-mk.mjs` → `verify-altercpa-import.mjs`.
+  Raw export and every audit file live in `scripts/data/`.
+
+  > ⚠️ **collabBox holds ~40.000 more paid orders we could not import.** Its export carries no
+  > phone and no product, so only 10,8% of its 45.227 documents could be matched to AlterCPA by
+  > name + date. The fix is a re-export with those two columns — the request is written and ready
+  > to send at `docs/COLLABBOX-EXPORT-BARANJE.md`.
 - **Logins (4, verified live 2026-08-04):**
   | Login | Role | Notes |
   |---|---|---|
@@ -91,6 +111,12 @@ was actually quoted on the phone.
    at `scripts/data/reprice-2026-08.json`, pre-change state at `…-before.txt`.
    **Still open:** the **29 products with no price at all.** They are not free in practice — the
    order form silently defaults them to `max(cost × 3, €15)`. Price them or deactivate them.
+   **Also open (2026-08-05):** the **21 products created for the AlterCPA import** carry a proposed
+   shelf price but **`cost_price = 0`**, so Pure Profit and Margin Lab read 100% margin on them —
+   and they are the bulk of the history (49.190 of 80.360 orders, including the three biggest
+   earners ProstaFix, GlucoFix and ArthroFix). Load real unit costs before trusting any profit
+   figure. Proposed prices and the full mapping: `scripts/data/altercpa-product-map.json`,
+   reviewed in `…-review.md`.
 2. **VAT rate.** 18% is Macedonia's standard rate, but food supplements may fall under the
    preferential 5%/10% band. `VAT_RATE` (edge fn) feeds every profit report.
 3. **Commission tiers.** Still `<25€→1, 25–35€→2, ≥35€→3`. Note the hero band is now **tier 3**:
@@ -208,7 +234,15 @@ mostly small, but each one bites somebody eventually.
 - Legacy one-off scripts in `scripts/` (`import-monadon-csv`, `import-cpa-xlsx`,
   `cost-report-since-18may`, `finance/build-finance-pdfs`, …) are **Bulgarian** tooling carried
   over with the fork. They still hardcode the lev peg and 20% VAT. They are dormant — do not run
-  them against Macedonia without converting them first.
+  them against Macedonia without converting them first. (`import-cpa-xlsx.mjs` in particular is
+  **not** the AlterCPA importer — that is `import-altercpa-mk.mjs`.)
+- **Before any bulk order load, go through `scripts/segment-trigger-mk.mjs --disable`.** Six
+  `FOR EACH ROW` triggers on `orders` make a large import wrong, not just slow:
+  `trg_orders_segments_insert` recomputes a customer's whole band membership per row (80k inserts
+  = 80k recomputes, all but the last per phone discarded), and the four `orders_set_*_at` triggers
+  stamp `now()` on insert — which would date every historical order to the day of the import and
+  leave the real history blank. Finish with `--backfill-timestamps`, `--enable`, `--recompute`.
+  The `--status` output is deliberately loud, because a trigger left disabled fails silently.
 
 ### Migration replay fixes (kept — never take BG's versions of these)
 Guarded the `missed_calls` trigger in `20260604130000` + recreated it in `…0614120000`; dropped

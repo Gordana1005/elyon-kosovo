@@ -1,0 +1,123 @@
+{
+  "_comment": "AlterCPA offer/goods name -> Elyon catalogue product. Curated 2026-08-05 for the 81,657-order MK history import. AlterCPA sells the SAME physical product under several names that encode a price point: 'LP'/'Low Price', 'FP'/'Full Price', 'Hyperpotency', and bracket codes like [ARK27]/[CF27]/[OFR]. Those collapse to one canonical product here; the price the customer actually paid is preserved per order, so collapsing the name loses nothing. Every one of the 66 exported names is listed explicitly — build-product-map.mjs fails if the export contains a name this file does not cover, so a new offer appearing upstream can never import unnoticed.",
+  "_matchRule": "The import endpoint matches by EXACT lowercased catalogue name, then exact SKU (supabase/functions/api/index.ts:4230). 'crm' values must therefore be byte-identical to products.name — note the deliberate double spaces in 'ELIXY DNEVNA & HYALURONIC +45  50 ml'.",
+  "_priceRule": "'create' prices are the CURRENT shelf price we would sell at, taken from the clean-denar bands in reprice-2026-08.json and chosen from each product's dominant historical price point. They do NOT affect imported orders (those keep their own historical price) — they only set the catalogue. Mind the agent-commission tier boundaries at EUR 25 (1.538 den) and EUR 35 (2.153 den).",
+
+  "map": {
+    "Curcumactiv":                        { "canonical": "Curcumactiv", "crm": "Curcumactiv (500ml)" },
+    "Curcumactiv gastrointestinal tract":  { "canonical": "Curcumactiv", "crm": "Curcumactiv (500ml)" },
+
+    "Prostatol Complex":                   { "canonical": "Prostatol Complex", "crm": "Простатол Комплекс" },
+    "Prostatol Complex RS [Full Price]":   { "canonical": "Prostatol Complex", "crm": "Простатол Комплекс" },
+
+    "Uro Protect":            { "canonical": "Uro Protect", "crm": "Uro Protect" },
+    "Uro Protect FP":         { "canonical": "Uro Protect", "crm": "Uro Protect" },
+    "Uro Protect [CF27]":     { "canonical": "Uro Protect", "crm": "Uro Protect" },
+    "Uro Protect [CF40]":     { "canonical": "Uro Protect", "crm": "Uro Protect" },
+
+    "Snail Complex":   { "canonical": "Snail Complex", "crm": "Snail Complex" },
+
+    "Diabetol Forte":     { "canonical": "Diabetol Forte", "crm": "Диабетол Форте" },
+    "Diabetol Forte LP":  { "canonical": "Diabetol Forte", "crm": "Диабетол Форте" },
+
+    "Hyaluron & Aloe vera cream 35+": { "canonical": "Hyaluron & Aloe vera cream 35+", "crm": "ELIXY DNEVNA & HYALURONIC +35  50 ml" },
+    "Hyaluron & Aloe vera cream 45+": { "canonical": "Hyaluron & Aloe vera cream 45+", "crm": "ELIXY DNEVNA & HYALURONIC +45  50 ml" },
+    "Hyaluron & Aloe vera cream 55+": { "canonical": "Hyaluron & Aloe vera cream 55+", "crm": "ELIXY DNEVNA & HYALURONIC +55  50 ml" },
+
+    "Collagen Peptides":            { "canonical": "Collagen Peptides", "crm": "Колаген Пептид со ВАНИЛА 200 гр" },
+    "Collagen Peptides MK [ARK27]": { "canonical": "Collagen Peptides", "crm": "Колаген Пептид со ВАНИЛА 200 гр" },
+
+    "Dr. Slim":                 { "canonical": "Dr. Slim",   "crm": "DR.SLIM 90cps" },
+    "Brain Activ":              { "canonical": "Brain Activ", "crm": "Brain active (30cps)" },
+    "Hemoro Forte":             { "canonical": "Hemoro Forte", "crm": "Hemoro Forte" },
+    "Hepatol Forte":            { "canonical": "Hepatol Forte", "crm": "Hepatol" },
+    "Calm":                     { "canonical": "Calm", "crm": "CALM" },
+    "Sambucus Nigra":           { "canonical": "Sambucus Nigra", "crm": "САМБУКУС сирoп 250 мл" },
+    "Snail Repair Night Cream": { "canonical": "Snail Repair Night Cream", "crm": "ELIXY-Ноќен крем снаил 50ml" },
+
+    "Slim Complex + Slim Fiber": { "canonical": "Slim Complex + Slim Fiber", "crm": "SLIM Complex", "review": "A two-item bundle. The import stores one product per order, so it lands on SLIM Complex and the Slim Fiber half is invisible. 163 orders." },
+    "Broncho Protect":           { "canonical": "Broncho Protect", "crm": "Broncho Complex", "review": "Name differs (Protect vs Complex); assumed the same product. 1 order." },
+
+    "ArthroFix":            { "canonical": "ArthroFix", "create": "ArthroFix" },
+    "ArthroFix Low Price":  { "canonical": "ArthroFix", "create": "ArthroFix" },
+    "Arthrofix Neuropathy": { "canonical": "ArthroFix", "create": "ArthroFix" },
+    "Arthro Blue":          { "canonical": "Arthro Blue", "create": "Arthro Blue", "review": "Kept separate from ArthroFix — different name, 11 orders. Merge if it is the same SKU." },
+
+    "Slim Fit LP": { "canonical": "Slim Fit", "create": "Slim Fit" },
+    "SlimFit":     { "canonical": "Slim Fit", "create": "Slim Fit" },
+
+    "Urofix LP": { "canonical": "Urofix", "create": "Urofix" },
+    "Urofix FP": { "canonical": "Urofix", "create": "Urofix" },
+
+    "Neurofix LP": { "canonical": "Neurofix", "create": "Neurofix", "review": "The catalogue already has 'НЕВРО АКТИВ - 60капсули'. Different brand name, so kept separate — merge if they are the same product." },
+    "Neurofix FP": { "canonical": "Neurofix", "create": "Neurofix" },
+
+    "Parafix LP": { "canonical": "Parafix", "create": "Parafix" },
+    "Parafix FP": { "canonical": "Parafix", "create": "Parafix" },
+
+    "Cardiofix Low Price":    { "canonical": "Cardiofix", "create": "Cardiofix" },
+    "Cardiofix Hyperpotency": { "canonical": "Cardiofix", "create": "Cardiofix" },
+    "Cardiofix Full price":   { "canonical": "Cardiofix", "create": "Cardiofix" },
+
+    "ProstaFix":    { "canonical": "ProstaFix", "create": "ProstaFix", "review": "The catalogue has 'Prosta Flow 30 капсули'. Different name, kept separate." },
+    "Prostafix LP": { "canonical": "ProstaFix", "create": "ProstaFix" },
+
+    "GlucoFix":    { "canonical": "GlucoFix", "create": "GlucoFix" },
+    "GlucoFix LP": { "canonical": "GlucoFix", "create": "GlucoFix" },
+
+    "Alpha Male LP":        { "canonical": "Alpha Male", "create": "Alpha Male" },
+    "AlphaMale BioNatural": { "canonical": "Alpha Male", "create": "Alpha Male" },
+
+    "ParaDetox": { "canonical": "ParaDetox", "create": "ParaDetox" },
+
+    "Adenofrin":    { "canonical": "Adenofrin", "create": "Adenofrin" },
+    "Adenofrin LP": { "canonical": "Adenofrin", "create": "Adenofrin" },
+    "Adenofrin +":  { "canonical": "Adenofrin", "create": "Adenofrin" },
+
+    "Diet Shake":     { "canonical": "Diet Shake", "create": "Diet Shake", "review": "The catalogue has three flavoured Diet shakes at EUR 40.49; AlterCPA sold an unflavoured 'Diet Shake' at 1.490 den. Created as its own row because the flavour is unknown and the price point differs." },
+    "DietShake [OFR]": { "canonical": "Diet Shake", "create": "Diet Shake" },
+
+    "Hemorofix LP":                    { "canonical": "Hemorofix", "create": "Hemorofix" },
+    "Hemorofix FP":                    { "canonical": "Hemorofix", "create": "Hemorofix" },
+    "Hemorofix varicose vains LP":     { "canonical": "Hemorofix", "create": "Hemorofix" },
+    "Hemorofix varicose vains FP":     { "canonical": "Hemorofix", "create": "Hemorofix" },
+
+    "Gastro Aloe":     { "canonical": "Gastro Aloe", "create": "Gastro Aloe", "review": "The catalogue has 'Aloe Vera 500ml' (a drink). Gastro Aloe is sold at a different price point, so kept separate." },
+    "Gastro Protect":  { "canonical": "Gastro Protect", "create": "Gastro Protect", "review": "1 order." },
+    "R&R Melem":       { "canonical": "R&R Melem", "create": "R&R Melem" },
+    "Veno Gel":        { "canonical": "Veno Gel", "create": "Veno Gel" },
+
+    "BrainFix":    { "canonical": "BrainFix", "create": "BrainFix", "review": "Kept separate from 'Brain active (30cps)' — AlterCPA sells both names, so they are different products." },
+    "BrainFix LP": { "canonical": "BrainFix", "create": "BrainFix" },
+
+    "Liverfix LP": { "canonical": "Liverfix", "create": "Liverfix", "review": "The catalogue has 'Hepatol'. AlterCPA sells 'Hepatol Forte' separately, so Liverfix is treated as a different product." },
+    "Liverfix FP": { "canonical": "Liverfix", "create": "Liverfix" },
+
+    "Calmifix LP": { "canonical": "Calmifix", "create": "Calmifix", "review": "The catalogue has 'CALM'. AlterCPA sells 'Calm' separately, so Calmifix is treated as a different product." },
+    "Calmifix FP": { "canonical": "Calmifix", "create": "Calmifix" }
+  },
+
+  "create": {
+    "ArthroFix":       { "price_den": 1490, "cost_price": 0 },
+    "Arthro Blue":     { "price_den": 1290, "cost_price": 0 },
+    "Slim Fit":        { "price_den": 1490, "cost_price": 0 },
+    "Urofix":          { "price_den": 1490, "cost_price": 0 },
+    "Neurofix":        { "price_den": 1490, "cost_price": 0 },
+    "Parafix":         { "price_den": 1490, "cost_price": 0 },
+    "Cardiofix":       { "price_den": 1490, "cost_price": 0 },
+    "ProstaFix":       { "price_den": 2490, "cost_price": 0 },
+    "GlucoFix":        { "price_den": 2490, "cost_price": 0 },
+    "Alpha Male":      { "price_den": 1490, "cost_price": 0 },
+    "ParaDetox":       { "price_den": 1290, "cost_price": 0 },
+    "Adenofrin":       { "price_den": 1890, "cost_price": 0 },
+    "Diet Shake":      { "price_den": 1490, "cost_price": 0 },
+    "Hemorofix":       { "price_den": 1490, "cost_price": 0 },
+    "Gastro Aloe":     { "price_den": 1290, "cost_price": 0 },
+    "Gastro Protect":  { "price_den": 1290, "cost_price": 0 },
+    "R&R Melem":       { "price_den": 1490, "cost_price": 0 },
+    "Veno Gel":        { "price_den": 1490, "cost_price": 0 },
+    "BrainFix":        { "price_den": 2490, "cost_price": 0 },
+    "Liverfix":        { "price_den": 1490, "cost_price": 0 },
+    "Calmifix":        { "price_den": 1490, "cost_price": 0 }
+  }
+}

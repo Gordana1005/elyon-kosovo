@@ -13,8 +13,13 @@
  *
  *   node scripts/assert-mk-target.mjs
  *
- * The row-count ceiling (not "== 0") is deliberate: it keeps working once MK has
- * real orders, while still catching a connection to BG, which has 6-figure volume.
+ * The remote check is a PHONE-CODE fingerprint, not a row count. Bulgaria stores
+ * customer phones as +359…, Macedonia as +389… (normalizeMkPhone can only ever
+ * emit +389), so the split is definitive and — unlike a row-count ceiling — it
+ * does not decay as Macedonia grows. The old 50k ceiling would have started
+ * screaming "LIVE BULGARIA" the moment the 81,657-order AlterCPA history landed
+ * on 2026-08-05, which is exactly when you least want your tripwire crying wolf.
+ * An absolute ceiling is kept as a second net, well above any plausible MK size.
  */
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
@@ -25,7 +30,8 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const EXPECTED_REF = 'bmfxhgznttcnnlqloqzp';   // Macedonia
 const FORBIDDEN_REF = 'sxymaloycddnoxudxaqp';  // live Bulgaria — never a target
 const EXPECTED_VERCEL = 'elyon-natura';  // renamed from elyon-macedonia 2026-08-01
-const MAX_ORDERS = Number(process.env.MK_MAX_ORDERS || 50_000);
+const MAX_ORDERS = Number(process.env.MK_MAX_ORDERS || 1_000_000);
+const MAX_BG_PHONE_SHARE = 0.20;   // MK data is +389; a fifth in +359 means wrong database
 
 const fail = (msg) => { console.error(`\x1b[31m✗ ABORT\x1b[0m  ${msg}`); process.exit(1); };
 const ok = (msg) => console.log(`\x1b[32m✓\x1b[0m ${msg}`);
@@ -75,12 +81,19 @@ if (!token) fail('SUPABASE_ACCESS_TOKEN missing — cannot verify the remote tar
 const res = await fetch(`https://api.supabase.com/v1/projects/${EXPECTED_REF}/database/query`, {
   method: 'POST',
   headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-  body: JSON.stringify({ query: 'select (select count(*) from public.orders)::int as orders, current_database() as db;' }),
+  body: JSON.stringify({
+    query: `select (select count(*) from public.orders)::int as orders,
+                   (select count(*) from public.orders where customer_phone like '+359%')::int as bg_phones,
+                   current_database() as db;`,
+  }),
 });
 if (!res.ok) fail(`Management API query failed: ${res.status} ${await res.text()}`);
 const [row] = await res.json();
 if (row.orders > MAX_ORDERS)
-  fail(`remote has ${row.orders} orders (ceiling ${MAX_ORDERS}). This looks like LIVE BULGARIA, not Macedonia.`);
-ok(`remote ${EXPECTED_REF} reachable — ${row.orders} orders (under ${MAX_ORDERS} ceiling)`);
+  fail(`remote has ${row.orders} orders (ceiling ${MAX_ORDERS}). This does not look like Macedonia.`);
+const bgShare = row.orders ? row.bg_phones / row.orders : 0;
+if (bgShare > MAX_BG_PHONE_SHARE)
+  fail(`remote has ${row.bg_phones} of ${row.orders} orders on +359 phones (${(bgShare * 100).toFixed(1)}%). This looks like LIVE BULGARIA, not Macedonia.`);
+ok(`remote ${EXPECTED_REF} reachable — ${row.orders} orders, ${row.bg_phones} on +359 (${(bgShare * 100).toFixed(1)}%, ceiling ${MAX_BG_PHONE_SHARE * 100}%)`);
 
 console.log('\n\x1b[32mTarget confirmed: Macedonia.\x1b[0m Safe to proceed.\n');

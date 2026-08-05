@@ -65,4 +65,19 @@ docs/how-it-works.md
 # Local secrets vault — NEVER commit (real tokens/passwords live here)
 docs/VAULT.md
 
+# ── AlterCPA / collabBox history import (2026-08-05) ──
+# Customer PII and bulk data. The raw export alone is 69 MB of names, phones and
+# addresses for 81k orders; the collabBox registers and the correction audit are
+# name-bearing too. All of them are regenerable:
+#   node scripts/export-altercpa-mk.mjs        → altercpa-mk-raw.jsonl
+#   node scripts/match-collabbox.mjs --apply   → collabbox-corrections.*
+# The curated, reviewable artefacts (product map, analysis, correction summary)
+# ARE committed — those are decisions, not customer data.
+scripts/data/altercpa-mk-raw.jsonl
+scripts/data/altercpa-import-done.txt
+scripts/data/altercpa-import-payload-sample.json
+scripts/data/collabbox-corrections.csv
+LeadIn*.xls
+LeadOut*.xls
+
 .vercel
