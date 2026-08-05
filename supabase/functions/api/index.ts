@@ -6537,13 +6537,12 @@ async function handleRequest(req: Request): Promise<Response> {
         return q;
       });
 
-      // Fetch period orders by created_at for trend/funnel data
-      const periodOrders = await paginate<any>(() => {
-        let q = adminClient.from("orders").select("id, status, price, quantity, created_at, updated_at, assigned_agent_id, assigned_agent_name, product_id").gte("created_at", fromDate).lte("created_at", toDate)
-          .or("source_type.is.null,source_type.neq.monadon_legacy"); // exclude Monadon legacy (another company's revenue)
-        if (agentFilter) q = q.eq("assigned_agent_id", agentFilter);
-        return q;
-      });
+      // Period orders (trend/funnel) are the SAME rows as financialOrders: same
+      // created_at window, same source_type exclusion, same agent filter, and a
+      // strict subset of the columns. Fetching them again doubled the work —
+      // two full streams of the orders table on every request, and on
+      // `period=all` that meant the whole table twice.
+      const periodOrders = financialOrders;
 
       // Fetch products for cost_price lookup
       const { data: allProducts } = await adminClient.from("products").select("id, cost_price");
