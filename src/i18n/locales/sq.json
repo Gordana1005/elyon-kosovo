@@ -49,6 +49,10 @@
     "cancelReasonRequiredDesc": "Zgjidh një arsye para se të ruash.",
     "cancelNoteRequired": "Kërkohet koment",
     "cancelNoteRequiredDesc": "Shkruaj një koment për arsyen 'Tjetër' para se të ruash.",
+    "trashReasonRequired": "Kërkohet arsyeja e hedhjes",
+    "trashReasonRequiredDesc": "Zgjidh pse kjo porosi shkon në kosh para se të ruash.",
+    "trashNoteRequired": "Kërkohet koment",
+    "trashNoteRequiredDesc": "Shkruaj një koment për 'Arsye tjetër' para se të ruash.",
     "namePhoneRequired": "Kërkohet emri dhe telefoni",
     "namePhoneRequiredDesc": "Të lutem plotëso emrin dhe telefonin e klientit para konfirmimit.",
     "productsRequired": "Kërkohen produkte",
@@ -224,8 +228,12 @@
     "wrong_person": "U përgjigj personi i gabuar",
     "rude": "Personi është i vrazhdë",
     "uncooperative": "Nuk bashkëpunon",
+    "duplicate_order": "Porosi e dyfishtë",
     "other": "Arsye tjetër",
     "not_reachable": "I paarritshëm (nuk përgjigjet)"
+  },
+  "trashPicker": {
+    "notesLabel": "Shënim (opsional)"
   },
   "chooseAnswer": {
     "button": "Zgjidh përgjigjen",
@@ -1496,6 +1504,11 @@
     "chooseList": "Zgjidhni një listë",
     "listsCount_one": "{{count}} listë",
     "listsCount_other": "{{count}} lista",
+    "pendingsQueue": "Në pritje",
+    "queueCountPendings": "{{left}} ({{talked}} të folur)",
+    "pendingsWaiting_one": "{{count}} klient në pritje — kalo te Në pritje",
+    "pendingsWaiting_other": "{{count}} klientë në pritje — kalo te Në pritje",
+    "pendingsEmptyDesc": "Nuk ka më klientë në pritje për të thirrur tani. Kalo radhën në një listë parashikimi për të vazhduar punën.",
     "dialBtn": "Telefono {{phone}}",
     "markedAs": "Shënuar si",
     "stayHint": ". Qëndro te ky klient nëse të duhet të krijosh porosi ose të redaktosh shënime.",

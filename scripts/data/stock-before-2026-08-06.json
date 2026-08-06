@@ -1,0 +1,618 @@
+[
+  {
+    "id": "41dcd909-4d23-47d5-869b-3d8c266b72a8",
+    "sku": "SKU-000001",
+    "name": "DR.SLIM 90cps",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "4f30d74c-c348-4a0e-a97c-c1fca809f973",
+    "sku": "SKU-000002",
+    "name": "ELIXY DNEVNA & HYALURONIC +35  50 ml",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "14b42fc6-0d81-48fe-9a0e-b575d00ed04f",
+    "sku": "SKU-000003",
+    "name": "ELIXY DNEVNA & HYALURONIC +45  50 ml",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "340622dc-77e0-446e-88c4-33a5be732c8a",
+    "sku": "SKU-000004",
+    "name": "ELIXY DNEVNA & HYALURONIC +55  50 ml",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "146a38e1-6d48-4b85-8263-02d3840d534b",
+    "sku": "SKU-000005",
+    "name": "ELIXY-Шампон Алое вера 500 мл.",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "6192e30a-2f1a-4e68-b830-aa2083a8fe80",
+    "sku": "SKU-000006",
+    "name": "Jade Roler",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "a93a0b66-1aca-408d-a3c3-57b6a3316ab4",
+    "sku": "SKU-000007",
+    "name": "MAGNESIUM CITRAT 325mg",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "bc762089-2db5-4513-afd1-452dc50c4f61",
+    "sku": "SKU-000008",
+    "name": "NUTRI SHAKE- strawberry 500 g",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "bcd0186d-c0ae-43c9-bcef-ee35bc6d7edd",
+    "sku": "SKU-000009",
+    "name": "NUTRI SHAKE-chocolate 500 g",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "e007acd2-7081-43fa-87d0-004f7f8528a3",
+    "sku": "SKU-000010",
+    "name": "Prosta Flow 30 капсули",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "4a8748bc-f7eb-4815-bf96-24365c379580",
+    "sku": "SKU-000011",
+    "name": "SLIM Complex",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "90f36677-e8ad-4b5a-984a-cc150d95ab4d",
+    "sku": "SKU-000012",
+    "name": "SLIM Fiber",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "3894faab-8496-4d2a-8ed5-6bf683554881",
+    "sku": "SKU-000013",
+    "name": "Slimrush 30 капсули",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "7a2c40a2-a2ce-49ea-b2ff-57368b6fc4f5",
+    "sku": "SKU-000014",
+    "name": "TURMERIC BOOST - Куркума буст - 500мл.",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "080f3cca-96d6-4030-b4a9-989561ecf4a0",
+    "sku": "SKU-000015",
+    "name": "Vitamin B6",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "b62c03cc-e713-4f53-9eef-6a13c6b9dc76",
+    "sku": "SKU-000016",
+    "name": "Vitamin C complex",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "6f6d938b-3aec-46f4-952d-042e374309e8",
+    "sku": "SKU-000017",
+    "name": "Vitamin D3",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "7b9798fb-9c05-422d-9203-4e96f8a02d74",
+    "sku": "SKU-000018",
+    "name": "Whey Protein 1.5 kg с вкус на ванилия",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "07c2bff3-387a-46ec-b1aa-70dee96aa7c8",
+    "sku": "SKU-000019",
+    "name": "Whey Protein 1.5 kg с вкус на шоколад",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "5c445088-0d6e-4289-a9cc-13abeddfc287",
+    "sku": "SKU-000020",
+    "name": "Zinc 30 cps",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "6e180f62-aa41-425a-b5b7-ed7443b81345",
+    "sku": "SKU-000021",
+    "name": "Амино Енерджи Бустер - 500 мл.",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "bef8a560-6d62-4378-9159-fa765cc8b9a2",
+    "sku": "SKU-000022",
+    "name": "АШВАГАНДА  ЕКСТРАКТ 60/1 cps",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "931cb587-1f07-4687-a337-0ac9c788c700",
+    "sku": "SKU-000023",
+    "name": "ВИТАМИН Б6 365/1 таб",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "fb450a97-8fde-4591-99d5-83b3caa7ce93",
+    "sku": "SKU-000024",
+    "name": "ВИТАМИН Д3 365/1 таб",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "fe3d1bf9-67ba-40ab-ab7e-7e341bd3d6ed",
+    "sku": "SKU-000025",
+    "name": "ДР.СЛИМ РАСТИТЕЛЕН 210 гр",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "40bc32d1-6b42-4f12-95b9-a078ad855953",
+    "sku": "SKU-000026",
+    "name": "МАЧА с КОЛАГЕН 175 гр",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "20aa7e33-be8c-495b-a925-d34addf7e105",
+    "sku": "SKU-000027",
+    "name": "МЕЛАТОНИН 365/1 таб",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "a35cb6a4-83eb-4366-8b13-92b596191be0",
+    "sku": "SKU-000028",
+    "name": "САМБУКУС сирoп 250 мл",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "54ee17b2-b88e-4f6d-bcdf-778560d9a4ad",
+    "sku": "SKU-000029",
+    "name": "ЦИНК 365/1 таб",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "2d8b0b05-9107-4dbf-a688-13b229b2b27c",
+    "sku": "SKU-000030",
+    "name": "A4 - antioxidant matrix",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "a5ce461e-69cb-409e-8295-4badfb20a70f",
+    "sku": "SKU-000031",
+    "name": "Aloe Vera 500ml",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "d9cc33fa-712e-4b81-ae31-2f750050ca35",
+    "sku": "SKU-000032",
+    "name": "BCAA powder 200 gr.",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "bac77d4a-c001-481a-b36e-d359b9d0ddb4",
+    "sku": "SKU-000033",
+    "name": "Brain active (30cps)",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "d3e4dc26-5455-4f7e-b01d-a538d553daf6",
+    "sku": "SKU-000034",
+    "name": "Broncho Complex",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "b633d588-a950-40ee-971a-e20c7da869be",
+    "sku": "SKU-000035",
+    "name": "C 1000",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "ac669597-6a08-4aa8-9fe5-f8e1da520852",
+    "sku": "SKU-000036",
+    "name": "CALM",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "846585d0-ab2a-4ec5-a3d3-1734d40a0752",
+    "sku": "SKU-000037",
+    "name": "CHIA THERAPY - с вкус на диня",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "6bb98d83-297a-455f-b61b-dedd449eb982",
+    "sku": "SKU-000038",
+    "name": "CHIA THERAPY - с вкус на ябълка",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "7bcae7de-f6a2-47aa-b6ad-3a3bc423b8e6",
+    "sku": "SKU-000039",
+    "name": "CREATINE powder 200 gr.",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "8e24764d-f01f-4104-9d83-73135a0aaf25",
+    "sku": "SKU-000040",
+    "name": "Curcumactiv (500ml)",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "8d63179a-3f49-44b3-868c-687c6e576aed",
+    "sku": "SKU-000041",
+    "name": "Diet shake chocolate 500g",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "40f401f0-b00d-4d09-a2f9-e119a2ab645a",
+    "sku": "SKU-000042",
+    "name": "Diet shake strawberry  500g",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "18f6fe44-1682-4494-a3e6-57312a8f9eac",
+    "sku": "SKU-000043",
+    "name": "Diet shake vanilla  500g",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "d9aa8e45-1c04-4fee-b031-433759006fe1",
+    "sku": "SKU-000044",
+    "name": "ELIXY Серум со 20%снаил екстракт",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "30add053-f69a-4903-954d-50645540bdaa",
+    "sku": "SKU-000045",
+    "name": "ELIXY Серум со витамин Ц",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "bcc3c57d-7526-4e15-ab2f-8f9850a03a03",
+    "sku": "SKU-000046",
+    "name": "ELIXY-hyaluronic acid-collagen&aloe vera",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "1e01b8be-e04d-460a-adb1-8adf96a348ef",
+    "sku": "SKU-000047",
+    "name": "ELIXY-Дневенкрем снаил 50ml",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "3231056c-16ea-453f-92ee-82431a92d770",
+    "sku": "SKU-000048",
+    "name": "ELIXY-Ноќен крем снаил 50ml",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "7d7dc5e9-a7b5-46b3-8df2-a250f7c0abd7",
+    "sku": "SKU-000049",
+    "name": "Enduro Max 30 капсули",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "35a1cda5-23ac-49af-8c74-5e104f87954c",
+    "sku": "SKU-000050",
+    "name": "Femme 7",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "cf71eecc-5289-4e4b-bfa0-93d19ad204e7",
+    "sku": "SKU-000051",
+    "name": "Hemoro Forte",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "a05eabed-4e65-4fe8-b3f4-62300fcbbb3a",
+    "sku": "SKU-000052",
+    "name": "Hepatol",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "10a7caaf-0fdc-4814-b9eb-fa0e7d09ff83",
+    "sku": "SKU-000053",
+    "name": "Hyaluron 5",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "9f63c2a4-93d3-41a2-9e0b-683b2fafe8c2",
+    "sku": "SKU-000054",
+    "name": "IMMUNO BOOST - с вкус на къпина, лимон и лайм",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "0b987872-fdca-4f7d-87d6-1dd703060ecd",
+    "sku": "SKU-000055",
+    "name": "IMMUNO BOOST - с вкус на портокал и ананас",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "0f6b402d-b313-4733-b52f-616b81e1bb3d",
+    "sku": "SKU-000056",
+    "name": "L-GLUTAMINE powder 200 gr.",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "c7ae112b-8cea-4701-9f19-c2e1efb8a173",
+    "sku": "SKU-000057",
+    "name": "OSTEOfix",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "29522a67-b9e6-4766-bad5-08afacc1f240",
+    "sku": "SKU-000058",
+    "name": "Reishi",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "1a1016fd-6c55-45d8-82dd-eb4b78a79a08",
+    "sku": "SKU-000059",
+    "name": "SAW Palmetto",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "7ec6ce03-0c4a-46bf-98ca-c716dfe9df15",
+    "sku": "SKU-000060",
+    "name": "Snail Complex",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "30141f7d-f252-4934-a063-57c5004f42d1",
+    "sku": "SKU-000061",
+    "name": "Tribulus",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "a09d70c8-ca38-49d0-965a-3175978e33b3",
+    "sku": "SKU-000062",
+    "name": "Uro Protect",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "bc755924-17bd-4b5d-b761-956403be4446",
+    "sku": "SKU-000063",
+    "name": "Диабетол Форте",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "6836933e-8fff-4ddd-b4f9-b43b10b67d33",
+    "sku": "SKU-000064",
+    "name": "Колаген Пептид со ВАНИЛА 200 гр",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "324b60bd-05f2-4446-9a77-d47b52f49e97",
+    "sku": "SKU-000065",
+    "name": "НЕВРО АКТИВ - 60капсули",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "2c793617-610a-4c87-b915-50cb2babcd9e",
+    "sku": "SKU-000066",
+    "name": "Простатол Комплекс",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "50482997-a856-4ba6-ab14-073bbd6c377b",
+    "sku": "SKU-000067",
+    "name": "ХОЛЕСТОЛ КОМПЛЕКС 30 cps",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "ab09eec7-638e-44a7-ab83-1b820df4c9cb",
+    "sku": "SKU-000068",
+    "name": "ArthroFix",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "8ae08430-37c3-438a-b3cc-0d713bbfbc6a",
+    "sku": "SKU-000069",
+    "name": "ProstaFix",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "e25e349c-377e-45fb-9307-991573ac05ae",
+    "sku": "SKU-000070",
+    "name": "GlucoFix",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "bdc79d87-8e42-430d-8925-c3b010ca257f",
+    "sku": "SKU-000071",
+    "name": "Slim Fit",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "fae40061-d8ad-4025-9de0-3dea17daff71",
+    "sku": "SKU-000072",
+    "name": "Urofix",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "7755d5c0-66ee-4ec6-93ae-fe7b8a47f4c6",
+    "sku": "SKU-000073",
+    "name": "Neurofix",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "92ffb0db-e8c0-433e-bc54-707c1281f380",
+    "sku": "SKU-000074",
+    "name": "Parafix",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "17e1f647-8091-4434-9fac-94ffc21c00d7",
+    "sku": "SKU-000075",
+    "name": "Cardiofix",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "d65b038a-3779-4bed-9e61-2d4916259e9e",
+    "sku": "SKU-000076",
+    "name": "Adenofrin",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "cf38ad20-8608-4a81-b852-d9b5c7d3e0cc",
+    "sku": "SKU-000077",
+    "name": "Alpha Male",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "d14984b1-5fc5-41bc-80a4-95ba6e453b18",
+    "sku": "SKU-000078",
+    "name": "ParaDetox",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "f5e7af71-357a-4186-86fd-d7568fcb9b8d",
+    "sku": "SKU-000079",
+    "name": "Diet Shake",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "1395475b-b4a4-41cf-92ba-118d3d9af794",
+    "sku": "SKU-000080",
+    "name": "Hemorofix",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "f9efaf2a-84ba-49f6-9de0-b9d859f8665e",
+    "sku": "SKU-000081",
+    "name": "Gastro Aloe",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "680772d4-9e51-4a5f-ae72-491a0193e9e9",
+    "sku": "SKU-000082",
+    "name": "R&R Melem",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "e0a4c01f-f06b-4f49-98b3-f0de309f7992",
+    "sku": "SKU-000083",
+    "name": "BrainFix",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "3a754b34-11cd-4fba-8913-6acb3b6ccf76",
+    "sku": "SKU-000084",
+    "name": "Veno Gel",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "24131855-afee-4caf-9075-d051a24c2782",
+    "sku": "SKU-000085",
+    "name": "Arthro Blue",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "4c15f7f7-7eaf-4112-8e47-53d3e2468ad3",
+    "sku": "SKU-000086",
+    "name": "Liverfix",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "03ad93d6-5b28-4fbd-84a3-03629d3ab3d3",
+    "sku": "SKU-000087",
+    "name": "Calmifix",
+    "stock_quantity": 0,
+    "is_active": true
+  },
+  {
+    "id": "820f88a4-a607-42fd-a175-4fd9ed5e7cc4",
+    "sku": "SKU-000088",
+    "name": "Gastro Protect",
+    "stock_quantity": 0,
+    "is_active": true
+  }
+]

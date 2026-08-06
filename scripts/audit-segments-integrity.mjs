@@ -15,9 +15,15 @@
 //   7. Real "Last order" prices on every paid-bucket member.
 //   8. Nightly pg_cron job present + member data fresh (<26h).
 //   9. Nobody parked in Current Cancels longer than the configured window.
-//  10. Current Returns membership exactly matches "newest order is a return".
-//  11. Trash List membership matches "newest order is a trash (any reason)".
-//  12. "Due to Reorder" members are genuinely due (only when reorder is enabled).
+//  10. Current Returns membership matches "newest order is a return", except
+//      that engine v3.7-mk sticky trash outranks it (a trashed customer is never
+//      callable, additive mirrors included).
+//  11. Trash List membership matches the engine v3.7-mk STICKY TRASH rule: in
+//      for any reason except not_reachable and duplicate_order, and out again
+//      only if they have PAID since; a not_reachable trash is held 21 days from
+//      trashed_at (or until they pay), then released.
+//  12. No sticky-trashed phone is sitting in a calling (rule-driven) list.
+//  13. "Due to Reorder" members are genuinely due (only when reorder is enabled).
 
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -126,6 +132,35 @@ if (activeEngine === 'v4') {
     fn ? (fn.comment || '').slice(0, 60) : 'function missing');
 }
 
+// Engine v3.7-mk sticky trash, expressed once so the three checks below cannot
+// drift from each other or from the SQL function. Mirrors the detection block in
+// 20260913000200_segment_engine_v3_7_sticky_trash.sql exactly:
+//   • PERMANENT  — any trash reason except not_reachable and duplicate_order,
+//                  UNLESS the customer has paid since (money releases them).
+//   • PARKED     — a not_reachable trash younger than 21 days, same paid escape.
+//   • duplicate_order is not a trash of the customer at all.
+const STICKY_TRASH_CTE = `
+       (select customer_phone,
+               max(created_at) as max_all,
+               max(created_at) filter (where status = 'returned') as max_ret,
+               max(coalesce(trashed_at, created_at))
+                 filter (where status = 'trashed'
+                           and trash_reason is distinct from 'not_reachable'
+                           and trash_reason is distinct from 'duplicate_order') as perm_at,
+               max(coalesce(trashed_at, created_at))
+                 filter (where status = 'trashed' and trash_reason = 'not_reachable') as unreach_at,
+               max(created_at) filter (where status = 'paid') as paid_at
+        from orders where source_type is distinct from 'monadon_legacy'
+        group by customer_phone)`;
+
+const PERM_TRASHED =
+  `(pd.perm_at is not null and (pd.paid_at is null or pd.paid_at <= pd.perm_at))`;
+
+const PARKED_UNREACHABLE =
+  `(not ${PERM_TRASHED} and pd.unreach_at is not null
+    and now() - pd.unreach_at < interval '21 days'
+    and (pd.paid_at is null or pd.paid_at <= pd.unreach_at))`;
+
 // 2-7. data invariants in one pass (boundaries injected from the active config)
 const [d] = await q(`
   select
@@ -163,6 +198,7 @@ const [d] = await q(`
     (select count(*) from prediction_segment_members m
        join prediction_segment_lists l on l.id = m.list_id
        where l.name = 'FULL MONAD LIST') as full_monad,
+    (select count(*) from orders where source_type = 'monadon_legacy') as monadon_orders,
     (select count(*) from prediction_segment_members m
        join prediction_segment_lists l on l.id = m.list_id
        where l.is_static = false and l.trigger_event = 'last_paid' and l.name not like 'Never-%'
@@ -171,28 +207,28 @@ const [d] = await q(`
        join prediction_segment_lists l on l.id = m.list_id
        where l.name = 'Current Cancels'
          and m.trigger_event_at < now() - interval '${cancelsDays + 1} days') as cancels_overdue,
-    (select count(*) from
-       (select customer_phone, max(created_at) as max_all,
-               max(created_at) filter (where status = 'returned') as max_ret
-        from orders where source_type is distinct from 'monadon_legacy'
-        group by customer_phone) pd
-     where (pd.max_ret is not null and pd.max_ret = pd.max_all)
+    (select count(*) from ${STICKY_TRASH_CTE} pd
+     where (pd.max_ret is not null and pd.max_ret = pd.max_all
+            -- engine v3.7-mk: sticky trash outranks the returns mirror. A
+            -- trashed customer is never callable, Current Returns included.
+            and not ${PERM_TRASHED} and not ${PARKED_UNREACHABLE})
         is distinct from exists(
           select 1 from prediction_segment_members m
           join prediction_segment_lists l on l.id = m.list_id
           where l.name = 'Current Returns' and m.customer_phone = pd.customer_phone)
     ) as returns_violations,
-    (select count(*) from
-       (select customer_phone, max(created_at) as max_all,
-               max(created_at) filter (where status = 'trashed') as max_t
-        from orders where source_type is distinct from 'monadon_legacy'
-        group by customer_phone) pd
-     where (pd.max_t is not null and pd.max_t = pd.max_all)
+    (select count(*) from ${STICKY_TRASH_CTE} pd
+     where (${PERM_TRASHED} or ${PARKED_UNREACHABLE})
         is distinct from exists(
           select 1 from prediction_segment_members m
           join prediction_segment_lists l on l.id = m.list_id
           where l.name = 'Trash List' and m.customer_phone = pd.customer_phone)
     ) as trashed_violations,
+    (select count(*) from prediction_segment_members m
+       join prediction_segment_lists l on l.id = m.list_id and l.is_static = false
+       join ${STICKY_TRASH_CTE} pd on pd.customer_phone = m.customer_phone
+     where ${PERM_TRASHED} or ${PARKED_UNREACHABLE}
+    ) as trashed_in_calling_lists,
     (select max(m.updated_at) from prediction_segment_members m
        join prediction_segment_lists l on l.id = m.list_id and l.is_static = false) as freshest`);
 
@@ -200,12 +236,22 @@ check('One list per phone (exclusivity)', d.dup_phones === 0, `${d.dup_phones} d
 check('Frequency labels literally true', d.freq_violations === 0, `${d.freq_violations} violations`);
 check('All members inside their recency band', d.out_of_band === 0, `${d.out_of_band} out of band`);
 check('No paid customer missing from lists', d.paid_phones_unlisted === 0, `${d.paid_phones_unlisted} unlisted`);
-check('No Monadon phones in calling lists', d.legacy_in_rule_lists === 0 && d.full_monad > 0,
-  `${d.legacy_in_rule_lists} polluting, FULL MONAD ${d.full_monad}`);
+// Two separate things: (a) no monadon_legacy phone has leaked into a calling
+// list, and (b) if a Monadon import exists at all, its static list is intact.
+// Bulgaria always has one, so the original check hard-required full_monad > 0.
+// Macedonia has never run the Monadon import (0 monadon_legacy orders, no list),
+// so demanding a non-empty list there is a guaranteed red line that would mask
+// the real half of the check. Assert (b) only when there is an import to guard.
+check('No Monadon phones in calling lists',
+  d.legacy_in_rule_lists === 0 && (d.monadon_orders === 0 || d.full_monad > 0),
+  d.monadon_orders === 0
+    ? `${d.legacy_in_rule_lists} polluting (no Monadon import in this market)`
+    : `${d.legacy_in_rule_lists} polluting, FULL MONAD ${d.full_monad}`);
 check('Real Last-order price on paid buckets', d.paid_bucket_zero_price === 0, `${d.paid_bucket_zero_price} zero-price`);
 check(`Nobody parked in Current Cancels > ${cancelsDays}d`, d.cancels_overdue === 0, `${d.cancels_overdue} overdue`);
-check('Current Returns matches "newest order is a return"', d.returns_violations === 0, `${d.returns_violations} mismatches`);
-check('Trash List matches "newest order is a trash (any reason)"', d.trashed_violations === 0, `${d.trashed_violations} mismatches`);
+check('Current Returns matches "newest is a return" (minus sticky trash)', d.returns_violations === 0, `${d.returns_violations} mismatches`);
+check('Trash List matches sticky-trash rule (unpaid-since, or unreachable < 21d)', d.trashed_violations === 0, `${d.trashed_violations} mismatches`);
+check('No sticky-trashed phone in any calling list', d.trashed_in_calling_lists === 0, `${d.trashed_in_calling_lists} still callable`);
 
 const freshHours = (Date.now() - new Date(d.freshest).getTime()) / 3600000;
 check('Member data fresh (< 26h)', freshHours < 26, `freshest ${freshHours.toFixed(1)}h ago`);

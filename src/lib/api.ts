@@ -278,6 +278,17 @@ export const apiGetOrders = (params?: { status?: string; search?: string; agent_
 };
 export const apiGetOrder = (id: string) => apiFetch(`orders/${id}`);
 
+// Counts behind the "Pendings" queue entry on /calls. Always the caller's own
+// book — the endpoint takes no agent_id.
+export interface MyPendingsSummary {
+  ready: number;        // callable right now
+  open: number;         // incl. leads parked by a no-answer
+  parked: number;       // open - ready
+  talked_today: number; // leads I resolved today (Europe/Skopje)
+}
+export const apiGetMyPendingsSummary = (): Promise<MyPendingsSummary> =>
+  apiFetch('my-pendings-summary');
+
 export interface CreateOrderBody {
   product_id?: string | null;
   product_name: string;
@@ -673,10 +684,15 @@ export type CancellationReason =
   | 'family_refused' | 'duplicate_order' | 'not_satisfied' | 'price_too_high'
   | 'still_using_product' | 'not_interested' | 'will_call_back' | 'other';
 
-// Agent-facing trash reasons (the picker in ChooseAnswerButton). 'not_reachable'
-// is server-only (5-no-answer auto-trash) so it's not part of this input union.
+// Trash reasons. The pickable list + its order live in src/lib/trashReasons.ts
+// (TRASH_REASON_VALUES); this union is just the type. 'not_reachable' is also
+// written server-side by the 9-no-answer auto-trash, and 'duplicate_order' is
+// the lead de-duplication reason (engine v3.7 keeps those out of the Trash
+// List). Keep in sync with orders_trash_reason_check and the three zod enums in
+// supabase/functions/api/index.ts.
 export type TrashReason =
-  | 'wrong_number' | 'wrong_person' | 'rude' | 'uncooperative' | 'other';
+  | 'wrong_number' | 'wrong_person' | 'not_reachable' | 'rude' | 'uncooperative'
+  | 'duplicate_order' | 'other';
 
 export type ConnectionState = 'answered' | 'no_answer' | 'busy' | 'failed' | 'voicemail';
 

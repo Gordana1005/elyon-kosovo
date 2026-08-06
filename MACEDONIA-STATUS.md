@@ -17,7 +17,7 @@ operation. It shares **nothing at runtime** with Bulgaria (own repo / own Supaba
 ## 🟢 Current state
 
 - **Frontend (Vercel):** https://elyon-natura.vercel.app (`gordanas-projects-a53c0208/elyon-natura`, GitHub-connected → **push to `main` auto-deploys production**)
-- **Backend (Supabase):** `bmfxhgznttcnnlqloqzp` — **161 migrations applied**, edge function `api` deployed, `WEBHOOK_SECRET` set, `pg_cron` on.
+- **Backend (Supabase):** `bmfxhgznttcnnlqloqzp` — **172 migrations applied**, edge function `api` deployed (v18, 2026-08-06), `WEBHOOK_SECRET` set, `pg_cron` on.
 - **Data (2026-08-05): the historical order book is LOADED.** 80.360 orders · 47.231 customers ·
   56.807 prediction-list memberships. 0 call logs. **88 products** (67 + 21 created for the import),
   46 carrying a real unit cost.
@@ -67,6 +67,35 @@ Merged 3-way against the fork point (BG@`25561ef`): 69 fast-forwards, 21 merges,
 **Deliberately NOT ported:** the BigArena stock-sync upload — its parser reads the Bulgarian
 fulfilment panel's Cyrillic headers (`Свободна наличност`, `Баркод`) and MK uses a different
 provider. Its parser lib *is* present because `BigArenaStatusSync` imports from it.
+
+### Pendings queue + sticky trash + full stock — done 2026-08-06
+
+Ported BG's `875abaa` (trash reasons everywhere, Pendings queue on /calls) and rewrote its engine
+v3.7 for Macedonia. Migrations `20260913000000` … `20260913000300`, edge function v18.
+
+- **Pendings are visible in the /calls queue strip.** A virtual entry, **always first**,
+  auto-selected, fed by the new `GET /my-pendings-summary` (own book only, no `agent_id` param).
+  Picking a prediction list pins it; waiting leads then show as an amber badge instead of hijacking
+  the screen. No segment list was created — the entry is synthetic (`PENDINGS_QUEUE_ID`).
+- **Trash is STICKY (engine v3.7-mk).** Every reason now removes the phone from every calling band,
+  and a later pending/cancel/return no longer releases it. **Two deliberate deviations from BG:**
+  a **paid order after the trash releases** the customer, and **`duplicate_order`** is housekeeping
+  (stays callable, never in the Trash List). Live impact: calling members **38.307 → 35.812**,
+  Trash List **9.528 → 11.398**. `not_reachable` still parks only 21 days.
+- ⚠️ **`orders.trashed_at` needed a correction migration** (`20260913000300`). The generic backfill
+  chain is `order_history → updated_at → created_at`, and all 17.714 imported trashes have zero
+  history rows, so they all collapsed onto the import timestamp — which would have silently
+  disabled the paid-release test for the entire historical book. Any future bulk import must stamp
+  `trashed_at` from the real order date.
+- **Warehouse: all 88 products set to 1.000 packages** via `scripts/set-stock-mk.mjs` (absolute set
+  + one paired `inventory_logs` row each; the additive `POST /api/restock` cannot do this). Snapshot
+  for rollback: `scripts/data/stock-before-2026-08-06.json`.
+- **Cancel list needed no change** — the 14-day park and the automatic return to the band computed
+  from last-paid date + order count already worked; verified live (`0 overdue`, cron `0 0 * * *`
+  active) and pinned by the new fixture.
+- New verifier: **`node scripts/verify-sticky-trash-mk.mjs`** (8 behavioural cases). Audit is
+  **13/14** — the standing failure is *705 zero-price paid buckets*, an import data gap (1.199 paid
+  orders with `price = 0`), not an engine fault. Live↔shadow parity **0**.
 
 ### Market layer (Macedonia)
 

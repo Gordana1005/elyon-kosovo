@@ -79,6 +79,11 @@ target **explicitly** and verify it before running:
   Macedonian carrier confirms the column contract** (it is BigArena's Bulgarian 3PL format).
 - **Telephony:** deferred (Phase 2). `VITE_USE_REAL_VOIP=false`; PBX/DID values are BG placeholders.
   The VOIP minutes bundle is seeded at 0 — there is no MK carrier contract.
+- **Trash is STICKY here (engine v3.7-mk, 2026-08-06)** and differs from Bulgaria in two ways on
+  purpose: (1) a **paid order after the trash releases** the customer — BG deletes them forever,
+  we keep them, because 2.391 Macedonian customers had already paid us *after* being trashed;
+  (2) **`duplicate_order` is housekeeping**, so it never removes anyone from a calling band and
+  never enters the Trash List. Do not "align with BG" on either.
 - Search the code for `TODO(mk)` to find every unfinished real-value spot.
 
 ## Grok Skills System
@@ -96,7 +101,7 @@ before non-trivial work on money, phones, warehouse, stock, webhooks, or fulfilm
 - `elyon-stock-and-bigarena` — Stock movements, import rules, and historical operator decisions.
 - `elyon-agent-commissions` — Per-package agent bonuses on every PAID order (only gate is paid; source irrelevant), tiered 1/2/3€ by unit price, no minimum, credited to the confirmer. Read before touching any payout/commission math.
 - `elyon-notifications` — The bell, the 6 notification types, the English-in-DB + `meta.i18n` translation contract, owner = confirmer, and the unpaid-delivery chase job.
-- `elyon-segments-and-prediction` — The name-construction engine (v3.6), the exclusivity rule, holding pens (Current Cancels 14d, NEWCOMERS 21d), carry-over, and the nightly recompute. Law for anything touching prediction lists.
+- `elyon-segments-and-prediction` — The name-construction engine (**v3.7-mk, sticky trash**), the exclusivity rule, holding pens (Current Cancels 14d, NEWCOMERS 21d, Trash List), carry-over, and the nightly recompute. Law for anything touching prediction lists.
 - `elyon-assigner` — Distribution + the Unassign tab, agent workload truth, and the live agent status tile.
 - `elyon-voip-and-pbx` — The A1 trunk, Asterisk/FreePBX, the WebRTC softphone and recordings. BG-specific; MK telephony is deferred.
 - `elyon-i18n` — EN/BG/SQ/MK: every user-visible string goes through i18n in all four locales, no exceptions.

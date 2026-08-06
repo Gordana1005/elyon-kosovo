@@ -3,6 +3,16 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 
+/**
+ * Sentinel list_id for the VIRTUAL "Pendings" queue entry. Assigned leads
+ * (orders.status='pending') are not prediction segment members, so they have no
+ * real list row — but agents must be able to see how many they have left and
+ * switch to them at will, which means they need a seat in the same queue
+ * dropdown. CallsPage prepends the entry; everything list-scoped in here must
+ * short-circuit on it so the sentinel never reaches PostgREST as a UUID.
+ */
+export const PENDINGS_QUEUE_ID = '__pendings__';
+
 export interface QueueListSummary {
   list_id: string;
   list_name: string;
@@ -10,6 +20,10 @@ export interface QueueListSummary {
   display_order: number;
   total: number;
   remaining: number;
+  /** Set only on the virtual Pendings entry — changes how the label renders. */
+  is_pendings?: boolean;
+  /** Pendings only: leads this agent already resolved today. */
+  talked?: number;
 }
 
 export interface QueueMember {
@@ -82,7 +96,9 @@ export function useMyQueue(activeListId: string | null, onMembersLoaded?: (listI
   const members = useQuery<QueueMember[]>({
     queryKey: ['my-queue-members', user?.id, activeListId],
     queryFn: async () => {
-      if (!user || !activeListId) return [];
+      // The Pendings sentinel is not a real list — leads are served straight
+      // from the orders query in CallsPage, so there are no members to fetch.
+      if (!user || !activeListId || activeListId === PENDINGS_QUEUE_ID) return [];
       const nowIso = new Date().toISOString();
       const { data, error } = await supabase
         .from('prediction_segment_members')
@@ -122,11 +138,13 @@ export function useMyQueue(activeListId: string | null, onMembersLoaded?: (listI
       );
       return heldByOthers.size > 0 ? raw.filter(r => !heldByOthers.has(r.customer_phone)) : raw;
     },
-    enabled: !!user && !!activeListId,
+    enabled: !!user && !!activeListId && activeListId !== PENDINGS_QUEUE_ID,
   });
 
   useEffect(() => {
-    if (activeListId && members.data) onMembersLoaded?.(activeListId, members.data);
+    if (activeListId && activeListId !== PENDINGS_QUEUE_ID && members.data) {
+      onMembersLoaded?.(activeListId, members.data);
+    }
   }, [activeListId, members.data, onMembersLoaded]);
 
   return { queues: queues.data || [], queuesLoading: queues.isLoading, members: members.data || [] };

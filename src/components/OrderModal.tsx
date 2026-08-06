@@ -43,8 +43,10 @@ import { cleanNoteForDisplay } from '@/lib/notes';
 import { DeliveryMethodPicker, type DeliveryValue } from '@/components/DeliveryMethodPicker';
 import { resolveDeliveryPrefill, composeHomeAddress } from '@/lib/address';
 import { CancellationReasonPicker } from '@/components/CancellationReasonPicker';
+import { TrashReasonPicker } from '@/components/TrashReasonPicker';
 import { cancelReasonRequiresNote } from '@/lib/cancellationReasons';
-import type { CancellationReason } from '@/lib/api';
+import { isTrashSelectionValid } from '@/lib/trashReasons';
+import type { CancellationReason, TrashReason } from '@/lib/api';
 import { format } from 'date-fns'; // machine 'yyyy-MM-dd' payloads only
 import { formatDate } from '@/i18n/dates';
 
@@ -183,6 +185,10 @@ export function OrderModal({ open, onClose, data, contextType, readOnly = false 
   const [selectedOutcome, setSelectedOutcome] = useState<CallOutcome | null>(null);
   const [cancellationReason, setCancellationReason] = useState<CancellationReason | null>(null);
   const [cancellationReasonNotes, setCancellationReasonNotes] = useState('');
+  // Trash reason twin. Seeded from the full order fetch below so reopening an
+  // already-trashed order shows (and can correct) the reason that was recorded.
+  const [trashReason, setTrashReason] = useState<TrashReason | null>(null);
+  const [trashReasonNotes, setTrashReasonNotes] = useState('');
   const [selectedStatus, setSelectedStatus] = useState('');
   const [followUpDate, setFollowUpDate] = useState<Date | undefined>();
   const [shipAfterDate, setShipAfterDate] = useState<Date | undefined>();
@@ -223,6 +229,11 @@ export function OrderModal({ open, onClose, data, contextType, readOnly = false 
     setCallNotes(data.notes || '');
     setSelectedOutcome(null);
     setSelectedStatus(data.status || (isLead ? 'not_contacted' : 'pending'));
+    // Cleared here, repopulated from `fullOrder` once the fetch lands.
+    setCancellationReason(null);
+    setCancellationReasonNotes('');
+    setTrashReason(null);
+    setTrashReasonNotes('');
     setFollowUpDate(undefined);
     setShipAfterDate(data.ship_after_date ? new Date(data.ship_after_date + 'T00:00:00') : undefined);
     setShowScript(false);
@@ -259,6 +270,13 @@ export function OrderModal({ open, onClose, data, contextType, readOnly = false 
           setDelivery(resolveDeliveryPrefill(fullOrder));
           setDeliveryInstructions(fullOrder.delivery_instructions || '');
           setGiftNote(fullOrder.gift_note || '');
+          // Pre-select the reasons already on the order (GET /orders/:id is a
+          // select("*")), so an admin reopening a handled order sees WHY it was
+          // cancelled/trashed and can correct it without changing the status.
+          setCancellationReason((fullOrder.cancellation_reason as CancellationReason) || null);
+          setCancellationReasonNotes(fullOrder.cancellation_reason_notes || '');
+          setTrashReason((fullOrder.trash_reason as TrashReason) || null);
+          setTrashReasonNotes(fullOrder.trash_reason_notes || '');
         }
         setLoadingProducts(false);
 
@@ -307,6 +325,13 @@ export function OrderModal({ open, onClose, data, contextType, readOnly = false 
       .catch(() => { setLoadingProducts(false); })
       .finally(() => setLoadingScript(false));
   }, [open, data, contextType]);
+
+  // The 'wrong_number' outcome forces status=trashed server-side, so seed the
+  // trash picker with the matching reason. It stays overridable — a lead that
+  // turns out to be a duplicate can be re-tagged before saving.
+  useEffect(() => {
+    if (selectedOutcome === 'wrong_number' && !trashReason) setTrashReason('wrong_number');
+  }, [selectedOutcome, trashReason]);
 
   // Load agents for admin attribution picker (only when needed)
   useEffect(() => {
@@ -419,6 +444,19 @@ export function OrderModal({ open, onClose, data, contextType, readOnly = false 
       toast({ title: t('orderModal.cancelNoteRequired'), description: t('orderModal.cancelNoteRequiredDesc'), variant: 'destructive' });
       return;
     }
+    // Trash twin: demanded whenever the order is heading to (or already sits in)
+    // trashed, so no order can be junked without saying why — the whole point of
+    // the Trash List's Reason column.
+    const needsTrashReason = !isLead
+      && (selectedOutcome === 'wrong_number' || selectedStatus === 'trashed');
+    if (needsTrashReason && !trashReason) {
+      toast({ title: t('orderModal.trashReasonRequired'), description: t('orderModal.trashReasonRequiredDesc'), variant: 'destructive' });
+      return;
+    }
+    if (needsTrashReason && !isTrashSelectionValid(trashReason, trashReasonNotes)) {
+      toast({ title: t('orderModal.trashNoteRequired'), description: t('orderModal.trashNoteRequiredDesc'), variant: 'destructive' });
+      return;
+    }
     // Validate required fields for confirm status
     if (['confirmed', 'shipped'].includes(selectedStatus)) {
       if (!customerName.trim() || !customerPhone.trim()) {
@@ -445,6 +483,9 @@ export function OrderModal({ open, onClose, data, contextType, readOnly = false 
           ...(selectedOutcome === 'cancelled' && cancellationReason ? {
             cancellation_reason: cancellationReason,
             cancellation_reason_notes: cancellationReasonNotes.trim() || undefined,
+          } : {}),
+          ...(selectedOutcome === 'wrong_number' && trashReason ? {
+            trash_reason: trashReason,
           } : {}),
         });
       }
@@ -525,11 +566,31 @@ export function OrderModal({ open, onClose, data, contextType, readOnly = false 
         // the structured reason fields when the admin is flipping the order
         // to cancelled — the backend will record them on the order so the
         // segment trigger moves the customer to the right Cancelled mirror.
-        if (selectedStatus !== data.status) {
-          const extras = selectedStatus === 'cancelled' && cancellationReason ? {
-            cancellation_reason: cancellationReason,
-            cancellation_reason_notes: cancellationReasonNotes.trim() || undefined,
-          } : undefined;
+        // A reason-only edit (status unchanged, reason corrected) must save too —
+        // that is the whole point of being able to fix "why" on an order that
+        // was already cancelled or trashed. The backend skips the order_history
+        // row when from_status === to_status, so this adds no timeline noise.
+        const reasonChanged =
+          (selectedStatus === 'cancelled' && (
+            cancellationReason !== (fullOrderData?.cancellation_reason ?? null)
+            || cancellationReasonNotes.trim() !== (fullOrderData?.cancellation_reason_notes ?? '').trim()))
+          || (selectedStatus === 'trashed' && (
+            trashReason !== (fullOrderData?.trash_reason ?? null)
+            || trashReasonNotes.trim() !== (fullOrderData?.trash_reason_notes ?? '').trim()));
+
+        if (selectedStatus !== data.status || reasonChanged) {
+          let extras: Record<string, string | undefined> | undefined;
+          if (selectedStatus === 'cancelled' && cancellationReason) {
+            extras = {
+              cancellation_reason: cancellationReason,
+              cancellation_reason_notes: cancellationReasonNotes.trim() || undefined,
+            };
+          } else if (selectedStatus === 'trashed' && trashReason) {
+            extras = {
+              trash_reason: trashReason,
+              trash_reason_notes: trashReasonNotes.trim() || undefined,
+            };
+          }
           await apiUpdateOrderStatus(data.id, selectedStatus, extras);
         }
       }
@@ -881,6 +942,25 @@ export function OrderModal({ open, onClose, data, contextType, readOnly = false 
                 </SelectContent>
               </Select>
             </section>
+
+            {/* Trash reason — the twin of the cancellation picker above. Shown
+                whenever the order is being (or already is) trashed, so an admin
+                can both record a reason from /orders and correct one later
+                without touching the status. The 'wrong_number' outcome also
+                lands here (it forces status=trashed server-side) pre-selected
+                on Wrong number, still overridable. */}
+            {!isLead && (selectedStatus === 'trashed' || selectedOutcome === 'wrong_number') && (
+              <section>
+                <TrashReasonPicker
+                  idPrefix="order-modal-trash"
+                  value={trashReason}
+                  notes={trashReasonNotes}
+                  onChange={setTrashReason}
+                  onNotesChange={setTrashReasonNotes}
+                  disabled={!isEditable}
+                />
+              </section>
+            )}
 
             {/* Ship After Date (only for orders, visible when confirmed) */}
             {!isLead && ['confirmed', 'take', 'call_again', 'pending'].includes(selectedStatus) && (

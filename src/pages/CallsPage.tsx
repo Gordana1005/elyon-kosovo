@@ -7,7 +7,7 @@ import { AppLayout } from '@/layouts/AppLayout';
 import { ChooseAnswerButton } from '@/components/calls/ChooseAnswerButton';
 import { PromoOfTheDayBanner, PROMO_QUERY_KEY } from '@/components/calls/PromoOfTheDayBanner';
 import { ClientProfileCard } from '@/components/calls/ClientProfileCard';
-import { useMyQueue, useQueueMutations, type QueueMember } from '@/components/calls/useMyQueue';
+import { useMyQueue, useQueueMutations, PENDINGS_QUEUE_ID, type QueueMember, type QueueListSummary } from '@/components/calls/useMyQueue';
 import { getCallSession, setCallSession, type CallSessionSnapshot } from '@/components/calls/callSession';
 import { OrderModal, OrderModalData } from '@/components/OrderModal';
 import { CreateOrderModal } from '@/components/CreateOrderModal';
@@ -15,7 +15,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { apiGetOrder, apiGetOrders, apiCreateOrder, apiUpdateOrderStatus, apiReleaseActiveView, apiLookupPersonalHold, apiReleasePersonalHold, apiLogCall, type CancellationReason, type TrashReason } from '@/lib/api';
+import { apiGetOrder, apiGetOrders, apiCreateOrder, apiUpdateOrderStatus, apiReleaseActiveView, apiLookupPersonalHold, apiReleasePersonalHold, apiLogCall, apiGetMyPendingsSummary, type CancellationReason, type TrashReason } from '@/lib/api';
 import { cancelReasonLabel } from '@/lib/cancellationReasons';
 import { useTranslation } from 'react-i18next';
 import { useVoip, type LinkedContext } from '@/contexts/VoipContext';
@@ -147,6 +147,14 @@ export default function CallsPage() {
     refetchInterval: 15_000,
   });
 
+  // Counts behind the virtual "Pendings" queue entry (left / talked today).
+  const { data: pendingsSummary } = useQuery({
+    queryKey: ['my-pendings-summary', user?.id],
+    queryFn: apiGetMyPendingsSummary,
+    enabled: !!user?.id,
+    refetchInterval: 30_000,
+  });
+
   const pendingOrders = useMemo(() => {
     const raw = (pendingData as any)?.orders || [];
     return [...raw].sort((a, b) => {
@@ -160,6 +168,15 @@ export default function CallsPage() {
     if (!pendingOrders.length) return null;
     return pendingOrders.find((o: any) => o.id !== excludeId) || null;
   }, [pendingOrders]);
+
+  // True once the user DELIBERATELY picked a prediction list from the dropdown.
+  // Their choice then wins: pendings stop pre-empting, so a lead landing
+  // mid-list no longer yanks them off the customer they chose to work. The
+  // Pendings row lights up instead (badge below) and they switch back at will.
+  const isPredictionPinned =
+    manualPickRef.current && !!activeListId && activeListId !== PENDINGS_QUEUE_ID;
+  // Leads waiting while the agent is deliberately working a prediction list.
+  const pendingsWaiting = isPredictionPinned ? (pendingsSummary?.ready ?? 0) : 0;
 
   const normalizePhoneKey = useCallback((value: string) => value.replace(/\D/g, '').slice(-8), []);
   const selectedPhoneKey = useMemo(() => normalizePhoneKey(selectedPhone), [normalizePhoneKey, selectedPhone]);
@@ -193,15 +210,41 @@ export default function CallsPage() {
       setActiveListId(null);
       return;
     }
-    if (pickNextPending(currentPendingOrderId)) return;
+    // Pendings pre-empt a prediction list — unless the agent explicitly chose
+    // this list, in which case their pick wins (the Pendings row badges instead).
+    if (!isPredictionPinned && pickNextPending(currentPendingOrderId)) return;
     const first = members[0];
     queueCurrentPhone.current = first.customer_phone;
     setSelectedPhone(first.customer_phone);
     setCurrentSource('prediction');
     setCurrentPendingOrderId(null);
-  }, [activeListId, pickNextPending, currentPendingOrderId]);
+  }, [activeListId, pickNextPending, currentPendingOrderId, isPredictionPinned]);
 
   const { queues } = useMyQueue(activeListId, handleMembersLoaded);
+
+  // Pendings (assigned leads) get a seat in the SAME dropdown as the prediction
+  // lists, always first. They aren't segment members and have no list row, so
+  // the entry is synthetic — see PENDINGS_QUEUE_ID. Shown whenever the agent has
+  // any lead work today, so the row doesn't vanish the moment they finish.
+  const pendingsQueueEntry: QueueListSummary | null = useMemo(() => {
+    const s = pendingsSummary;
+    if (!s || (s.open === 0 && s.talked_today === 0)) return null;
+    return {
+      list_id: PENDINGS_QUEUE_ID,
+      list_name: t('callsPage.pendingsQueue'),
+      list_category: 'pending',
+      display_order: -1,
+      remaining: s.ready,
+      total: s.open,
+      talked: s.talked_today,
+      is_pendings: true,
+    };
+  }, [pendingsSummary, t]);
+
+  const allQueues = useMemo(
+    () => (pendingsQueueEntry ? [pendingsQueueEntry, ...queues] : queues),
+    [pendingsQueueEntry, queues],
+  );
 
   // If we navigated here with ?phone= (e.g. from Personal List or Call Again),
   // honour it as the starting customer instead of auto-picking a queue.
@@ -219,26 +262,37 @@ export default function CallsPage() {
     setSearchParams(next, { replace: true });
   }, [searchParams, setSearchParams]);
 
-  // Auto-pick the first non-empty queue on mount / when queues load.
+  // Auto-pick the first non-empty queue on mount / when queues load. Pendings
+  // win outright: leads are always the priority, and selecting the queue here
+  // (rather than only serving the customer) also closes the old starvation race
+  // where a slow pendings fetch let a prediction customer take the screen and
+  // the pendings effect below could never re-fire.
   useEffect(() => {
     if (autoPickedRef.current) return;
+    if (pendingsSummary && pendingsSummary.ready > 0) {
+      autoPickedRef.current = true;
+      setActiveListId(PENDINGS_QUEUE_ID);
+      return;
+    }
     if (!queues || queues.length === 0) return;
     const first = queues.find(q => q.remaining > 0);
     if (first) {
       autoPickedRef.current = true;
       setActiveListId(first.list_id);
     }
-  }, [queues]);
+  }, [queues, pendingsSummary]);
 
-  // Pending orders always have priority when no customer is on-screen.
+  // Pending orders take the screen when nothing is on it — unless the agent has
+  // deliberately pinned a prediction list.
   useEffect(() => {
     if (selectedPhone) return;
+    if (isPredictionPinned) return;
     const nextPending = pickNextPending(currentPendingOrderId);
     if (!nextPending) return;
     setSelectedPhone(nextPending.customer_phone);
     setCurrentPendingOrderId(nextPending.id);
     setCurrentSource('pending');
-  }, [selectedPhone, pickNextPending, currentPendingOrderId]);
+  }, [selectedPhone, pickNextPending, currentPendingOrderId, isPredictionPinned]);
 
   // Mirror the current selection into the in-memory session so it survives
   // navigating away from /calls and back (callSession.ts). Cleared when there is
@@ -256,15 +310,18 @@ export default function CallsPage() {
     });
   }, [selectedPhone, currentSource, currentPendingOrderId, activeListId, pendingAdvance]);
 
-  // Manual list pick (admin/manager only — visible switcher below).
-  // Clear the on-screen customer immediately so the user gets visual
-  // feedback the switch took effect; handleMembersLoaded will set the new
-  // first customer once the new list's members arrive.
+  // Manual queue pick from the visible switcher. Clear the on-screen customer
+  // immediately so the user gets visual feedback the switch took effect;
+  // handleMembersLoaded sets the new first customer once the list's members
+  // arrive, and for Pendings the pendings effect above picks the first lead.
+  //
+  // manualPickRef only latches on a PREDICTION pick — choosing Pendings is
+  // choosing the default priority, so it must not pin the agent away from leads.
   const switchToList = useCallback((listId: string) => {
     if (listId === activeListId) return;
     queueCurrentPhone.current = null;
     autoPickedRef.current = true;
-    manualPickRef.current = true;
+    manualPickRef.current = listId !== PENDINGS_QUEUE_ID;
     setSelectedPhone('');
     setQueueMembers([]);
     setCurrentSource(null);
@@ -352,12 +409,42 @@ export default function CallsPage() {
   // (Option 1), the completed phone cannot exist in the nextList's members. Safe.
 
   const advanceQueue = useCallback((completedPhone: string | null) => {
+    // Working the Pendings queue: serve the next lead. When the leads run out,
+    // fall through to a prediction list so nobody is stranded on an empty queue
+    // with work available. manualPickRef stays false for a Pendings pick, so a
+    // newly-arrived lead still pre-empts that prediction work on the next
+    // advance — leads keep their priority, prediction is the filler.
+    if (activeListId === PENDINGS_QUEUE_ID) {
+      const next = pickNextPending(currentPendingOrderId);
+      setPendingAdvance(null);
+      if (next) {
+        setSelectedPhone(next.customer_phone);
+        setCurrentPendingOrderId(next.id);
+        setCurrentSource('pending');
+        return;
+      }
+      setCurrentPendingOrderId(null);
+      const nextList = (queues || []).find(q => q.remaining > 0);
+      if (nextList) {
+        queueCurrentPhone.current = null;
+        autoPickedRef.current = true;
+        setSelectedPhone('');
+        setQueueMembers([]);
+        setCurrentSource(null);
+        setActiveListId(nextList.list_id);
+      } else {
+        setSelectedPhone('');
+        setCurrentSource(null);
+      }
+      return;
+    }
+
     let nextPrediction: string | null = null;
     if (currentSource === 'prediction') {
       nextPrediction = advancePredictionQueue(completedPhone);
     }
 
-    const nextPending = pickNextPending(currentPendingOrderId);
+    const nextPending = isPredictionPinned ? null : pickNextPending(currentPendingOrderId);
     if (nextPending) {
       setPendingAdvance(null);
       setSelectedPhone(nextPending.customer_phone);
@@ -386,7 +473,7 @@ export default function CallsPage() {
       setSelectedPhone('');
       setCurrentSource(null);
     }
-  }, [advancePredictionQueue, currentSource, currentPendingOrderId, pickNextPending]);
+  }, [advancePredictionQueue, currentSource, currentPendingOrderId, pickNextPending, activeListId, isPredictionPinned, queues]);
 
   // Auto-release the customer from THIS agent's Personal List when a call
   // resolves (Confirmed/Cancelled/Trash). No-answer / Call-again keep them — we
@@ -410,7 +497,11 @@ export default function CallsPage() {
   useEffect(() => {
     if (!lastFinished) return;
     const { phone, outcome, cancellation_reason, cancellation_reason_notes, reason_text } = lastFinished;
-    const isPrediction = activeListId && phone === queueCurrentPhone.current;
+    // The Pendings sentinel is not a real list_id — markAfterCall must never
+    // receive it (it would UPDATE prediction_segment_members with a bad uuid).
+    const isPrediction = activeListId
+      && activeListId !== PENDINGS_QUEUE_ID
+      && phone === queueCurrentPhone.current;
 
     // Resolved outcome → drop them from the agent's Personal List.
     if (outcome === 'confirmed' || outcome === 'cancelled' || outcome === 'trash') {
@@ -466,6 +557,7 @@ export default function CallsPage() {
     qc.invalidateQueries({ queryKey: ['calls-page-orders', phone] });
     qc.invalidateQueries({ queryKey: ['customer-intelligence', phone] });
     qc.invalidateQueries({ queryKey: ['calls-page-pendings', user?.id] });
+      qc.invalidateQueries({ queryKey: ['my-pendings-summary', user?.id] });
     clearLastFinished();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lastFinished]);
@@ -519,6 +611,7 @@ export default function CallsPage() {
     setSelectedPhone(newPhone);
     qc.invalidateQueries({ queryKey: ['calls-page-orders', newPhone] });
     qc.invalidateQueries({ queryKey: ['calls-page-pendings', user?.id] });
+      qc.invalidateQueries({ queryKey: ['my-pendings-summary', user?.id] });
   }, [selectedPhone, qc, user?.id]);
 
   // Best-known name for the current customer (for cancel/trash order records).
@@ -612,6 +705,7 @@ export default function CallsPage() {
         });
         toast({ title: t('callsPage.cancellationRecorded'), description: t('callsPage.savedToOrder') });
         qc.invalidateQueries({ queryKey: ['calls-page-pendings', user?.id] });
+      qc.invalidateQueries({ queryKey: ['my-pendings-summary', user?.id] });
         qc.invalidateQueries({ queryKey: ['calls-page-orders', phone] });
         qc.invalidateQueries({ queryKey: ['customer-history', phone] });
         qc.invalidateQueries({ queryKey: ['customer-intelligence', phone] });
@@ -652,9 +746,9 @@ export default function CallsPage() {
   // + optional free-text note. Works for both a live pending order and the
   // synthetic no-order case. reasonKey is undefined for the in-call bar path
   // (free text only); a manager's deliberate reason still lands in the column.
-  const handleAnswerTrashed = useCallback(async (reasonKey?: string, notes?: string) => {
+  const handleAnswerTrashed = useCallback(async (reasonKey?: TrashReason, notes?: string) => {
     const phone = selectedPhone;
-    const trashReason = reasonKey as TrashReason | undefined;
+    const trashReason = reasonKey;
     const trashNotes = (notes || '').trim() || undefined;
     const pendingId = currentPendingOrderId || activePendingOrder?.id || null;
     if (pendingId) {
@@ -665,6 +759,7 @@ export default function CallsPage() {
         });
         toast({ title: t('callsPage.markedTrash'), description: t('callsPage.savedToOrder') });
         qc.invalidateQueries({ queryKey: ['calls-page-pendings', user?.id] });
+      qc.invalidateQueries({ queryKey: ['my-pendings-summary', user?.id] });
         qc.invalidateQueries({ queryKey: ['calls-page-orders', phone] });
         qc.invalidateQueries({ queryKey: ['customer-history', phone] });
         qc.invalidateQueries({ queryKey: ['customer-intelligence', phone] });
@@ -716,6 +811,7 @@ export default function CallsPage() {
       toast({ title: t('callsPage.movedToCallAgain'), description: t('callsPage.noAnswerResurface') });
       try { await apiReleaseActiveView(phone); } catch { /* best effort */ }
       qc.invalidateQueries({ queryKey: ['calls-page-pendings', user?.id] });
+      qc.invalidateQueries({ queryKey: ['my-pendings-summary', user?.id] });
       qc.invalidateQueries({ queryKey: ['calls-page-orders', phone] });
       qc.invalidateQueries({ queryKey: ['customer-history', phone] });
       qc.invalidateQueries({ queryKey: ['customer-intelligence', phone] });
@@ -747,6 +843,7 @@ export default function CallsPage() {
     // the old direct-flip path did.
     if (wasConfirmOfPending && !wasManual) {
       qc.invalidateQueries({ queryKey: ['calls-page-pendings', user?.id] });
+      qc.invalidateQueries({ queryKey: ['my-pendings-summary', user?.id] });
       void apiReleaseActiveView(phone).catch(() => { /* best effort */ });
     }
 
@@ -831,7 +928,7 @@ export default function CallsPage() {
           {/* Mobile: a Layers icon to pick which list (queue) to work — the
               desktop dropdown is hidden on small screens, so this is the only
               way agents can switch lists on a phone. Shows a small count badge. */}
-          {queues && queues.length > 0 && (
+          {allQueues.length > 0 && (
             <>
               <Button
                 size="icon"
@@ -839,25 +936,39 @@ export default function CallsPage() {
                 className="relative h-8 w-8 shrink-0"
                 onClick={() => setListPickerOpen(true)}
                 aria-label={t('callsPage.queueLabel')}
+                title={pendingsWaiting > 0 ? t('callsPage.pendingsWaiting', { count: pendingsWaiting }) : undefined}
               >
                 <Layers className="h-4 w-4" />
-                <span className="absolute -right-1 -top-1 flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold leading-none text-primary-foreground">
-                  {queues.length}
+                {/* Amber + the lead count when pendings are waiting behind a
+                    prediction list the agent deliberately pinned; otherwise the
+                    plain queue count. */}
+                <span className={`absolute -right-1 -top-1 flex h-4 min-w-[1rem] items-center justify-center rounded-full px-1 text-[10px] font-semibold leading-none ${
+                  pendingsWaiting > 0
+                    ? 'bg-amber-500 text-white animate-pulse'
+                    : 'bg-primary text-primary-foreground'
+                }`}>
+                  {pendingsWaiting > 0 ? pendingsWaiting : allQueues.length}
                 </span>
               </Button>
               <Dialog open={listPickerOpen} onOpenChange={setListPickerOpen}>
                 <DialogContent className="max-w-xs">
                   <DialogHeader><DialogTitle>{t('callsPage.chooseList')}</DialogTitle></DialogHeader>
                   <div className="flex flex-col gap-1.5">
-                    {queues.map(q => (
+                    {allQueues.map(q => (
                       <Button
                         key={q.list_id}
                         variant={q.list_id === activeListId ? 'default' : 'outline'}
-                        className="h-auto w-full justify-between gap-2 py-2 text-left"
+                        className={`h-auto w-full justify-between gap-2 py-2 text-left ${
+                          q.is_pendings && q.list_id !== activeListId ? 'border-amber-400 text-amber-700 dark:text-amber-300' : ''
+                        }`}
                         onClick={() => { switchToList(q.list_id); setListPickerOpen(false); }}
                       >
                         <span className="truncate">{q.list_name}</span>
-                        <span className="shrink-0 text-xs opacity-80">{q.remaining} ({q.total})</span>
+                        <span className="shrink-0 text-xs opacity-80">
+                          {q.is_pendings
+                            ? t('callsPage.queueCountPendings', { left: q.remaining, talked: q.talked ?? 0 })
+                            : `${q.remaining} (${q.total})`}
+                        </span>
                       </Button>
                     ))}
                   </div>
@@ -889,21 +1000,36 @@ export default function CallsPage() {
         </div>
       )}
 
-      {queues && queues.length > 0 && !isMobile && (
-        <div className={`inline-flex items-center gap-1.5 rounded-xl border bg-background px-2 py-0.5 ${hoverLift}`} title={t('callsPage.queueLabel')}>
-          <Layers className="h-3 w-3 text-muted-foreground shrink-0" />
+      {allQueues.length > 0 && !isMobile && (
+        <div
+          className={`inline-flex items-center gap-1.5 rounded-xl border bg-background px-2 py-0.5 ${hoverLift} ${
+            pendingsWaiting > 0 ? 'border-amber-400 ring-1 ring-amber-300/60' : ''
+          }`}
+          title={pendingsWaiting > 0 ? t('callsPage.pendingsWaiting', { count: pendingsWaiting }) : t('callsPage.queueLabel')}
+        >
+          <Layers className={`h-3 w-3 shrink-0 ${pendingsWaiting > 0 ? 'text-amber-500' : 'text-muted-foreground'}`} />
           <Select value={activeListId || ''} onValueChange={switchToList}>
             <SelectTrigger className="h-6 text-xs min-w-[140px] border-0 shadow-none focus:ring-0">
-              <SelectValue placeholder={t('callsPage.listsCount', { count: queues.length })} />
+              <SelectValue placeholder={t('callsPage.listsCount', { count: allQueues.length })} />
             </SelectTrigger>
             <SelectContent>
-              {queues.map(q => (
+              {allQueues.map(q => (
                 <SelectItem key={q.list_id} value={q.list_id}>
-                  {q.list_name} — {q.remaining} ({q.total})
+                  {/* Pendings read "left (N talked)" — leads have no fixed list
+                      size, so "talked today" is the meaningful second number. */}
+                  {q.is_pendings
+                    ? `${q.list_name} — ${t('callsPage.queueCountPendings', { left: q.remaining, talked: q.talked ?? 0 })}`
+                    : `${q.list_name} — ${q.remaining} (${q.total})`}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
+          {/* Amber pill when leads are waiting behind a pinned prediction list. */}
+          {pendingsWaiting > 0 && (
+            <span className="shrink-0 rounded-full bg-amber-500 px-1.5 text-[10px] font-semibold leading-4 text-white">
+              {pendingsWaiting}
+            </span>
+          )}
         </div>
       )}
     </div>
@@ -972,11 +1098,13 @@ export default function CallsPage() {
             <EmptyState
               icon={<Phone className="h-6 w-6" />}
               title={t('callsPage.nothingToCall')}
-              description={isAdminOrManager && activeListId && queueMembers.length === 0
-                ? t('callsPage.emptyListDesc')
-                : queues && queues.length > 0
-                  ? t('callsPage.haveListsDesc', { count: queues.length })
-                  : t('callsPage.noAssignedDesc')}
+              description={activeListId === PENDINGS_QUEUE_ID
+                ? t('callsPage.pendingsEmptyDesc')
+                : isAdminOrManager && activeListId && queueMembers.length === 0
+                  ? t('callsPage.emptyListDesc')
+                  : allQueues.length > 0
+                    ? t('callsPage.haveListsDesc', { count: allQueues.length })
+                    : t('callsPage.noAssignedDesc')}
               size="lg"
             />
             {state !== 'idle' && (

@@ -11,11 +11,11 @@ Every customer phone is classified into **at most one** rule-driven calling list
 
 Production once ran an OLD function body while newer migrations were recorded as applied — old SQL had been re-run over the fixed function. Damage: 94 customers silently deleted from all lists (name mismatch "2-4m"), dead NEWCOMERS/Current Cancels, ~5,590 mislabeled members, 1,555 imported Monadon phones inside calling lists, "Last order €0.00" everywhere. Hard rules since:
 
-1. **NEVER run old migration SQL in the Supabase SQL editor.** The canonical engine lives in `supabase/migrations/20260731000000_monadon_excluded_from_never_converted.sql` (engine v3.6; supersedes 20260730000000 v3.5 → 20260725000000 v3.4 → …) and the live function carries a `COMMENT ... 'engine v3.6 …'` tag.
+1. **NEVER run old migration SQL in the Supabase SQL editor.** The canonical engine lives in `supabase/migrations/20260913000200_segment_engine_v3_7_sticky_trash.sql` (engine **v3.7-mk**; supersedes 20260731000000 v3.6 → 20260730000000 v3.5 → 20260725000000 v3.4 → …) and the live function carries a `COMMENT ... 'engine v3.7-mk …'` tag.
 2. **One migration version = one file.** (Two files once shared `20260604120000`; the obsolete one was deleted.)
 3. After ANY engine/data change: `node scripts/audit-segments-integrity.mjs` → must be 10/10 PASS. It detects function drift, label violations, band violations, pollution, missing customers, dead cron.
 
-**Canonical engine file**: `supabase/migrations/20260731000000_monadon_excluded_from_never_converted.sql` (engine v3.6, 2026-07-09 — a `monadon_legacy` phone with paid_count=0 is kept OUT of Never-Converted: target NULL → it stays only in the static FULL MONAD LIST; mirrored into the v4 shadow so parity stays 0). The live function COMMENT tag is `engine v3.6`. Parent chain: 20260730000000 (v3.5 comprehensive Trash List) → 20260725000000 (v3.4 Trashed wrong-number list) → 20260712000000 (v3.3 Current Returns) → 20260710000000 (Current Cancels 14d) → 20260701000000 (NEWCOMERS pen) → 20260629000000 (v3 restore). Companion: `20260713000000_returned_at_recording_fix.sql`. NB the mgmt-API token is dead — apply engine SQL via direct pg on the session pooler + VAULT §1 DB password (see the deploy-creds memory).
+**Canonical engine file**: `supabase/migrations/20260913000200_segment_engine_v3_7_sticky_trash.sql` (engine **v3.7-mk**, 2026-08-06 — sticky trash; see the Trash List section below). Its parent, still accurate for everything except trash: `supabase/migrations/20260731000000_monadon_excluded_from_never_converted.sql` (engine v3.6, 2026-07-09 — a `monadon_legacy` phone with paid_count=0 is kept OUT of Never-Converted: target NULL → it stays only in the static FULL MONAD LIST; mirrored into the v4 shadow so parity stays 0). The live function COMMENT tag is `engine v3.6`. Parent chain: 20260730000000 (v3.5 comprehensive Trash List) → 20260725000000 (v3.4 Trashed wrong-number list) → 20260712000000 (v3.3 Current Returns) → 20260710000000 (Current Cancels 14d) → 20260701000000 (NEWCOMERS pen) → 20260629000000 (v3 restore). Companion: `20260713000000_returned_at_recording_fix.sql`. NB the mgmt-API token is dead — apply engine SQL via direct pg on the session pooler + VAULT §1 DB password (see the deploy-creds memory).
 
 ## Classification (decision order — first match wins)
 
@@ -31,7 +31,20 @@ Production once ran an OLD function body while newer migrations were recorded as
 
 **Current Returns (ADDITIVE — engine v3.3, 2026-06-23).** Separate from the first-match-wins decision above. A customer whose **newest order is a return** ("until they order again" = no order created after their latest returned order) is tracked in **Current Returns** (UNASSIGNED, never called). It is *additive*: a customer with paid history stays in their normal band **and** also appears in Current Returns (dual membership); a return-**only** customer (paid_count = 0) appears **ONLY** in Current Returns, not Never-Converted. Current Returns is EXCLUDED from the nuclear delete + agent carry-over, and from the audit exclusivity check. Member trigger fields = the returned order (its `created_at` is the "Last order" date). `orders.returned_at` is a separate recording fix (trigger `trg_orders_set_returned_at`) — the list itself does not depend on it.
 
-**Trash List (ADDITIVE — engine v3.5, 2026-07-07; renamed from "Trashed").** A customer whose **newest non-legacy order is trashed for ANY reason** appears in the static **Trash List** (UNASSIGNED, visible, never called), and the member row carries `trigger_trash_reason` so the UI shows a **Reason** column. Self-cleans once a newer order exists. Two distinct behaviours, do not conflate: (a) **Trash List visibility** = any trash reason; (b) **removal from calling bands** (the highest-precedence NULL-target branch) fires only for **dead-number reasons** `wrong_number` / `wrong_person` / `not_reachable` (`v_newest_is_nocall_trash`). `rude` / `uncooperative` / `other` trashes stay in their normal calling band **and** show in Trash List (dual membership). `not_reachable` is written by BOTH the manual "Unreachable" pick (ChooseAnswerButton) and the server auto-trash (9 consecutive no-answers, POST /call-logs). Trash List is `is_static=true` → excluded from nuclear delete / carry-over / exclusivity audit. Audit check #11 now = "newest order is a trash (any reason)".
+**Trash List — STICKY (engine v3.7-mk, 2026-08-06). This supersedes the v3.5 additive rule; the paragraph below is the law.** Canonical file: `supabase/migrations/20260913000200_segment_engine_v3_7_sticky_trash.sql`.
+
+A trash is **no longer** "the customer's newest order happens to be a trash", and it is **no longer** additive-but-still-callable. Three classes, decided per phone:
+
+- **PERMANENT** — `wrong_number` / `wrong_person` / `rude` / `uncooperative` / `other`, and legacy rows with no reason recorded. Removed from **every** calling band (highest-precedence NULL-target branch) and held in the static **Trash List**. A later **pending / cancel / return does NOT release them** — that is the whole point of the change.
+- **THE ONE RELEASE** — a **paid** order dated after the trash (`v_last_paid_at > v_perm_trash_at`). Money is better evidence than a disposition click. Operator decision 2026-08-06, taken on measured data: 13.784 currently-callable MK customers carried a trash and **2.391 of them had already paid us afterwards**; Bulgaria's v3.7 deletes those forever, Macedonia keeps them. **This is a deliberate MK deviation — do not "align with BG".**
+- **PARKED** — `not_reachable` only: held **21 days from `orders.trashed_at`**, then released automatically by the nightly recompute (or earlier by a payment). Written by both the manual "Unreachable" pick (ChooseAnswerButton) and the server auto-trash (9 consecutive no-answers, POST /call-logs).
+- **`duplicate_order` is NOT a trash of the customer** — it is our own double-lead cleanup, so it neither drops them from a band nor enters the Trash List. **Second deliberate MK deviation**: BG's SQL treats it as permanent while BG's own code comment says the opposite; that inconsistency is not carried over.
+
+Sticky trash also suppresses the additive **Current Returns** mirror. Trash List is `is_static=true` → excluded from nuclear delete / carry-over / exclusivity audit; the member row carries `trigger_trash_reason` for the UI's **Reason** column. **Scope: prediction lists only** — a trashed phone that sends a brand-new lead still arrives as a normal pending order and is callable in the Pendings queue.
+
+`orders.trashed_at` (migration `20260913000100`) drives the 21-day timer. ⚠️ Its backfill chain is `order_history → updated_at → created_at`, and MK's 17.714 imported trashes have **zero** history rows, so they all landed on the import timestamp; `20260913000300` corrects them to `created_at` (the true AlterCPA order date). Any future bulk import must do the same or every trash instant collapses onto the import date and the paid-release test silently stops firing.
+
+Behavioural fixture (run after ANY engine change): **`node scripts/verify-sticky-trash-mk.mjs`** — 8 cases pinning all of the above plus the 14-day cancel return.
 
 ## Member rows & state carry-over (sacred)
 
@@ -60,9 +73,15 @@ Production once ran an OLD function body while newer migrations were recorded as
 
 ## Verification ritual (non-negotiable after any change here)
 
-1. `node scripts/audit-segments-integrity.mjs` → 10/10 PASS.
-2. Spot-check a "(3+ orders)" list in the UI: only 3–4-order customers, real "Last order" prices.
-3. Next morning after engine changes: member `updated_at` advanced overnight (cron alive).
+1. `node scripts/audit-segments-integrity.mjs` → all PASS.
+   ⚠️ MK baseline 2026-08-06: **13/14**. The one standing failure is *"Real Last-order price on paid buckets — 705 zero-price"*, a data gap in the AlterCPA import (1.199 paid orders carry `price = 0` across 1.148 phones), **not** an engine fault. Treat 13/14 as green until those prices are recovered; anything else failing is a regression.
+2. `node scripts/verify-sticky-trash-mk.mjs` → 8/8. Pins the trash + cancel rules behaviourally.
+3. `node scripts/engine-fixture-mk.mjs` → the list-name contract (a drifted name wipes members silently).
+4. `node scripts/segment-engine-parity.mjs` → drift 0. It compares the two member TABLES, so recompute **both** engines first or it reports thousands of false differences (`recompute_customer_segments` writes live, `recompute_customer_segments_v4` writes shadow).
+5. Spot-check a "(3+ orders)" list in the UI: only 3–4-order customers, real "Last order" prices.
+6. Next morning after engine changes: member `updated_at` advanced overnight (cron alive).
+
+**Recompute at MK scale.** `recompute_all_segments()` loops every distinct phone in `orders` — 47.231 here versus Bulgaria's ~9.600, so the skill's "~4 s" is a BG number. Measured 2026-08-06: **~40 s** in 2.000-phone batches. One single-statement call can outlive the Management API's timeout; batch it (see the loop in the 08-06 work) rather than assuming a bare `select recompute_all_segments();` will return.
 
 ## Engine v4 — config-driven, no-code list builder (BUILT 2026-06-26, SHADOW)
 

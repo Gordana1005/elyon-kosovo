@@ -93,7 +93,15 @@ The Prediction Lists page header shows **"Engine data as of …"** (max member `
 - **FULL MONAD LIST** — the 1,555 imported Monadon customers with their legacy product info. Monadon orders (`source_type='monadon_legacy'`) are excluded from paid_count, lifetime, recency, name detection — everything.
 
 **Engine-written additive statics (`is_static=true`, but the engine maintains membership):**
-- **Trash List** (engine v3.5, 2026-07-07; renamed from "Trashed") — every customer whose **newest order was trashed, for ANY reason**, with a **Reason** column (`trigger_trash_reason`: wrong number / wrong person / **unreachable** / rude / uncooperative / other). UNASSIGNED, informational, self-cleaning. Dead-number reasons (wrong number / wrong person / unreachable) are also removed from every calling list; other reasons stay callable but still show here. `not_reachable` ("Unreachable") is set both by an agent's manual pick and by the server auto-trash after 9 consecutive no-answers (see docs/CALLS.md §5b).
+- **Trash List** (engine **v3.7-mk**, 2026-08-06 — STICKY; supersedes the v3.5 additive rule) — every customer who **has been trashed and has not bought since**, with a **Reason** column (`trigger_trash_reason`). UNASSIGNED, informational, never called.
+  - **Every** reason now removes the phone from **every** calling band — not just the dead-number ones. `rude` / `uncooperative` / `other` no longer stay callable.
+  - Membership is **not** self-cleaning: a later pending, cancel or return does not release them.
+  - **The only release is a PAID order dated after the trash** (`v_last_paid_at > v_perm_trash_at`). MK-specific: measured 2026-08-06, 2.391 customers had paid after being trashed and would otherwise have been dropped from re-marketing forever. Bulgaria's v3.7 has no such escape.
+  - **`not_reachable`** is the one expiring reason: parked **21 days from `orders.trashed_at`**, then released by the nightly recompute. Set both by an agent's manual "Unreachable" pick and by the server auto-trash after 9 consecutive no-answers (see docs/CALLS.md §5b).
+  - **`duplicate_order`** is lead-de-duplication housekeeping: it neither removes the customer from a band nor puts them in the Trash List. (BG treats it as permanent — deliberate MK deviation.)
+  - Sticky trash also suppresses the additive **Current Returns** mirror.
+  - Scope is prediction lists only: a trashed phone sending a brand-new lead is still a callable pending order.
+  - Live impact at switch-over: calling members 38.307 → 35.812, Trash List 9.528 → 11.398.
 - **Current Returns** — newest order is a return (see above).
 
 ## Health Check (run any time)

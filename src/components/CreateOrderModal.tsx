@@ -14,7 +14,7 @@ import { statusLabel } from '@/types';
 import { cn } from '@/lib/utils';
 import { EmptyState } from '@/components/EmptyState';
 import { useToast } from '@/hooks/use-toast';
-import { apiGetProducts, apiCreateOrder, apiGetCustomerPrefill, apiSaveCustomerProfile, apiMatchCourierOffice, apiGetOrder, apiUpdateCustomer, apiSyncOrderItems, apiUpdateOrderStatus, apiAddOrderNote, type CancellationReason } from '@/lib/api';
+import { apiGetProducts, apiCreateOrder, apiGetCustomerPrefill, apiSaveCustomerProfile, apiMatchCourierOffice, apiGetOrder, apiUpdateCustomer, apiSyncOrderItems, apiUpdateOrderStatus, apiAddOrderNote, type CancellationReason, type TrashReason } from '@/lib/api';
 import { formatProductWithQuantity, isLegacyPromoName } from '@/lib/utils';
 // Order lines are STORED in EUR; the agent only ever sees and types denari.
 // eurToDen/denToEur convert at the input boundary — never let a euro figure
@@ -22,7 +22,9 @@ import { formatProductWithQuantity, isLegacyPromoName } from '@/lib/utils';
 import { formatMoney, eurToDen, denToEur } from '@/lib/currency';
 import { DeliveryMethodPicker, type DeliveryValue } from '@/components/DeliveryMethodPicker';
 import { CancellationReasonPicker } from '@/components/CancellationReasonPicker';
+import { TrashReasonPicker } from '@/components/TrashReasonPicker';
 import { cancelReasonRequiresNote } from '@/lib/cancellationReasons';
+import { isTrashSelectionValid } from '@/lib/trashReasons';
 import { composeHomeAddress, parseHomeAddress, looksLikeStructuredDetail, resolveDeliveryPrefill } from '@/lib/address';
 
 type CreateStatus = 'confirmed' | 'call_again' | 'cancelled' | 'trashed' | 'pending';
@@ -104,6 +106,9 @@ export function CreateOrderModal({
   const [status, setStatus] = useState<CreateStatus>(defaultStatus);
   const [cancellationReason, setCancellationReason] = useState<CancellationReason | null>(null);
   const [cancellationReasonNotes, setCancellationReasonNotes] = useState('');
+  // Trash twin — no order may be junked without a reason, from any surface.
+  const [trashReason, setTrashReason] = useState<TrashReason | null>(null);
+  const [trashReasonNotes, setTrashReasonNotes] = useState('');
   const [items, setItems] = useState<ProductItem[]>([]);
   // Raw string while a line-total is being typed, so the input isn't reformatted
   // mid-keystroke (the .toFixed display only re-applies on blur).
@@ -464,6 +469,14 @@ export function CreateOrderModal({
       toast({ title: t('orderModal.cancelNoteRequired'), description: t('orderModal.cancelNoteRequiredDesc'), variant: 'destructive' });
       return;
     }
+    if (status === 'trashed' && !trashReason) {
+      toast({ title: t('orderModal.trashReasonRequired'), description: t('orderModal.trashReasonRequiredDesc'), variant: 'destructive' });
+      return;
+    }
+    if (status === 'trashed' && !isTrashSelectionValid(trashReason, trashReasonNotes)) {
+      toast({ title: t('orderModal.trashNoteRequired'), description: t('orderModal.trashNoteRequiredDesc'), variant: 'destructive' });
+      return;
+    }
 
     setSaving(true);
     try {
@@ -509,11 +522,19 @@ export function CreateOrderModal({
           try { await apiAddOrderNote(existingOrderId, notes.trim()); } catch { /* best effort */ }
         }
         if (status !== 'pending') {
-          await apiUpdateOrderStatus(existingOrderId, status,
-            status === 'cancelled' && cancellationReason ? {
+          let extras: Record<string, string | undefined> | undefined;
+          if (status === 'cancelled' && cancellationReason) {
+            extras = {
               cancellation_reason: cancellationReason,
               cancellation_reason_notes: cancellationReasonNotes.trim() || undefined,
-            } : undefined);
+            };
+          } else if (status === 'trashed' && trashReason) {
+            extras = {
+              trash_reason: trashReason,
+              trash_reason_notes: trashReasonNotes.trim() || undefined,
+            };
+          }
+          await apiUpdateOrderStatus(existingOrderId, status, extras);
         }
         toast({
           title: t('createOrder.orderCompleted'),
@@ -552,6 +573,10 @@ export function CreateOrderModal({
         ...(status === 'cancelled' && cancellationReason ? {
           cancellation_reason: cancellationReason,
           cancellation_reason_notes: cancellationReasonNotes.trim() || undefined,
+        } : {}),
+        ...(status === 'trashed' && trashReason ? {
+          trash_reason: trashReason,
+          trash_reason_notes: trashReasonNotes.trim() || undefined,
         } : {}),
         notes: notes.trim() || undefined,
         items: items.map(i => ({
@@ -918,6 +943,17 @@ export function CreateOrderModal({
                       notes={cancellationReasonNotes}
                       onChange={setCancellationReason}
                       onNotesChange={setCancellationReasonNotes}
+                    />
+                  </div>
+                )}
+                {status === 'trashed' && (
+                  <div className="mt-3">
+                    <TrashReasonPicker
+                      idPrefix="create-order-trash"
+                      value={trashReason}
+                      notes={trashReasonNotes}
+                      onChange={setTrashReason}
+                      onNotesChange={setTrashReasonNotes}
                     />
                   </div>
                 )}

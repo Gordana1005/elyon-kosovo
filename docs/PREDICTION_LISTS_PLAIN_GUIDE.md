@@ -60,7 +60,19 @@ The answers are glued together into the list name. Example: a customer who last 
 - **Current Cancels** — anyone whose **latest action was a cancellation** (within the last 14 days). They are parked here, **assigned to nobody**, so they don't get a sales call right after saying no. After 14 days the system automatically returns them to their normal list.
 - **Current Returns** — anyone whose **most recent order was returned**. This is an **extra** list just for tracking returns — **assigned to nobody**. If the customer has bought before, they **also** stay in their normal calling list (they show in both places); if they never had a successful purchase, they show **only** here. They drop off automatically the moment they place a new order. The list shows the returned order's date.
 - **Never-Converted Recent / Old** — people who never bought anything. "Recent" = their last cancellation was within 6 months; "Old" = older than that, or no real history. Lowest priority calling material.
-- **Trash List** — everyone whose **most recent order was trashed**, shown **with the reason** (wrong number, wrong person, **unreachable**, rude, does-not-cooperate, other). Assigned to nobody — it's a see-everything list so you always know who was trashed and why. Wrong-number / wrong-person / **unreachable** customers are also removed from every calling list (dead numbers); the other reasons stay callable but still appear here. A customer leaves the moment a newer order appears. **"Unreachable"** lands here two ways: an agent picks it by hand, or the system auto-trashes after **9 no-answers** — reached gently at **2 calls a day, 3–4 hours apart, over about 4 days** (a client is never hammered with 9 calls in one day).
+- **Trash List** — everyone who **has been trashed**, shown **with the reason** (wrong number, wrong person, **unreachable**, rude, does-not-cooperate, other). Assigned to nobody — it's a see-everything list so you always know who was trashed and why.
+
+  **Once trashed, they stay trashed (since 2026-08-06).** Whatever the reason, the customer is taken out of **every** calling list and stays in the Trash List. A new lead, a cancellation or a return does **not** put them back — this is exactly what changed, because before then "rude", "does-not-cooperate" and "other" customers kept coming back round in the calling lists.
+
+  **Two ways out, and only two:**
+  1. **They buy again.** If a *paid* order lands after the trash, they're released and go back to their normal list — money proves the number is real and the person is a customer, whatever was clicked before. (This kept 2.391 Macedonian customers who had already paid us after being trashed.)
+  2. **"Unreachable" runs out.** That one reason is only a **21-day** park, then they return on their own.
+
+  **A trashed customer can still be sold to.** This rule only governs the prediction lists. If a trashed number sends a brand-new lead, it arrives as a normal pending order and the agent calls it as usual — we just stop re-dialling junk out of the re-marketing lists.
+
+  **"Duplicate order"** is not a trash of the customer at all — it's for cleaning up the same lead arriving twice. Those customers keep their normal list and never show in the Trash List.
+
+  **"Unreachable"** lands here two ways: an agent picks it by hand, or the system auto-trashes after **9 no-answers** — reached gently at **2 calls a day, 3–4 hours apart, over about 4 days** (a client is never hammered with 9 calls in one day).
 - **FULL MONAD LIST** — the imported Monadon customers. They are **only** here, never in our normal lists, and their old purchases never count as ours.
 - **Cancelled Pendings** — a hand-made list (old leads kept with name + product for callback). The system never touches hand-made lists.
 

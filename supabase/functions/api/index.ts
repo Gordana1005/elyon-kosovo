@@ -75,11 +75,14 @@ const createOrderSchema = z.object({
   ]).optional(),
   cancellation_reason_notes: z.string().max(1000).optional(),
   // Structured trash reason — stored only when status is 'trashed' (see the
-  // insert below). Mirrors the agent-facing picker in ChooseAnswerButton.tsx.
+  // insert below). Mirrors src/lib/trashReasons.ts (TRASH_REASON_VALUES), the
+  // single source of truth for all three pickers.
   // 'not_reachable' doubles as the server auto-trash reason (9 no-answers) and
   // is now also manually selectable ("Unreachable").
+  // 'duplicate_order' = lead de-duplication; the customer stays callable.
   trash_reason: z.enum([
-    "wrong_number", "wrong_person", "not_reachable", "rude", "uncooperative", "other",
+    "wrong_number", "wrong_person", "not_reachable", "rude", "uncooperative",
+    "duplicate_order", "other",
   ]).optional(),
   trash_reason_notes: z.string().max(1000).optional(),
   items: z.array(createOrderItemSchema).optional(),
@@ -124,10 +127,14 @@ const updateStatusSchema = z.object({
     "still_using_product", "not_interested", "will_call_back", "other",
   ]).optional(),
   cancellation_reason_notes: z.string().max(1000).optional(),
-  // Structured trash reason — stored only when status is being set to 'trashed'.
+  // Structured trash reason — stored when status is 'trashed'. Also accepted on
+  // a no-op status PATCH so an admin can correct the reason on an order that is
+  // already trashed (the Order Editor's reason-only save).
   // 'not_reachable' is both the auto-trash reason and a manual "Unreachable" pick.
+  // 'duplicate_order' = lead de-duplication; the customer stays callable.
   trash_reason: z.enum([
-    "wrong_number", "wrong_person", "not_reachable", "rude", "uncooperative", "other",
+    "wrong_number", "wrong_person", "not_reachable", "rude", "uncooperative",
+    "duplicate_order", "other",
   ]).optional(),
   trash_reason_notes: z.string().max(1000).optional(),
   return_reason: z.enum([
@@ -270,11 +277,14 @@ const callLogSchema = z.object({
     "still_using_product", "not_interested", "will_call_back", "other",
   ]).optional(),
   cancellation_reason_notes: z.string().max(1000).optional(),
-  // Structured trash reason for an in-call 'trash' outcome (the 'wrong_number'
-  // outcome is self-describing and derived server-side; see applyOutcomeToOrder).
+  // Structured trash reason for an in-call 'trash' outcome. The 'wrong_number'
+  // outcome defaults to "wrong_number" server-side but an explicit pick wins
+  // (see applyOutcomeToOrder).
   // 'not_reachable' = the manual "Unreachable" pick (also the auto-trash reason).
+  // 'duplicate_order' = lead de-duplication; the customer stays callable.
   trash_reason: z.enum([
-    "wrong_number", "wrong_person", "not_reachable", "rude", "uncooperative", "other",
+    "wrong_number", "wrong_person", "not_reachable", "rude", "uncooperative",
+    "duplicate_order", "other",
   ]).optional(),
 });
 
@@ -733,11 +743,15 @@ async function applyOutcomeToOrder(
     update.cancelled_at = new Date().toISOString();
     update.cancelled_by_agent_id = agentId;
   }
-  // Capture WHY it was trashed. 'wrong_number' is its own self-describing
-  // outcome; a plain 'trash' carries the reason the agent picked. Only set when
-  // actually moving INTO trashed (guarded by rule.to), never overwriting.
+  // Capture WHY it was trashed. A plain 'trash' carries the reason the agent
+  // picked; the 'wrong_number' outcome falls back to "wrong_number" but an
+  // EXPLICIT pick still wins — the Order Editor lets an admin choose the outcome
+  // Wrong Number and then correct the reason (e.g. to duplicate_order). Only set
+  // when actually moving INTO trashed (guarded by rule.to), never overwriting.
   if (rule.to === "trashed") {
-    update.trash_reason = outcome === "wrong_number" ? "wrong_number" : (trashReason ?? null);
+    update.trash_reason = outcome === "wrong_number"
+      ? (trashReason ?? "wrong_number")
+      : (trashReason ?? null);
   }
 
   const { error: updErr } = await client.from("orders").update(update).eq("id", orderId);
@@ -4485,6 +4499,61 @@ async function handleRequest(req: Request): Promise<Response> {
       return json({ orders: redactCustomerList(enrichedOrders, piiFlags), total: count, page, limit });
     }
 
+    // GET /api/my-pendings-summary — counts for the "Pendings" queue entry on
+    // /calls. ALWAYS scoped to the caller (auth.uid()); there is deliberately no
+    // agent_id parameter, so this can never be used to read someone else's book.
+    //
+    //   ready        — assigned to me, status='pending', callable right now
+    //                  (same next_call_after predicate as ?ready_only=1 above)
+    //   open         — assigned to me, status='pending', including no-answer parks
+    //   parked       — open - ready
+    //   talked_today — leads assigned to me that I moved OUT of the pending
+    //                  lifecycle today (Europe/Skopje), from order_history.
+    //
+    // Kept in the edge function rather than a PostgREST-readable view/RPC on
+    // purpose: affiliates hold real Supabase logins, so nothing new may become
+    // readable to `authenticated`. The affiliate hard wall above already 403s
+    // external partners on every path but `me`.
+    if (req.method === "GET" && path === "my-pendings-summary") {
+      const nowIso = new Date().toISOString();
+
+      const openQ = adminClient
+        .from("orders")
+        .select("id", { count: "exact", head: true })
+        .eq("assigned_agent_id", user.id)
+        .eq("status", "pending");
+
+      const readyQ = adminClient
+        .from("orders")
+        .select("id", { count: "exact", head: true })
+        .eq("assigned_agent_id", user.id)
+        .eq("status", "pending")
+        .or(`next_call_after.is.null,next_call_after.lte.${nowIso}`);
+
+      const [{ count: openCount }, { count: readyCount }] = await Promise.all([openQ, readyQ]);
+
+      // "Talked" = a lead of mine left `pending`/`take` today by my hand. Counted
+      // from order_history (distinct orders) so a lead I touched twice counts once.
+      const { startISO } = skopjeDayStart();
+      const { data: touched } = await adminClient
+        .from("order_history")
+        .select("order_id, orders!inner(assigned_agent_id)")
+        .eq("changed_by", user.id)
+        .gte("changed_at", startISO)
+        .in("to_status", ["confirmed", "cancelled", "trashed", "call_again"])
+        .eq("orders.assigned_agent_id", user.id)
+        .limit(2000);
+
+      const open = openCount ?? 0;
+      const ready = readyCount ?? 0;
+      return json({
+        ready,
+        open,
+        parked: Math.max(0, open - ready),
+        talked_today: new Set((touched || []).map((r: any) => r.order_id)).size,
+      });
+    }
+
     // GET /api/orders/unassigned-pending (admin only - for assigner)
     if (req.method === "GET" && path === "orders/unassigned-pending") {
       if (!canViewModule("assigner")) return json({ error: "Forbidden" }, 403);
@@ -5678,14 +5747,19 @@ async function handleRequest(req: Request): Promise<Response> {
         await broadcastLeaderboard("confirmed", { agent_id: user.id, order_id: orderId });
       }
 
-      // Log history
-      await adminClient.from("order_history").insert({
-        order_id: orderId,
-        from_status: order.status,
-        to_status: newStatus,
-        changed_by: user.id,
-        changed_by_name: profile?.full_name || user.email,
-      });
+      // Log history — but not for a no-op transition. The Order Editor now
+      // re-PATCHes with the SAME status when only the cancel/trash reason was
+      // corrected; recording that as a status change would spam the timeline
+      // with "Cancelled → Cancelled" rows.
+      if (order.status !== newStatus) {
+        await adminClient.from("order_history").insert({
+          order_id: orderId,
+          from_status: order.status,
+          to_status: newStatus,
+          changed_by: user.id,
+          changed_by_name: profile?.full_name || user.email,
+        });
+      }
 
       // Sync status to linked inbound lead
       if (order.inbound_lead_id) {

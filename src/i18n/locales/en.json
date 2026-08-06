@@ -49,6 +49,10 @@
     "cancelReasonRequiredDesc": "Pick a reason before saving.",
     "cancelNoteRequired": "Comment required",
     "cancelNoteRequiredDesc": "Type a comment explaining the \"Other\" reason before saving.",
+    "trashReasonRequired": "Trash reason required",
+    "trashReasonRequiredDesc": "Pick why this order is going to trash before saving.",
+    "trashNoteRequired": "Comment required",
+    "trashNoteRequiredDesc": "Type a comment explaining the \"Other reason\" before saving.",
     "namePhoneRequired": "Name and Phone required",
     "namePhoneRequiredDesc": "Please fill in customer name and phone before confirming.",
     "productsRequired": "Products required",
@@ -224,8 +228,12 @@
     "wrong_person": "Wrong person answered",
     "rude": "Person is rude",
     "uncooperative": "Does not cooperate",
+    "duplicate_order": "Duplicate order",
     "other": "Other reason",
     "not_reachable": "Unreachable (never answers)"
+  },
+  "trashPicker": {
+    "notesLabel": "Note (optional)"
   },
   "chooseAnswer": {
     "button": "Choose Answer",
@@ -1496,6 +1504,11 @@
     "chooseList": "Choose a list",
     "listsCount_one": "{{count}} list",
     "listsCount_other": "{{count}} lists",
+    "pendingsQueue": "Pendings",
+    "queueCountPendings": "{{left}} ({{talked}} talked)",
+    "pendingsWaiting_one": "{{count}} pending lead waiting — switch to Pendings",
+    "pendingsWaiting_other": "{{count}} pending leads waiting — switch to Pendings",
+    "pendingsEmptyDesc": "No pending leads left to call right now. Switch the queue to a prediction list to keep working.",
     "dialBtn": "Dial {{phone}}",
     "markedAs": "Marked as",
     "stayHint": ". Stay on this customer if you need to create an order or edit notes.",

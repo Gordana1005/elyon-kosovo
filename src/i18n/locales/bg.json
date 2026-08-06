@@ -49,6 +49,10 @@
     "cancelReasonRequiredDesc": "Избери причина преди запазване.",
     "cancelNoteRequired": "Нужен е коментар",
     "cancelNoteRequiredDesc": "Опиши причината за избор „Друго“ преди запазване.",
+    "trashReasonRequired": "Нужна е причина за коша",
+    "trashReasonRequiredDesc": "Избери защо поръчката отива в коша преди запазване.",
+    "trashNoteRequired": "Нужен е коментар",
+    "trashNoteRequiredDesc": "Опиши причината за избор „Друга причина“ преди запазване.",
     "namePhoneRequired": "Нужни са име и телефон",
     "namePhoneRequiredDesc": "Попълни име и телефон на клиента преди потвърждаване.",
     "productsRequired": "Нужни са продукти",
@@ -224,8 +228,12 @@
     "wrong_person": "Отговори грешен човек",
     "rude": "Грубо държане",
     "uncooperative": "Не съдейства",
+    "duplicate_order": "Дублирана поръчка",
     "other": "Друга причина",
     "not_reachable": "Недостъпен (не вдига)"
+  },
+  "trashPicker": {
+    "notesLabel": "Бележка (по избор)"
   },
   "chooseAnswer": {
     "button": "Избери резултат",
@@ -1496,6 +1504,11 @@
     "chooseList": "Изберете списък",
     "listsCount_one": "{{count}} списък",
     "listsCount_other": "{{count}} списъка",
+    "pendingsQueue": "Чакащи",
+    "queueCountPendings": "{{left}} ({{talked}} говорени)",
+    "pendingsWaiting_one": "{{count}} чакащ клиент — превключи към Чакащи",
+    "pendingsWaiting_other": "{{count}} чакащи клиенти — превключи към Чакащи",
+    "pendingsEmptyDesc": "В момента няма чакащи клиенти за обаждане. Превключи опашката към прогнозен списък, за да продължиш.",
     "dialBtn": "Набери {{phone}}",
     "markedAs": "Маркирано като",
     "stayHint": ". Остани на този клиент, ако трябва да създадеш поръчка или бележки.",

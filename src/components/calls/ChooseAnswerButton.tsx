@@ -2,24 +2,22 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ClipboardCheck, Check, X, Trash2, PhoneOff, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
 } from '@/components/ui/dialog';
 import { CancellationReasonPicker } from '@/components/CancellationReasonPicker';
+import { TrashReasonPicker } from '@/components/TrashReasonPicker';
 import { isCancelSelectionValid } from '@/lib/cancellationReasons';
-import type { CancellationReason } from '@/lib/api';
+import { isTrashSelectionValid } from '@/lib/trashReasons';
+import type { CancellationReason, TrashReason } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { hoverLift, getStaggerStyle } from '@/lib/design-utils';
 
-// Stable keys; the KEY is stored structurally on the trashed order
+// The reason KEY is stored structurally on the trashed order
 // (orders.trash_reason) and translated for display — exactly like
 // cancellation_reason. The optional free-text note goes to trash_reason_notes.
-// 'not_reachable' is also the server-only auto-trash reason (9 consecutive
-// no-answers). Exposing it here lets an agent trash a client as Unreachable by
-// hand; the engine treats a not_reachable trash exactly like the auto path
-// (removed from every calling band, parked in the Trash List).
-const TRASH_REASON_KEYS = ['wrong_number', 'wrong_person', 'not_reachable', 'rude', 'uncooperative', 'other'];
+// The pickable list lives in src/lib/trashReasons.ts so this picker, the order
+// editor and the create-order modal can never drift.
 
 type Outcome = 'confirmed' | 'cancel' | 'trash' | 'call_again';
 
@@ -32,7 +30,7 @@ interface Props {
   /** Customer declined → record a cancelled order with reason + note. */
   onCancelled: (reason: CancellationReason, notes: string) => Promise<void> | void;
   /** Wrong number / rude / etc → record a trashed order with the structured reason key + optional note. */
-  onTrashed: (reasonKey: string, notes: string) => Promise<void> | void;
+  onTrashed: (reasonKey: TrashReason, notes: string) => Promise<void> | void;
   /** No pickup → move to Call Again (today). */
   onDidntAnswer: () => Promise<void> | void;
 }
@@ -58,7 +56,7 @@ export function ChooseAnswerButton({ disabled, className, onConfirmed, onCancell
 
   const [cancelReason, setCancelReason] = useState<CancellationReason | null>(null);
   const [cancelNotes, setCancelNotes] = useState('');
-  const [trashReason, setTrashReason] = useState<string | null>(null);
+  const [trashReason, setTrashReason] = useState<TrashReason | null>(null);
   const [trashNotes, setTrashNotes] = useState('');
 
   const reset = () => {
@@ -206,38 +204,17 @@ export function ChooseAnswerButton({ disabled, className, onConfirmed, onCancell
 
             {outcome === 'trash' && (
               <div className="flex flex-col h-full gap-3">
-                <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t('chooseAnswer.trashReasonLabel')}</div>
-                <div className="flex flex-wrap gap-1.5">
-                  {TRASH_REASON_KEYS.map(k => {
-                    const label = t(`trashReason.${k}`);
-                    return (
-                      <button
-                        key={k}
-                        type="button"
-                        onClick={() => setTrashReason(k)}
-                        className={cn(
-                          'px-2.5 py-1 rounded-full text-[11px] font-medium border transition-colors',
-                          trashReason === k
-                            ? 'bg-muted-foreground text-white border-muted-foreground'
-                            : 'bg-card text-muted-foreground border-border hover:border-muted-foreground/60',
-                        )}
-                      >
-                        {label}
-                      </button>
-                    );
-                  })}
-                </div>
-                <Textarea
-                  value={trashNotes}
-                  onChange={e => setTrashNotes(e.target.value)}
-                  placeholder={trashReason === 'other' ? t('chooseAnswer.otherRequiredPlaceholder') : t('chooseAnswer.optionalNote')}
-                  className="min-h-[60px] text-xs"
-                  maxLength={1000}
+                <TrashReasonPicker
+                  idPrefix="choose-answer-trash"
+                  value={trashReason}
+                  notes={trashNotes}
+                  onChange={setTrashReason}
+                  onNotesChange={setTrashNotes}
                 />
                 <Button
                   variant="secondary"
                   className="mt-auto w-full gap-1.5"
-                  disabled={!trashReason || (trashReason === 'other' && !trashNotes.trim()) || submitting}
+                  disabled={!isTrashSelectionValid(trashReason, trashNotes) || submitting}
                   onClick={() => trashReason && run(() => onTrashed(trashReason, trashNotes.trim()))}
                 >
                   {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}

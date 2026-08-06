@@ -49,6 +49,10 @@
     "cancelReasonRequiredDesc": "Избери причина пред зачувување.",
     "cancelNoteRequired": "Потребен е коментар",
     "cancelNoteRequiredDesc": "Напиши коментар за причината „Друго“ пред зачувување.",
+    "trashReasonRequired": "Потребна е причина за корпата",
+    "trashReasonRequiredDesc": "Избери зошто нарачката оди во корпата пред зачувување.",
+    "trashNoteRequired": "Потребен е коментар",
+    "trashNoteRequiredDesc": "Напиши коментар за „Друга причина“ пред зачувување.",
     "namePhoneRequired": "Потребни се име и телефон",
     "namePhoneRequiredDesc": "Пополни име и телефон на клиентот пред потврдување.",
     "productsRequired": "Потребни се производи",
@@ -224,8 +228,12 @@
     "wrong_person": "Се јави погрешно лице",
     "rude": "Лицето е грубо",
     "uncooperative": "Не соработува",
+    "duplicate_order": "Дуплирана нарачка",
     "other": "Друга причина",
     "not_reachable": "Недостапен (не се јавува)"
+  },
+  "trashPicker": {
+    "notesLabel": "Белешка (по избор)"
   },
   "chooseAnswer": {
     "button": "Избери резултат",
@@ -1452,6 +1460,11 @@
     "chooseList": "Избери список",
     "listsCount_one": "{{count}} список",
     "listsCount_other": "{{count}} списоци",
+    "pendingsQueue": "Чекачки",
+    "queueCountPendings": "{{left}} ({{talked}} разговарани)",
+    "pendingsWaiting_one": "{{count}} клиент чека — префрли се на Чекачки",
+    "pendingsWaiting_other": "{{count}} клиенти чекаат — префрли се на Чекачки",
+    "pendingsEmptyDesc": "Нема повеќе клиенти на чекање за јавување во моментов. Префрли ја редицата на предвидувачка листа за да продолжиш.",
     "dialBtn": "Набери {{phone}}",
     "markedAs": "Означено како",
     "stayHint": ". Остани кај овој клиент ако треба да креираш нарачка или да уредиш белешки.",

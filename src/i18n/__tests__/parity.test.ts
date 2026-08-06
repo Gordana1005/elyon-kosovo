@@ -5,6 +5,7 @@ import sq from '../locales/sq.json';
 import mk from '../locales/mk.json';
 import { ALL_STATUSES, PREDICTION_LEAD_STATUSES } from '@/types';
 import { CANCEL_REASON_VALUES } from '@/lib/cancellationReasons';
+import { TRASH_REASON_VALUES } from '@/lib/trashReasons';
 
 // CI guard for the translation files: every key must exist in ALL languages
 // (a missing key would silently fall back to English in production), and
@@ -70,6 +71,11 @@ describe('i18n enum coverage', () => {
     for (const v of ['family_refused', 'wrong_product', 'duplicate_order']) {
       expect(keys, `retired cancelReason.${v} missing in ${lang}`).toContain(v);
     }
+  });
+
+  it.each(langs)('%s covers all trash reasons', (lang) => {
+    const keys = Object.keys(ALL_LOCALES[lang].trashReason as Tree);
+    for (const v of TRASH_REASON_VALUES) expect(keys, `trashReason.${v} missing in ${lang}`).toContain(v);
   });
 });
 

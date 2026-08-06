@@ -31,6 +31,30 @@ Fed by `GET /assigner/assignment-summary` (one `assignment_matrix()` + `assigned
 
 **Full detach is the rule here**: every bulk button sends `include_done: true`, which also clears `assigned_agent_*` on already-called rows so the (agent, list) pair leaves `assignment_matrix()` entirely. Rationale (operator, 2026-07-28): an emptied list must not stay attached to an agent's profile. History is NOT lost — `is_completed`, `last_call_*`, `call_logs`, recordings and sales credit (`confirmed_by_*`) are all untouched, and the audit row records the per-agent breakdown.
 
+### Pendings are a queue on /calls too (2026-08-06)
+
+Assigning a pending lead used to be invisible to the agent: the queue strip in the /calls topbar
+listed only prediction lists, while pendings were fetched separately and silently given priority.
+An agent working leads saw a *prediction list name* in the strip that wasn't what they were calling,
+and could not tell they had leads at all.
+
+Now the strip carries a **virtual "Pendings" entry, always first**, fed by `GET /my-pendings-summary`
+(`ready` / `open` / `parked` / `talked_today`, Europe/Skopje). Key rules:
+
+- The entry is **synthetic** — leads are `orders` rows, not segment members, so there is no list row
+  and **no segment list was created for them**. The sentinel `PENDINGS_QUEUE_ID = '__pendings__'`
+  (`src/components/calls/useMyQueue.ts`) must short-circuit every list-scoped path; if it ever
+  reaches PostgREST or `markAfterCall` it is an invalid uuid.
+- **Auto-selected on load** when `ready > 0`. Picking a prediction list **pins** it
+  (`manualPickRef`), so an arriving lead no longer yanks the agent off the customer they chose —
+  the strip shows an amber pulsing badge with the waiting count instead, and they switch back when
+  they want. Choosing Pendings deliberately does *not* pin (it is the default priority).
+- Running out of leads **falls through** to the first prediction list with work rather than
+  stranding the agent on an empty queue.
+- `GET /my-pendings-summary` is hard-scoped to `auth.uid()` with **no `agent_id` parameter** and
+  stays inside the edge function. Do not turn it into a view or RPC: affiliates hold real Supabase
+  logins, so nothing new may become readable to `authenticated`.
+
 ## Assignment Rules & Recent Changes (Important)
 
 - **Pending orders** can be unassigned more freely (even after some work).
