@@ -93,9 +93,17 @@ v3.7 for Macedonia. Migrations `20260913000000` … `20260913000300`, edge funct
 - **Cancel list needed no change** — the 14-day park and the automatic return to the band computed
   from last-paid date + order count already worked; verified live (`0 overdue`, cron `0 0 * * *`
   active) and pinned by the new fixture.
-- New verifier: **`node scripts/verify-sticky-trash-mk.mjs`** (8 behavioural cases). Audit is
-  **13/14** — the standing failure is *705 zero-price paid buckets*, an import data gap (1.199 paid
-  orders with `price = 0`), not an engine fault. Live↔shadow parity **0**.
+- New verifier: **`node scripts/verify-sticky-trash-mk.mjs`** (8 behavioural cases). Live↔shadow
+  parity **0**.
+- **Zero-price paid orders: 1.199 → 738** (`scripts/recover-zero-prices-mk.mjs`, +€6.896 revenue,
+  audit check 705 → 461 members). AlterCPA recorded no price on these; every source was exhausted
+  first (raw export, its line items, CRM `order_items`, collabBox — all empty or not sale prices).
+  461 were recovered where the source **did** record a quantity and the same offer+quantity sold at
+  one settled price (≥90% of ≥10 paid peers, ±1 month); each carries a `System (Price Recovery)`
+  note so a reconstructed figure is never mistaken for a recorded one. The remaining **738 stay at
+  0 on purpose** — they recorded neither price nor quantity (662 are Alpha Male, whose
+  1.490/3.000/4.000 ден "spread" is pack size 1/3/4, so there is nothing to price). Audit is
+  therefore **13/14** by design. Rollback: `scripts/data/zero-price-recovery-2026-08-06.json`.
 
 ### Market layer (Macedonia)
 
