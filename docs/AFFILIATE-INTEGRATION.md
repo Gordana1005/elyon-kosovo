@@ -5,7 +5,11 @@ Technical documentation for affiliates (webmasters) sending leads to Elyon via S
 - **Base URL:** `https://bmfxhgznttcnnlqloqzp.supabase.co/functions/v1/api`
 - **Auth:** your personal API key (`aff_…`), passed in the JSON body as `key`, as `?key=` query parameter, or as an `X-Api-Key` header.
 - **Format:** JSON in, JSON out. UTF-8. All money values are **EUR**.
-- **GEO:** Bulgaria (BG). Phone numbers are normalized to Bulgarian E.164 (`+359…`) — leads with non-Bulgarian numbers are rejected with `nophone`.
+- **GEO:** North Macedonia (MK). Phone numbers are normalized to Macedonian E.164 (`+389…`) — leads without enough digits are rejected with `nophone`.
+
+> ⚠️ **Corrected 2026-08-06.** This page previously said Bulgaria / `+359`, inherited from the
+> Bulgarian original. The code has always used `+389` here. Note that intake does not *reject* a
+> foreign number — `normalizeMkPhone` rewrites it to `+389…`, so only send Macedonian numbers.
 
 ---
 
@@ -13,9 +17,13 @@ Technical documentation for affiliates (webmasters) sending leads to Elyon via S
 
 Log in to your Elyon affiliate portal:
 
-- **Portal:** https://www.elyoncall.com
-- **Email:** `aff1@elyon.com`
-- **Password:** `AFF1234$` *(you can change it from the portal after logging in)*
+- **Portal:** https://elyon-natura.vercel.app
+- **Email / password:** issued to you individually by your Elyon manager.
+
+> 🛑 **Corrected 2026-08-06.** This block used to point at `https://www.elyoncall.com` with a
+> shared demo login. That is the **Bulgarian** system — a completely separate business — and a
+> partner following it would have been sent to the wrong company entirely. It also published a
+> working credential in a file meant to be handed to third parties.
 
 Inside the portal you'll find everything you need to integrate:
 
@@ -40,7 +48,7 @@ Content-Type: application/json
 |---|---|---|
 | `key` | yes* | Your API key (*or `?key=` / `X-Api-Key` header) |
 | `offer` | yes | Offer ID (UUID we give you) or exact offer name |
-| `phone` | yes | Customer phone, any common format (`0888123456`, `+359888…`, `00359…`) |
+| `phone` | yes | Customer phone, any common format (`070123456`, `+38970123456`, `0038970…`) |
 | `id` / `ext_id` | recommended | **Your** unique lead ID. Send `"auto"` or omit to let us generate one. Same `id` twice = `duplicate` (idempotent, safe to retry) |
 | `name` | recommended | Customer name |
 | `sub1`…`sub5` | optional | Your sub-IDs / campaign split-test labels — stored verbatim, returned in postbacks |
@@ -72,7 +80,7 @@ Errors: `{"status":"error","error":"<code>"}`
 | `ban` | Your account is banned |
 | `nooffer` | `offer` field missing |
 | `offer` | Offer not found, inactive, or not approved for you |
-| `nophone` | Phone missing or not a valid Bulgarian number |
+| `nophone` | Phone missing or too short to be a valid Macedonian number |
 | `duplicate` | Same `ext_id` already sent, **or** same phone already in our system within the dedupe window (default 24h). Includes `id`/`uid` of the existing lead when known. Not an error to worry about — do not retry |
 | `traffic` | Rate limit exceeded — slow down |
 | `db` | Temporary error on our side — retry later |
@@ -86,8 +94,8 @@ curl -X POST "https://bmfxhgznttcnnlqloqzp.supabase.co/functions/v1/api/cpa/lead
     "key":    "aff_YOUR_KEY_HERE",
     "offer":  "YOUR_OFFER_ID",
     "id":     "lead-10001",
-    "phone":  "0888123456",
-    "name":   "Ivan Ivanov",
+    "phone":  "070123456",
+    "name":   "Petar Ilievski",
     "sub1":   "campaign-a",
     "clickid":"{subid_from_your_tracker}"
   }'

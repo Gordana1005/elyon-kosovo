@@ -53,8 +53,8 @@ const createOrderSchema = z.object({
   delivery_instructions: z.string().max(1000).optional().default(""),
   gift_note: z.string().max(500).optional().default(""),
   // Structured delivery method (Phase 6 — courier office picker)
-  delivery_type: z.enum(["home", "speedy_office", "econt_office"]).optional().default("home"),
-  home_courier: z.enum(["speedy", "econt"]).optional(),
+  delivery_type: z.enum(["home", "speedy_office", "econt_office", "mex_office"]).optional().default("home"),
+  home_courier: z.enum(["speedy", "econt", "mex"]).optional(),
   courier_office_code: z.string().max(50).optional().default(""),
   courier_office_name: z.string().max(300).optional().default(""),
   courier_office_city: z.string().max(200).optional().default(""),
@@ -104,8 +104,8 @@ const updateCustomerSchema = z.object({
   entry: z.string().max(50).optional(),
   delivery_instructions: z.string().max(1000).optional(),
   gift_note: z.string().max(500).optional(),
-  delivery_type: z.enum(["home", "speedy_office", "econt_office"]).optional(),
-  home_courier: z.enum(["speedy", "econt"]).optional(),
+  delivery_type: z.enum(["home", "speedy_office", "econt_office", "mex_office"]).optional(),
+  home_courier: z.enum(["speedy", "econt", "mex"]).optional(),
   courier_office_code: z.string().max(50).optional(),
   courier_office_name: z.string().max(300).optional(),
   courier_office_city: z.string().max(200).optional(),
@@ -512,10 +512,44 @@ const updateAffiliateSchema = z.object({
   postback_format: z.enum(["generic", "altercpa"]).optional(),
   altercpa_reason_map: z.record(z.number().int().min(1).max(99)).nullable().optional(),
 });
+// ── AlterCPA bridge (admin surfaces) ────────────────────────────────────────
+// token_secret_name is the NAME of a function secret, never a token: a merchant
+// token can read every order in the account, so it must not travel through a
+// JSON body or land in a table.
+const GEO_RE = /^[A-Za-z]{2}$/;
+const altercpaAccountSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  api_base: z.string().trim().url().max(300).optional(),
+  token_secret_name: z.string().trim().regex(/^[A-Z][A-Z0-9_]{2,63}$/, "Must be an ENV-style name, e.g. ALTERCPA_TOKEN_MAIN"),
+  callable_geos: z.array(z.string().trim().regex(GEO_RE, "Use 2-letter country codes")).max(60).optional(),
+  status_mirror: z.enum(["off", "until_touched", "always"]).optional(),
+  import_scope: z.enum(["pending_only", "all"]).optional(),
+  sync_from: z.string().trim().max(10).nullable().optional(),
+  is_active: z.boolean().optional(),
+  notes: z.string().max(2000).nullable().optional(),
+});
+const altercpaAccountPatchSchema = altercpaAccountSchema.partial();
+const altercpaOfferMapPatchSchema = z.object({
+  product_id: z.string().uuid().nullable().optional(),
+  offer_id: z.string().uuid().nullable().optional(),
+  is_ignored: z.boolean().optional(),
+  notes: z.string().max(2000).nullable().optional(),
+});
+const altercpaSyncSchema = z.object({
+  account: z.string().trim().max(120).optional(),
+  kind: z.enum(["rolling", "nightly", "weekly", "backfill", "manual"]).optional(),
+  from: z.string().trim().max(40).optional(),
+  to: z.string().trim().max(40).optional(),
+  dry: z.boolean().optional(),
+});
+
 const offerCreateSchema = z.object({
   name: z.string().trim().min(1, "Name is required").max(200),
   product_id: z.string().uuid().nullable().optional(),
-  geo: z.string().trim().max(10).optional().default("BG"),
+  // MK, not the upstream Bulgarian default: this deployment is Macedonia, and
+  // offers.geo already defaults to 'MK' in the schema (20260801000100). The two
+  // disagreeing meant every offer created through the UI was stamped BG.
+  geo: z.string().trim().max(10).optional().default("MK"),
   payout_eur: z.number().min(0).max(100000),
   // Customer price per package; null/omitted = inherit the product's price.
   price_eur: z.number().min(0).max(100000).nullable().optional(),
@@ -1113,9 +1147,10 @@ function resolveCourierService(o: any): { courier: string; service: string } | n
   const dt = o?.delivery_type;
   if (dt === "speedy_office") return { courier: "speedy", service: "office" };
   if (dt === "econt_office") return { courier: "econt", service: "office" };
+  if (dt === "mex_office") return { courier: "mex", service: "office" };
   // 'home' (or legacy/empty) = door delivery; courier from home_courier.
   const hc = o?.home_courier;
-  if (hc === "speedy" || hc === "econt") return { courier: hc, service: "door" };
+  if (hc === "speedy" || hc === "econt" || hc === "mex") return { courier: hc, service: "door" };
   return null;
 }
 
@@ -1167,9 +1202,9 @@ async function handleRequest(req: Request): Promise<Response> {
       deliveryType: string | null | undefined,
       officeCode: string | null | undefined,
     ): Promise<string | null> => {
-      if (deliveryType !== "speedy_office" && deliveryType !== "econt_office") return null;
+      if (deliveryType !== "speedy_office" && deliveryType !== "econt_office" && deliveryType !== "mex_office") return null;
       if (!officeCode) return null;
-      const courier = deliveryType === "speedy_office" ? "speedy" : "econt";
+      const courier = deliveryType === "speedy_office" ? "speedy" : deliveryType === "mex_office" ? "mex" : "econt";
       const { data } = await adminClient
         .from("courier_offices")
         .select("post_code")
@@ -1177,6 +1212,38 @@ async function handleRequest(req: Request): Promise<Response> {
         .eq("office_code", officeCode)
         .maybeSingle();
       return data?.post_code ? String(data.post_code) : null;
+    };
+
+    // Resolve the customer's settlement to the MEX delivery zone that will
+    // route the parcel. add_shipment.php has no postcode field and treats
+    // receiver_address as free text, so receiver_city_id is the ONLY value that
+    // decides where the box physically goes.
+    //
+    // Resolved SERVER-SIDE from the stored city name, never taken from the
+    // client — a stale browser tab must not be able to inject a zone id.
+    // Returns null when the settlement is unknown or genuinely unroutable; the
+    // order still saves, and the push path rejects it later with a clear
+    // reason. We never guess a zone: MEX has no cancellation endpoint.
+    const resolveMexCity = async (
+      cityRaw: string | null | undefined,
+    ): Promise<{ id: number | null; name: string | null }> => {
+      const city = String(cityRaw || "").trim();
+      if (!city) return { id: null, name: null };
+      // The picker stores "Кадино, општ. Скопје"; match on the settlement part
+      // and drop any гр./с. marker.
+      const base = city.split(",")[0].replace(/^s*(гр.?|с.?|село|град)s*/i, "").trim();
+      const norm = normalizeMkGeo(base);
+      if (norm.length < 2) return { id: null, name: null };
+      const { data } = await adminClient
+        .from("mk_settlements")
+        .select("mex_city_id, mex_cities(city_name)")
+        .eq("name_norm", norm)
+        .not("mex_city_id", "is", null)
+        .limit(1)
+        .maybeSingle();
+      if (!data?.mex_city_id) return { id: null, name: null };
+      const zone = (data as { mex_cities?: { city_name?: string } }).mex_cities;
+      return { id: data.mex_city_id as number, name: zone?.city_name ?? null };
     };
 
     // Snapshot which prediction list a customer was in AT ORDER TIME. Rule-driven
@@ -2428,6 +2495,220 @@ async function handleRequest(req: Request): Promise<Response> {
     // ROUTING
     // ============================================================
 
+    // ── ALTERCPA BRIDGE ──────────────────────────────────────────────
+    // Read-only mirror of an AlterCPA account. Leads keep arriving there; this
+    // pulls them in so the CRM is one place. Nothing is ever sent back — see
+    // migration 20260914000000.
+    //
+    // Same split as the affiliates admin below: view = admin/manager,
+    // mutations = admin only. The account row carries the NAME of a function
+    // secret, never a token, so there is no credential to mask here.
+
+    if (req.method === "GET" && path === "altercpa/accounts") {
+      if (!isAdminOrManager) return json({ error: "Forbidden" }, 403);
+      const { data, error } = await adminClient
+        .from("altercpa_accounts").select("*").order("name");
+      if (error) return json({ error: sanitizeDbError(error) }, 400);
+
+      // Tell the operator whether each account's secret is actually present.
+      // "Configured but the secret was never set" is the single most likely
+      // reason for a bridge that reports success and imports nothing.
+      const out = (data || []).map((a: any) => ({
+        ...a,
+        token_present: !!Deno.env.get(a.token_secret_name),
+      }));
+      return json(out);
+    }
+
+    if (req.method === "POST" && path === "altercpa/accounts") {
+      if (!isAdmin) return json({ error: "Forbidden — admin only" }, 403);
+      let body: z.infer<typeof altercpaAccountSchema>;
+      try { body = parseBody(altercpaAccountSchema, await req.json()); }
+      catch (e: any) { return json({ error: e.message }, 400); }
+      const { data, error } = await adminClient.from("altercpa_accounts").insert({
+        name: body.name,
+        api_base: body.api_base ?? "https://api.cpa.moe",
+        token_secret_name: body.token_secret_name,
+        callable_geos: (body.callable_geos ?? ["MK"]).map((g) => g.toUpperCase()),
+        status_mirror: body.status_mirror ?? "off",
+        import_scope: body.import_scope ?? "pending_only",
+        sync_from: body.sync_from ?? null,
+        is_active: body.is_active ?? true,
+        notes: body.notes ?? null,
+      }).select("*").single();
+      if (error) return json({ error: sanitizeDbError(error) }, 400);
+      return json(data);
+    }
+
+    if (req.method === "PATCH" && segments[0] === "altercpa" && segments[1] === "accounts" && segments.length === 3) {
+      if (!isAdmin) return json({ error: "Forbidden — admin only" }, 403);
+      let body: z.infer<typeof altercpaAccountPatchSchema>;
+      try { body = parseBody(altercpaAccountPatchSchema, await req.json()); }
+      catch (e: any) { return json({ error: e.message }, 400); }
+      const update: Record<string, unknown> = {};
+      for (const k of ["name", "api_base", "token_secret_name", "status_mirror", "import_scope", "sync_from", "is_active", "notes"] as const) {
+        if (body[k] !== undefined) update[k] = body[k];
+      }
+      if (body.callable_geos !== undefined) {
+        update.callable_geos = body.callable_geos.map((g) => g.toUpperCase());
+      }
+      if (!Object.keys(update).length) return json({ error: "Nothing to update" }, 400);
+      const { data, error } = await adminClient
+        .from("altercpa_accounts").update(update).eq("id", segments[2]).select("*").single();
+      if (error) return json({ error: sanitizeDbError(error) }, 400);
+      return json(data);
+    }
+
+    // The mirror. This is the multi-country report: every geo, every offer,
+    // every webmaster — including the traffic we deliberately do not call.
+    if (req.method === "GET" && path.startsWith("altercpa/leads")) {
+      if (!isAdminOrManager) return json({ error: "Forbidden" }, 403);
+      const p = url.searchParams;
+      const limit = Math.min(Math.max(Number(p.get("limit")) || 50, 1), 200);
+      const page = Math.max(Number(p.get("page")) || 1, 1);
+
+      let q = adminClient
+        .from("altercpa_leads")
+        .select("*, orders(display_id, status)", { count: "exact" });
+
+      if (p.get("account_id")) q = q.eq("account_id", p.get("account_id"));
+      if (p.get("geo")) q = q.eq("geo", (p.get("geo") || "").toUpperCase());
+      if (p.get("offer")) q = q.eq("offer_name", p.get("offer"));
+      if (p.get("webmaster")) q = q.eq("webmaster", p.get("webmaster"));
+      if (p.get("phase")) q = q.eq("phase", Number(p.get("phase")));
+      // 'mirrored' and 'none' are the two the operator actually asks for:
+      // "what did we NOT take" and "what did we take".
+      const skip = p.get("skip");
+      if (skip === "none") q = q.is("skip_reason", null);
+      else if (skip) q = q.eq("skip_reason", skip);
+      if (p.get("from")) q = q.gte("created_remote", p.get("from"));
+      if (p.get("to")) q = q.lte("created_remote", p.get("to"));
+      const search = (p.get("q") || "").trim();
+      if (search) {
+        const digits = search.replace(/\D/g, "");
+        // Last-8 on the RAW phone: these numbers are multi-country and were
+        // never normalized, so a prefix match would find nothing.
+        if (digits.length >= 6) q = q.ilike("phone_raw", `%${digits.slice(-8)}%`);
+        else q = q.ilike("customer_name", `%${search}%`);
+      }
+
+      const { data, error, count } = await q
+        .order("created_remote", { ascending: false, nullsFirst: false })
+        .range((page - 1) * limit, page * limit - 1);
+      if (error) return json({ error: sanitizeDbError(error) }, 400);
+      return json({ rows: data || [], total: count ?? 0, page, limit });
+    }
+
+    // Rollups for the mirror header — by geo, by offer, by webmaster. Done as
+    // an RPC because 80k+ rows must not be pulled into the function to be
+    // counted.
+    if (req.method === "GET" && path.startsWith("altercpa/summary")) {
+      if (!isAdminOrManager) return json({ error: "Forbidden" }, 403);
+      const { data, error } = await adminClient.rpc("altercpa_summary", {
+        _account_id: url.searchParams.get("account_id") || null,
+        _from: url.searchParams.get("from") || null,
+        _to: url.searchParams.get("to") || null,
+      });
+      if (error) return json({ error: sanitizeDbError(error) }, 400);
+      return json(data ?? { geos: [], offers: [], webmasters: [], totals: {} });
+    }
+
+    // The offer→product queue. Everything AlterCPA has ever sent us, with the
+    // ones still awaiting a product first — those are the actionable ones.
+    if (req.method === "GET" && path.startsWith("altercpa/offer-map")) {
+      if (!isAdminOrManager) return json({ error: "Forbidden" }, 403);
+      let q = adminClient
+        .from("altercpa_offer_map")
+        .select("*, products(id, name, price, sku)");
+      if (url.searchParams.get("account_id")) q = q.eq("account_id", url.searchParams.get("account_id"));
+      if (url.searchParams.get("unmapped") === "1") q = q.is("product_id", null).eq("is_ignored", false);
+      if (url.searchParams.get("geo")) q = q.eq("geo", (url.searchParams.get("geo") || "").toUpperCase());
+      const { data, error } = await q
+        .order("is_mapped", { ascending: true })
+        .order("seen_count", { ascending: false });
+      if (error) return json({ error: sanitizeDbError(error) }, 400);
+      return json(data || []);
+    }
+
+    if (req.method === "PATCH" && segments[0] === "altercpa" && segments[1] === "offer-map" && segments.length === 3) {
+      if (!isAdmin) return json({ error: "Forbidden — admin only" }, 403);
+      let body: z.infer<typeof altercpaOfferMapPatchSchema>;
+      try { body = parseBody(altercpaOfferMapPatchSchema, await req.json()); }
+      catch (e: any) { return json({ error: e.message }, 400); }
+      const update: Record<string, unknown> = {};
+      if (body.product_id !== undefined) {
+        update.product_id = body.product_id;
+        update.mapped_by = user.id;
+        update.mapped_at = new Date().toISOString();
+      }
+      if (body.offer_id !== undefined) update.offer_id = body.offer_id;
+      if (body.is_ignored !== undefined) update.is_ignored = body.is_ignored;
+      if (body.notes !== undefined) update.notes = body.notes;
+      if (!Object.keys(update).length) return json({ error: "Nothing to update" }, 400);
+
+      const { data, error } = await adminClient
+        .from("altercpa_offer_map").update(update).eq("id", segments[2])
+        .select("*, products(id, name, price, sku)").single();
+      if (error) return json({ error: sanitizeDbError(error) }, 400);
+
+      // Newly mapped: link the leads already sitting in the ledger for it, so
+      // mapping an offer does not silently apply "from now on" only. The ORDERS
+      // are deliberately NOT created retroactively here — that can be thousands
+      // of rows and belongs in an explicit backfill the operator triggers.
+      if (body.product_id) {
+        await adminClient
+          .from("altercpa_leads")
+          .update({ product_id: body.product_id })
+          .eq("account_id", (data as any).account_id)
+          .eq("geo", (data as any).geo)
+          .ilike("offer_name", (data as any).offer_name)
+          .is("product_id", null);
+      }
+      return json(data);
+    }
+
+    if (req.method === "GET" && path.startsWith("altercpa/runs")) {
+      if (!isAdminOrManager) return json({ error: "Forbidden" }, 403);
+      let q = adminClient.from("altercpa_sync_runs").select("*, altercpa_accounts(name)");
+      if (url.searchParams.get("account_id")) q = q.eq("account_id", url.searchParams.get("account_id"));
+      const { data, error } = await q
+        .order("started_at", { ascending: false })
+        .limit(Math.min(Number(url.searchParams.get("limit")) || 50, 200));
+      if (error) return json({ error: sanitizeDbError(error) }, 400);
+      return json(data || []);
+    }
+
+    // Fire a sync by hand: the dry run, and backfills.
+    if (req.method === "POST" && path === "altercpa/sync") {
+      if (!isAdmin) return json({ error: "Forbidden — admin only" }, 403);
+      if (!checkUserRateLimit(user.id, "altercpa.sync", 20)) return json({ error: "Too many requests" }, 429);
+      let body: z.infer<typeof altercpaSyncSchema>;
+      try { body = parseBody(altercpaSyncSchema, await req.json()); }
+      catch (e: any) { return json({ error: e.message }, 400); }
+
+      const secret = Deno.env.get("ALTERCPA_SYNC_SECRET");
+      if (!secret) return json({ error: "ALTERCPA_SYNC_SECRET is not set on this project" }, 503);
+
+      // A backfill can run for minutes; the browser must not hold the request
+      // open that long. Dry runs are bounded and worth waiting for.
+      const timeoutMs = body.dry ? 60_000 : 300_000;
+      const ctl = new AbortController();
+      const timer = setTimeout(() => ctl.abort(), timeoutMs);
+      try {
+        const res = await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/altercpa-sync`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-altercpa-sync-secret": secret },
+          body: JSON.stringify(body),
+          signal: ctl.signal,
+        });
+        return json(await res.json(), res.ok ? 200 : 502);
+      } catch (e: any) {
+        return json({ error: e?.name === "AbortError" ? "Sync is still running — check the Runs tab" : String(e?.message || e) }, 504);
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+
     // ── AFFILIATES ADMIN ─────────────────────────────────────────────
     // View = admin/manager; ALL mutations = admin-only (operator decision
     // 2026-07-09: managers are read-only here — keys, payouts and offers are
@@ -2697,7 +2978,7 @@ async function handleRequest(req: Request): Promise<Response> {
       const { data, error } = await adminClient.from("offers").insert({
         name: body.name,
         product_id: body.product_id ?? null,
-        geo: body.geo || "BG",
+        geo: (body.geo || "MK").toUpperCase(),
         payout_eur: body.payout_eur,
         price_eur: body.price_eur ?? null,
         description: body.description || null,
@@ -4085,6 +4366,9 @@ async function handleRequest(req: Request): Promise<Response> {
       const officePostCode = await resolveOfficePostCode(body.delivery_type ?? "home", body.courier_office_code);
       const resolvedPostalCode = officePostCode ?? body.postal_code;
 
+      // Stamp the MEX routing zone so the order can be handed to the courier.
+      const mexZone = await resolveMexCity(body.customer_city);
+
       // Snapshot the prediction list the customer was in (drives list-ROI
       // analytics + per-package agent bonuses). Stamped for ALL statuses so a
       // cancelled prediction order still counts toward that list's cancels.
@@ -4108,6 +4392,8 @@ async function handleRequest(req: Request): Promise<Response> {
           customer_city: body.customer_city,
           customer_address: body.customer_address,
           postal_code: resolvedPostalCode,
+          mex_city_id: mexZone.id,
+          mex_city_name: mexZone.name,
           street: body.street ?? "",
           street_number: body.street_number ?? "",
           quarter: body.quarter ?? "",
@@ -5494,6 +5780,14 @@ async function handleRequest(req: Request): Promise<Response> {
         if (pc) updates.postal_code = pc;
       }
 
+      // Re-resolve the MEX zone whenever the city changed. Without this an
+      // edited address keeps routing to the settlement it was first saved with.
+      if (body.customer_city !== undefined) {
+        const mexZone = await resolveMexCity(body.customer_city);
+        updates.mex_city_id = mexZone.id;
+        updates.mex_city_name = mexZone.name;
+      }
+
       const { data, error } = await supabase
         .from("orders")
         .update(updates)
@@ -5579,7 +5873,7 @@ async function handleRequest(req: Request): Promise<Response> {
 
         if (dt === 'home') {
           hasDeliveryInfo = !!order.customer_address?.trim();
-        } else if (dt === 'speedy_office' || dt === 'econt_office') {
+        } else if (dt === 'speedy_office' || dt === 'econt_office' || dt === 'mex_office') {
           hasDeliveryInfo = !!order.courier_office_code?.trim() || !!order.courier_office_name?.trim();
         } else {
           // Legacy / unknown delivery type (very old orders). Accept either style.
@@ -12066,7 +12360,7 @@ async function handleRequest(req: Request): Promise<Response> {
       const courier = url.searchParams.get("courier");
       const q = (url.searchParams.get("q") || "").trim().toLowerCase();
       const limit = Math.min(parseInt(url.searchParams.get("limit") || "15"), 50);
-      if (courier !== "speedy" && courier !== "econt") return json({ error: "Invalid courier" }, 400);
+      if (courier !== "speedy" && courier !== "econt" && courier !== "mex") return json({ error: "Invalid courier" }, 400);
 
       // Inline Cyrillic→Latin lowercaser (matches scripts/scrape-courier-offices.mjs)
       const CYR_TO_LAT: Record<string, string> = {
@@ -12074,6 +12368,10 @@ async function handleRequest(req: Request): Promise<Response> {
         'й':'y','к':'k','л':'l','м':'m','н':'n','о':'o','п':'p','р':'r','с':'s',
         'т':'t','у':'u','ф':'f','х':'h','ц':'ts','ч':'ch','ш':'sh','щ':'sht',
         'ъ':'a','ь':'y','ю':'yu','я':'ya',
+        // Macedonian-only letters — absent from the Bulgarian original, so they used
+        // to pass through unchanged and leave a mixed-script key. Keep in sync with
+        // src/lib/transliterate.ts.
+        'ѓ':'gj','ѕ':'dz','ј':'j','љ':'lj','њ':'nj','ќ':'kj','џ':'dzh','ѐ':'e','ѝ':'i',
       };
       const qNorm = q.split('').map(c => CYR_TO_LAT[c] ?? c).join('');
 
@@ -12112,7 +12410,7 @@ async function handleRequest(req: Request): Promise<Response> {
       const courier = url.searchParams.get("courier");
       const city = (url.searchParams.get("city") || "").trim();
       const limit = Math.min(parseInt(url.searchParams.get("limit") || "200"), 500);
-      if (courier !== "speedy" && courier !== "econt") return json({ error: "Invalid courier" }, 400);
+      if (courier !== "speedy" && courier !== "econt" && courier !== "mex") return json({ error: "Invalid courier" }, 400);
       if (!city) return json([]);
       const { data, error } = await adminClient
         .from("courier_offices")
@@ -12135,7 +12433,7 @@ async function handleRequest(req: Request): Promise<Response> {
     if (req.method === "GET" && segments[0] === "courier-offices" && segments[1] === "match") {
       const courier = url.searchParams.get("courier");
       const q = (url.searchParams.get("q") || "").trim();
-      if (courier !== "speedy" && courier !== "econt") return json({ error: "Invalid courier" }, 400);
+      if (courier !== "speedy" && courier !== "econt" && courier !== "mex") return json({ error: "Invalid courier" }, 400);
       if (!q) return json([]);
 
       const STOP = new Set([
@@ -13090,37 +13388,105 @@ async function handleRequest(req: Request): Promise<Response> {
       return json(data);
     }
 
-    // GET /api/address/settlements?q= — type-ahead over the BG settlements
-    // reference (cities + villages). Matches Cyrillic OR Latin input. Returns
-    // id (Econt city id, used to fetch streets), name, post_code, region.
+    // GET /api/address/settlements?q= — type-ahead over the Macedonian
+    // settlement reference (cities, towns, villages and Skopje's districts).
+    //
+    // Matches Cyrillic OR Latin, in either direction: the agent can type
+    // "Ѓорче", "Gjorce" or "Gorce" and reach Ѓорче Петров. That is what
+    // name_norm is for — normalizeMkGeo() folds both scripts, the diacritics
+    // and the digraphs onto one key (see scripts/lib/mk-translit.mjs).
+    //
+    // Returns post_code so the form can fill it in automatically, and
+    // mex_city_id so the caller knows the address is routable at all.
     if (req.method === "GET" && path === "address/settlements") {
       const q = (url.searchParams.get("q") || "").trim();
       if (q.length < 2) return json([]);
-      // Sanitize before interpolating into .or() (same class as search-prediction;
-      // target is public geo data so impact is low, but keep it consistent).
+      // Sanitize before interpolating into .or() (same class as
+      // search-prediction; geo data, so impact is low, but stay consistent).
       const lc = sanitizeSearch(q.toLowerCase());
-      if (lc.length < 2) return json([]);
+      const norm = sanitizeSearch(normalizeMkGeo(q));
+      if (lc.length < 2 && norm.length < 2) return json([]);
+
+      const clauses = [`name_lc.ilike.${lc}%`, `name_lat.ilike.${lc}%`, `name_sq.ilike.${lc}%`];
+      if (norm.length >= 2) clauses.push(`name_norm.ilike.${norm}%`);
+
       const { data } = await adminClient
-        .from("bg_settlements")
-        .select("id, name, name_en, post_code, region, municipality")
-        .or(`name_lc.ilike.${lc}%,name_en.ilike.${lc}%`)
+        .from("mk_settlements")
+        .select("id, name, name_lat, name_sq, post_code, region, municipality, kind, mex_city_id")
+        .or(clauses.join(","))
+        // Cities and towns first — an agent typing "Ко" wants Кочани before a
+        // hamlet that happens to sort earlier alphabetically.
+        .order("kind", { ascending: true })
         .order("name", { ascending: true })
-        .limit(12);
+        .limit(15);
       return json(data || []);
     }
 
-    // GET /api/address/streets?settlement_id=&q=&kind= — streets and/or
-    // quarters for a settlement from Econt's nomenclature (the source couriers
-    // use). kind=street | quarter | (omitted = both). Cached per settlement.
+    // GET /api/address/streets?settlement_id=&q=&kind= — streets, boulevards
+    // and squares for a settlement.
+    //
+    // Served from mk_streets (OpenStreetMap, ODbL). This replaced a live call
+    // to ECONT's Bulgarian nomenclature API — an outbound request to the
+    // Bulgarian courier from the Macedonian deployment, which should never
+    // have existed here.
+    //
+    // When the settlement is a city, its districts are unioned in: every Skopje
+    // street belongs to a district (Центар, Аеродром, …), so an agent who picks
+    // "Скопје" would otherwise see an empty list.
     if (req.method === "GET" && path === "address/streets") {
       const settlementId = (url.searchParams.get("settlement_id") || "").trim();
-      const q = (url.searchParams.get("q") || "").trim().toLowerCase();
+      const q = (url.searchParams.get("q") || "").trim();
       const kind = url.searchParams.get("kind");
       if (!settlementId) return json([]);
-      const { streets, quarters } = await getEcontStreetsAndQuarters(settlementId);
-      const pool = kind === "quarter" ? quarters : kind === "street" ? streets : [...quarters, ...streets];
-      const filtered = q ? pool.filter((s: string) => s.toLowerCase().includes(q)) : pool;
-      return json(filtered.slice(0, 15));
+
+      const { data: children } = await adminClient
+        .from("mk_settlements")
+        .select("id")
+        .eq("parent_id", settlementId);
+      const ids = [settlementId, ...(children || []).map((c: { id: string }) => c.id)];
+
+      let query = adminClient
+        .from("mk_streets")
+        .select("name, kind, name_norm")
+        .in("settlement_id", ids);
+
+      // The picker's Quarter field asks for kind=quarter; everything else is an
+      // addressable way.
+      if (kind === "quarter") query = query.eq("kind", "quarter");
+      else if (kind === "street") query = query.in("kind", ["street", "boulevard", "square"]);
+
+      if (q) {
+        const lc = sanitizeSearch(q.toLowerCase());
+        const norm = sanitizeSearch(normalizeMkGeo(q));
+        const clauses: string[] = [];
+        // Substring, not prefix: agents type the distinctive part of a name
+        // ("Мисирков"), not the "ул. " it starts with.
+        if (lc.length >= 2) clauses.push(`name_lc.ilike.%${lc}%`);
+        if (norm.length >= 2) clauses.push(`name_norm.ilike.%${norm}%`);
+        if (clauses.length) query = query.or(clauses.join(","));
+      }
+
+      // Over-fetch, then collapse. The same street is a separate row in each of
+      // a city's districts (a Skopje boulevard runs through several), and OSM
+      // sometimes carries a Latin spelling of a street as its own way. Both
+      // would show up as repeated entries in the dropdown.
+      //
+      // Dedupe on name_norm — which folds script and diacritics — and keep the
+      // Cyrillic spelling, since that is what goes on the parcel.
+      const { data } = await query.order("name", { ascending: true }).limit(200);
+      // Count Latin letters, not "does it contain Cyrillic" — every name starts
+      // with a Cyrillic prefix ("ул. ", "бул. "), so a presence test rates
+      // "ул. Krste Misirkov" as Cyrillic and can pick it over the real
+      // "ул. Крсте Мисирков". Fewer Latin letters wins; the parcel gets the
+      // Macedonian spelling.
+      const latinCount = (s: string) => (s.match(/[A-Za-z]/g) || []).length;
+      const best = new Map<string, string>();
+      for (const r of (data || []) as Array<{ name: string; name_norm: string }>) {
+        const key = r.name_norm || r.name.toLowerCase();
+        const current = best.get(key);
+        if (!current || latinCount(r.name) < latinCount(current)) best.set(key, r.name);
+      }
+      return json([...best.values()].sort((a, b) => a.localeCompare(b, "mk")).slice(0, 15));
     }
 
     // GET /api/customer-intelligence?phone=...
@@ -14685,33 +15051,6 @@ serve(async (req: Request) => {
   return response;
 });
 
-// Streets + quarters for a settlement from Econt's public Nomenclatures API.
-// Merged into one list (the order form's Street field suggests both, so "люл"
-// finds жк Люлин and "гоц" finds пл. Гоце Делчев). Cached per settlement on
-// the warm instance to avoid hammering Econt.
-const econtStreetCache = new Map<string, { streets: string[]; quarters: string[] }>();
-async function getEcontStreetsAndQuarters(cityId: string): Promise<{ streets: string[]; quarters: string[] }> {
-  if (econtStreetCache.has(cityId)) return econtStreetCache.get(cityId)!;
-  const post = async (method: string) => {
-    try {
-      const res = await fetch(`https://ee.econt.com/services/Nomenclatures/NomenclaturesService.${method}.json`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cityID: Number(cityId) }),
-      });
-      if (!res.ok) return null;
-      return await res.json();
-    } catch { return null; }
-  };
-  const [s, q] = await Promise.all([post("getStreets"), post("getQuarters")]);
-  const result = {
-    streets: Array.from(new Set((s?.streets || []).map((x: any) => x.name).filter(Boolean))) as string[],
-    quarters: Array.from(new Set((q?.quarters || []).map((x: any) => x.name).filter(Boolean))) as string[],
-  };
-  econtStreetCache.set(cityId, result);
-  return result;
-}
-
 // Normalize a Macedonia phone to E.164 (+389XXXXXXXX) - TODO(mk): verify digit lengths vs real +389 numbers, matching how the rest
 // of the CRM stores phones. Returns "" if there aren't enough digits.
 //   070123456 / 38970123456 / +38970123456 / 0038970123456 → +38970123456
@@ -15439,6 +15778,38 @@ function json(data: any, status = 200) {
       "Content-Type": "application/json",
     },
   });
+}
+
+// Macedonian geo-name normalisation — MIRROR of src/lib/transliterate.ts and
+// scripts/lib/mk-translit.mjs. Keep all three in sync (that file header lists
+// the contract; src/lib/transliterate.test.ts enforces the .mjs copy).
+//
+// Deliberately lossy: it folds Cyrillic and Latin, diacritics and digraphs onto
+// one key so an agent typing "Gjorce", "Gorce" or "Ѓорче" all reach the same
+// settlement, and so MEX's inconsistent transliterations line up with ours.
+// Place names ONLY — it merges ц with ч and would produce false hits anywhere else.
+const MK_GEO_CYR: Record<string, string> = {
+  'а':'a','б':'b','в':'v','г':'g','д':'d','ѓ':'g','е':'e',
+  'ж':'z','з':'z','ѕ':'d','и':'i','ј':'j','к':'k','л':'l',
+  'љ':'l','м':'m','н':'n','њ':'n','о':'o','п':'p','р':'r',
+  'с':'s','т':'t','ќ':'k','у':'u','ф':'f','х':'h','ц':'c',
+  'ч':'c','џ':'d','ш':'s',
+  'й':'j','щ':'st','ъ':'a','ь':'j','ю':'u','я':'a',
+  'ы':'i','э':'e','ё':'e','ђ':'d','ћ':'c','ѐ':'e','ѝ':'i',
+};
+const MK_GEO_MARKS = /[\u0300-\u036f]/g;
+const MK_GEO_DIGRAPHS: Array<[string, string]> = [
+  ['dzh','d'],['zh','z'],['sh','s'],['ch','c'],['dz','d'],
+  ['dj','d'],['gj','g'],['kj','k'],['lj','l'],['nj','n'],['ts','c'],
+];
+function normalizeMkGeo(s: string): string {
+  if (!s) return '';
+  let out = String(s).toLowerCase();
+  out = out.split('').map(c => MK_GEO_CYR[c] ?? c).join('');
+  out = out.normalize('NFD').replace(MK_GEO_MARKS, '');
+  out = out.replace(/ç/g,'c').replace(/đ/g,'d').replace(/ł/g,'l').replace(/ø/g,'o');
+  for (const [from, to] of MK_GEO_DIGRAPHS) out = out.split(from).join(to);
+  return out.replace(/[^a-z0-9]/g, '');
 }
 
 // Strip characters that have meaning in PostgREST's `.or()` filter syntax

@@ -107,6 +107,7 @@ before non-trivial work on money, phones, warehouse, stock, webhooks, or fulfilm
 - `elyon-i18n` — EN/BG/SQ/MK: every user-visible string goes through i18n in all four locales, no exceptions.
 - `elyon-security` — RLS, HMAC, permissions, audit and secrets. Never write an `authenticated`-wide read policy.
 - `elyon-affiliates` — The CPA/partner system and the hard wall that keeps external logins out of staff surfaces.
+- `elyon-altercpa-bridge` — The AlterCPA lead mirror: ledger-first, callable geos, offer mapping, and why foreign leads must never reach `orders`. Read before touching `altercpa_*` or multi-country intake.
 - `elyon-logistics-costs` — Courier rate card, return round-trip loss, and Pure Profit actuals.
 
 New skills should be added to `.grok/skills/` whenever you find yourself re-explaining the same

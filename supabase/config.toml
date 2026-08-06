@@ -2,3 +2,10 @@ project_id = "bmfxhgznttcnnlqloqzp"
 
 [functions.api]
 verify_jwt = false
+
+# Called by pg_cron (pg_net) and by admins, never by a browser. Auth is the
+# x-altercpa-sync-secret header checked in code — a Supabase JWT would be the
+# wrong gate for a cron caller, and the function fails closed if the secret is
+# unset.
+[functions.altercpa-sync]
+verify_jwt = false

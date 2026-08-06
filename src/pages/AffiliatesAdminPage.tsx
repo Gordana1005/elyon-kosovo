@@ -1,10 +1,11 @@
 import { useTranslation } from 'react-i18next';
 import { AppLayout } from '@/layouts/AppLayout';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Handshake, Tag, Send } from 'lucide-react';
+import { Handshake, Tag, Send, Globe } from 'lucide-react';
 import { AffiliatesTab } from '@/components/affiliates/AffiliatesTab';
 import { OffersTab } from '@/components/affiliates/OffersTab';
 import { PostbackLogTab } from '@/components/affiliates/PostbackLogTab';
+import { MirrorTab } from '@/components/altercpa/MirrorTab';
 
 /**
  * Affiliates (Admin) — manage webmasters, their offers/payouts, and the
@@ -28,11 +29,18 @@ export default function AffiliatesAdminPage() {
           <TabsTrigger value="postbacks" className="gap-2">
             <Send className="h-4 w-4" /> {t('affiliatesAdmin.tabPostbacks')}
           </TabsTrigger>
+          {/* The AlterCPA mirror, by country. Same component as /altercpa's
+              Mirror tab — one implementation, two entry points, so the two can
+              never drift apart. */}
+          <TabsTrigger value="countries" className="gap-2">
+            <Globe className="h-4 w-4" /> {t('affiliatesAdmin.tabCountries')}
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="affiliates"><AffiliatesTab /></TabsContent>
         <TabsContent value="offers"><OffersTab /></TabsContent>
         <TabsContent value="postbacks"><PostbackLogTab /></TabsContent>
+        <TabsContent value="countries"><MirrorTab /></TabsContent>
       </Tabs>
     </AppLayout>
   );

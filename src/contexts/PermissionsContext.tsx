@@ -99,6 +99,7 @@ export const MODULE_ROUTE_MAP: Record<string, string> = {
   webhooks: '/webhooks',
   affiliates_admin: '/affiliates-admin',
   affiliate_portal: '/affiliate',
+  altercpa_bridge: '/altercpa',
   ads: '/ads',
   settings: '/settings',
   voip_health: '/voip-health',

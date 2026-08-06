@@ -35,8 +35,9 @@ x-webhook-signature: hex( HMAC_SHA256( rawRequestBody, WEBHOOK_SECRET ) )
 - `WEBHOOK_SECRET` is a Supabase Edge‑Function secret (value in [VAULT.md](VAULT.md)). The **same secret**
   is shared by landing pages and the OpenCart bridge.
 - The function verifies with a **timing‑safe** comparison (`verifyWebhookSignature`). Bad/missing signature → **401**.
-- ⚠️ If `WEBHOOK_SECRET` is **unset**, the function logs a warning and **accepts unsigned bodies** — never
-  unset it in production.
+- ✅ If `WEBHOOK_SECRET` is **unset**, the function **fails closed**: it logs an error and rejects every
+  webhook with 401. (Corrected 2026-08-06 — this page previously claimed the opposite. The code has
+  failed closed since 2026-06-11; see `verifyWebhookSignature` in `supabase/functions/api/index.ts`.)
 - **Rate‑limited** in‑memory: 100 requests / 60 s, keyed per slug and per IP (`checkWebhookRateLimit`).
 - These endpoints **bypass JWT/CORS** (server‑to‑server) — they're gated by HMAC, not auth.
 - **Never put `WEBHOOK_SECRET` in browser JS.** Compute the signature server‑side. A pure‑static landing

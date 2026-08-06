@@ -9,7 +9,7 @@ import {
   Users, CalendarDays, FileText, History, ChevronLeft,
   ChevronRight, ChevronDown, Phone, PhoneCall, PhoneIncoming, Warehouse, Settings, Inbox,
   Webhook, UserPlus, SearchIcon, TrendingUp, Activity, Zap, Layers, Lock, Clock, Gauge, FileUp,
-  Handshake,
+  Handshake, Radio,
 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { SidebarCallIndicator } from '@/components/calls/SidebarCallIndicator';
@@ -105,6 +105,7 @@ const sections: NavSection[] = [
       { titleKey: 'nav.products', path: '/products', icon: Package, moduleKey: 'products' },
       { titleKey: 'nav.webhooksAds', path: '/webhooks', icon: Webhook, moduleKey: 'webhooks' },
       { titleKey: 'nav.affiliates', path: '/affiliates-admin', icon: Handshake, moduleKey: 'affiliates_admin' },
+      { titleKey: 'nav.altercpa', path: '/altercpa', icon: Radio, moduleKey: 'altercpa_bridge' },
     ],
   },
   {

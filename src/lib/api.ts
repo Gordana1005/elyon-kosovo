@@ -306,7 +306,7 @@ export interface CreateOrderBody {
   entry?: string;
   delivery_instructions?: string;
   gift_note?: string;
-  delivery_type?: 'home' | 'speedy_office' | 'econt_office';
+  delivery_type?: 'home' | 'speedy_office' | 'econt_office' | 'mex_office';
   home_courier?: 'speedy' | 'econt';
   courier_office_code?: string;
   courier_office_name?: string;
@@ -372,15 +372,31 @@ export const apiSaveCustomerProfile = (body: CustomerProfileBody) =>
 export const apiSaveCustomerNotes = (phone: string, notes: string) =>
   apiFetch('customer-profile/notes', { method: 'POST', body: JSON.stringify({ phone, notes }) });
 
-// BG address autocomplete (Econt-backed). Settlements = cities + villages.
-export interface BgSettlement { id: string; name: string; name_en: string | null; post_code: string | null; region: string | null; municipality: string | null; }
-export const apiSearchSettlements = (q: string): Promise<BgSettlement[]> =>
+// Macedonian address autocomplete, served from mk_settlements / mk_streets
+// (OpenStreetMap, ODbL). Settlements = cities, towns, villages and Skopje's
+// districts. The query matches Cyrillic and Latin in either direction, so
+// "Ѓорче", "Gjorce" and "Gorce" all reach Ѓорче Петров.
+//
+// `post_code` is what lets the form fill the postal code in automatically, and
+// `mex_city_id` is null when MEX cannot route to the settlement at all.
+export interface MkSettlement {
+  id: string;
+  name: string;
+  name_lat: string | null;
+  name_sq: string | null;
+  post_code: string | null;
+  region: string | null;
+  municipality: string | null;
+  kind: 'city' | 'town' | 'village' | 'city_district';
+  mex_city_id: number | null;
+}
+export const apiSearchSettlements = (q: string): Promise<MkSettlement[]> =>
   apiFetch(`address/settlements?q=${encodeURIComponent(q)}`);
 export const apiSearchStreets = (settlementId: string, q: string, kind?: 'street' | 'quarter'): Promise<string[]> =>
   apiFetch(`address/streets?settlement_id=${encodeURIComponent(settlementId)}&q=${encodeURIComponent(q)}${kind ? `&kind=${kind}` : ''}`);
 // Match a free-text courier address against the cached office list → ranked offices.
 export interface MatchedOffice { office_code: string; name: string; city: string; address: string; score: number; }
-export const apiMatchCourierOffice = (courier: 'speedy' | 'econt', q: string): Promise<MatchedOffice[]> =>
+export const apiMatchCourierOffice = (courier: 'speedy' | 'econt' | 'mex', q: string): Promise<MatchedOffice[]> =>
   apiFetch(`courier-offices/match?courier=${courier}&q=${encodeURIComponent(q)}`);
 
 export interface UpdateCustomerBody {
@@ -398,7 +414,7 @@ export interface UpdateCustomerBody {
   entry?: string;
   delivery_instructions?: string;
   gift_note?: string;
-  delivery_type?: 'home' | 'speedy_office' | 'econt_office';
+  delivery_type?: 'home' | 'speedy_office' | 'econt_office' | 'mex_office';
   home_courier?: 'speedy' | 'econt';
   courier_office_code?: string;
   courier_office_name?: string;
@@ -1407,15 +1423,15 @@ export const apiAutoAssignLeads = () =>
 export const apiGetOperationsCenter = () => apiFetch('operations-center');
 
 // Courier offices (Speedy / Econt picker)
-export const apiGetCourierCities = (courier: 'speedy' | 'econt', q: string, limit = 15) => {
+export const apiGetCourierCities = (courier: 'speedy' | 'econt' | 'mex', q: string, limit = 15) => {
   const sp = new URLSearchParams({ courier, q, limit: String(limit) });
   return apiFetch<{ city: string; count: number }[]>(`courier-offices/cities?${sp.toString()}`);
 };
-export const apiGetCourierOffices = (courier: 'speedy' | 'econt', city: string) => {
+export const apiGetCourierOffices = (courier: 'speedy' | 'econt' | 'mex', city: string) => {
   const sp = new URLSearchParams({ courier, city });
   return apiFetch<{ office_code: string; name: string; address: string; hours: string; lat: number | null; lng: number | null; post_code: string }[]>(`courier-offices?${sp.toString()}`);
 };
-export const apiGetCourierOfficeByCode = (courier: 'speedy' | 'econt', code: string) => {
+export const apiGetCourierOfficeByCode = (courier: 'speedy' | 'econt' | 'mex', code: string) => {
   const sp = new URLSearchParams({ courier, code });
   return apiFetch<{ office_code: string; name: string; city: string; address: string; hours: string; post_code: string } | null>(`courier-offices/by-code?${sp.toString()}`);
 };
@@ -1771,3 +1787,177 @@ export const apiTestAffiliatePostback = (): Promise<{
 }> => apiFetch('affiliate/postback-test', { method: 'POST' });
 export const apiChangeAffiliatePassword = (newPassword: string): Promise<{ success: boolean }> =>
   apiFetch('affiliate/change-password', { method: 'POST', body: JSON.stringify({ new_password: newPassword }) });
+
+// ── AlterCPA bridge (admin) ──────────────────────────────────────────────────
+// Read-only mirror of an AlterCPA account: leads keep arriving there, we pull
+// them in. Nothing is ever sent back — see supabase/migrations/20260914000000.
+export interface AlterCpaAccount {
+  id: string;
+  name: string;
+  api_base: string;
+  /** NAME of a Supabase function secret, never the token itself. */
+  token_secret_name: string;
+  /** True when that secret actually exists on the project. */
+  token_present?: boolean;
+  is_active: boolean;
+  /** Geos whose leads become real orders. Everything else is mirror-only. */
+  callable_geos: string[];
+  status_mirror: 'off' | 'until_touched' | 'always';
+  /** pending_only = only AlterCPA phase 1/2 become orders here. */
+  import_scope: 'pending_only' | 'all';
+  sync_from: string | null;
+  last_synced_at: string | null;
+  last_cursor_to: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+export const apiGetAlterCpaAccounts = (): Promise<AlterCpaAccount[]> =>
+  apiFetch('altercpa/accounts');
+export const apiCreateAlterCpaAccount = (body: {
+  name: string; token_secret_name: string; api_base?: string;
+  callable_geos?: string[]; status_mirror?: string; import_scope?: string;
+  sync_from?: string | null; is_active?: boolean; notes?: string | null;
+}): Promise<AlterCpaAccount> =>
+  apiFetch('altercpa/accounts', { method: 'POST', body: JSON.stringify(body) });
+export const apiUpdateAlterCpaAccount = (id: string, body: Partial<{
+  name: string; api_base: string; token_secret_name: string;
+  callable_geos: string[]; status_mirror: string; import_scope: string;
+  sync_from: string | null; is_active: boolean; notes: string | null;
+}>): Promise<AlterCpaAccount> =>
+  apiFetch(`altercpa/accounts/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
+
+export type AlterCpaSkipReason =
+  | 'test_order' | 'no_phone' | 'geo_not_callable' | 'unmapped_offer' | 'no_fx_rate';
+
+export interface AlterCpaLead {
+  id: string;
+  account_id: string;
+  altercpa_id: string;
+  order_id: string | null;
+  geo: string | null;
+  offer_name: string | null;
+  offer_ext_id: string | null;
+  product_id: string | null;
+  webmaster: string | null;
+  phase: number | null;
+  status: number | null;
+  reason: number | null;
+  phase_seen_at: string | null;
+  created_remote: string | null;
+  /** Kept verbatim: these numbers are multi-country and are never rewritten. */
+  phone_raw: string | null;
+  /** Only set for a callable geo whose dialling rules we know; else null. */
+  phone_e164: string | null;
+  customer_name: string | null;
+  city: string | null;
+  price_raw: number | null;
+  currency_raw: string | null;
+  /** null when the currency has no known rate — never a guessed number. */
+  price_eur: number | null;
+  quantity: number;
+  skip_reason: AlterCpaSkipReason | null;
+  first_seen_at: string;
+  last_seen_at: string;
+  orders?: { display_id: string; status: string } | null;
+}
+export const apiGetAlterCpaLeads = (params: {
+  account_id?: string; geo?: string; offer?: string; webmaster?: string;
+  phase?: number; skip?: string; from?: string; to?: string; q?: string;
+  page?: number; limit?: number;
+}): Promise<{ rows: AlterCpaLead[]; total: number; page: number; limit: number }> => {
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined && v !== null && v !== '') qs.set(k, String(v));
+  }
+  const s = qs.toString();
+  return apiFetch(`altercpa/leads${s ? `?${s}` : ''}`);
+};
+
+export interface AlterCpaSummary {
+  totals: {
+    leads: number; mirrored: number; ledger_only: number;
+    geos: number; offers: number; webmasters: number;
+    approved: number; revenue_eur: number; priced: number; unpriced: number;
+  };
+  geos: Array<{ geo: string; leads: number; mirrored: number; approved: number; currencies: string[] | null; revenue_eur: number }>;
+  offers: Array<{ geo: string; offer: string; leads: number; approved: number; mapped: boolean }>;
+  webmasters: Array<{ webmaster: string; leads: number; approved: number; geos: number }>;
+}
+export const apiGetAlterCpaSummary = (params: { account_id?: string; from?: string; to?: string } = {}):
+  Promise<AlterCpaSummary> => {
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined && v !== null && v !== '') qs.set(k, String(v));
+  }
+  const s = qs.toString();
+  return apiFetch(`altercpa/summary${s ? `?${s}` : ''}`);
+};
+
+export interface AlterCpaOfferMapRow {
+  id: string;
+  account_id: string;
+  geo: string;
+  offer_name: string;
+  product_id: string | null;
+  offer_id: string | null;
+  is_mapped: boolean;
+  is_ignored: boolean;
+  seen_count: number;
+  first_seen_at: string;
+  last_seen_at: string;
+  mapped_by: string | null;
+  mapped_at: string | null;
+  notes: string | null;
+  products?: { id: string; name: string; price: number; sku: string | null } | null;
+}
+export const apiGetAlterCpaOfferMap = (params: {
+  account_id?: string; unmapped?: boolean; geo?: string;
+} = {}): Promise<AlterCpaOfferMapRow[]> => {
+  const qs = new URLSearchParams();
+  if (params.account_id) qs.set('account_id', params.account_id);
+  if (params.unmapped) qs.set('unmapped', '1');
+  if (params.geo) qs.set('geo', params.geo);
+  const s = qs.toString();
+  return apiFetch(`altercpa/offer-map${s ? `?${s}` : ''}`);
+};
+export const apiUpdateAlterCpaOfferMap = (id: string, body: {
+  product_id?: string | null; offer_id?: string | null;
+  is_ignored?: boolean; notes?: string | null;
+}): Promise<AlterCpaOfferMapRow> =>
+  apiFetch(`altercpa/offer-map/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
+
+export interface AlterCpaSyncRun {
+  id: string;
+  account_id: string | null;
+  kind: string;
+  window_from: string | null;
+  window_to: string | null;
+  fetched: number;
+  ledger_new: number;
+  ledger_updated: number;
+  orders_created: number;
+  orders_updated: number;
+  skipped: Record<string, number>;
+  status: 'running' | 'ok' | 'failed';
+  error: string | null;
+  started_at: string;
+  finished_at: string | null;
+  duration_ms: number | null;
+  altercpa_accounts?: { name: string } | null;
+}
+export const apiGetAlterCpaRuns = (params: { account_id?: string; limit?: number } = {}):
+  Promise<AlterCpaSyncRun[]> => {
+  const qs = new URLSearchParams();
+  if (params.account_id) qs.set('account_id', params.account_id);
+  if (params.limit) qs.set('limit', String(params.limit));
+  const s = qs.toString();
+  return apiFetch(`altercpa/runs${s ? `?${s}` : ''}`);
+};
+
+/** Fire a sync by hand. `dry: true` writes nothing and returns a preview. */
+export const apiRunAlterCpaSync = (body: {
+  account?: string; kind?: 'rolling' | 'nightly' | 'weekly' | 'backfill' | 'manual';
+  from?: string; to?: string; dry?: boolean;
+}): Promise<any> =>
+  apiFetch('altercpa/sync', { method: 'POST', body: JSON.stringify(body) });

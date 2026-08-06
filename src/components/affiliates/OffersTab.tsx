@@ -33,7 +33,9 @@ export function OffersTab() {
   const [editOffer, setEditOffer] = useState<OfferAdmin | null>(null);
   const [fName, setFName] = useState('');
   const [fProductId, setFProductId] = useState<string | null>(null);
-  const [fGeo, setFGeo] = useState('BG');
+  // MK: this deployment is Macedonia. It used to default to the upstream 'BG',
+  // which silently stamped every offer created here as Bulgarian.
+  const [fGeo, setFGeo] = useState('MK');
   const [fPayout, setFPayout] = useState('');
   // Customer price per package for THIS offer. Empty = inherit the product's
   // own price, so other channels are never repriced by an affiliate deal.
@@ -56,7 +58,7 @@ export function OffersTab() {
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['offers'] });
 
   const resetForm = () => {
-    setFName(''); setFProductId(null); setFGeo('BG'); setFPayout(''); setFPrice('');
+    setFName(''); setFProductId(null); setFGeo('MK'); setFPayout(''); setFPrice('');
     setFDesc(''); setFTerms(''); setFActive(true); setEditOffer(null);
   };
 
@@ -74,7 +76,7 @@ export function OffersTab() {
       const body = {
         name: fName.trim(),
         product_id: fProductId,
-        geo: fGeo.trim() || 'BG',
+        geo: (fGeo.trim() || 'MK').toUpperCase(),
         payout_eur: Number(fPayout),
         price_eur: fPrice.trim() === '' ? null : Number(fPrice),
         description: fDesc.trim(),
