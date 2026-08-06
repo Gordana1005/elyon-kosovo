@@ -1397,7 +1397,8 @@
     "addressSection": "Adresa",
     "pageOf": "Faqja {{page}} nga {{totalPages}} ({{total}} gjithsej)",
     "exportView": "Eksporto pamjen",
-    "mexOffice": "Tërheqje MEX"
+    "mexOffice": "Tërheqje MEX",
+    "fieldMexCity": "Zona e dërgesës MEX"
   },
   "intel": {
     "title": "Inteligjenca e klientit",
@@ -3190,8 +3191,5 @@
     "scope_all": "Të gjitha statuset",
     "scopeHint_pending_only": "Vetëm porositë ende të hapura tek ata (në përpunim / në pritje) bëhen porosi këtu. Ato që i kanë miratuar, anuluar ose hedhur tashmë mbeten vetëm në pasqyrë.",
     "scopeHint_all": "Çdo porosi bëhet porosi, përfshirë ato që AlterCPA i ka mbyllur tashmë. Përdoreni vetëm për një llogari që askush nuk e punon tek ata."
-  },
-  "fulfilment": {
-    "mex_city": "Nuk ka zonë dërgese MEX për këtë adresë"
   }
 }

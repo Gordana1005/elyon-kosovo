@@ -1640,7 +1640,11 @@ function PiiVisibilityTab() {
 }
 
 // ────── Courier Rates (logistics cost calibration) ──────
-const COURIER_RATE_ROWS: { courier: 'econt' | 'speedy'; service: 'office' | 'door'; labelKey: string }[] = [
+const COURIER_RATE_ROWS: { courier: 'econt' | 'speedy' | 'mex'; service: 'office' | 'door'; labelKey: string }[] = [
+  // MEX first — it is the live Macedonian carrier. The Bulgarian rows stay so
+  // historical logistics costs remain editable and keep pricing old reports.
+  { courier: 'mex', service: 'door', labelKey: 'settings.courierRow.mexDoor' },
+  { courier: 'mex', service: 'office', labelKey: 'settings.courierRow.mexOffice' },
   { courier: 'econt', service: 'office', labelKey: 'settings.courierRow.econtOffice' },
   { courier: 'econt', service: 'door', labelKey: 'settings.courierRow.econtDoor' },
   { courier: 'speedy', service: 'office', labelKey: 'settings.courierRow.speedyOffice' },

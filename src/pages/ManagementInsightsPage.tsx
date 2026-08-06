@@ -257,6 +257,7 @@ function Money({ eur, className }: { eur: number; className?: string }) {
 const courierServiceLabel = (k: string): string => ({
   econt_office: i18n.t('insights.econtOffice'), econt_door: i18n.t('insights.econtDoor'),
   speedy_office: i18n.t('insights.speedyOffice'), speedy_door: i18n.t('insights.speedyDoor'),
+  mex_office: i18n.t('insights.mexOffice'), mex_door: i18n.t('insights.mexDoor'),
   unknown: i18n.t('insights.courierNotRecorded'),
 }[k] || k);
 

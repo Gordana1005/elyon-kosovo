@@ -39,6 +39,7 @@ const FIELD_LABEL: Record<FulfilmentField, string> = {
   address: 'ordersPage.fieldAddress',
   house_number: 'ordersPage.fieldHouseNumber',
   office: 'ordersPage.fieldOffice',
+  mex_city: 'ordersPage.fieldMexCity',
   data_hidden: 'ordersPage.dataHiddenByPrivacy',
 };
 

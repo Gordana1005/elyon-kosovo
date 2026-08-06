@@ -8,10 +8,15 @@ import { normalizeForSearch } from '@/lib/transliterate';
 import { splitTrailingHouseNumber } from '@/lib/address';
 import {
   apiGetCourierCities, apiGetCourierOffices, apiGetCourierOfficeByCode,
-  apiSearchSettlements, apiSearchStreets, type BgSettlement,
+  apiSearchSettlements, apiSearchStreets, type MkSettlement,
 } from '@/lib/api';
 
-export type DeliveryType = 'home' | 'speedy_office' | 'econt_office';
+// 'mex_office' is the Macedonian pickup mode. The two Bulgarian values are
+// KEPT so the 80.388 historical orders that hold them still render and still
+// type-check when opened for editing — they are simply never offered for a new
+// order.
+export type DeliveryType = 'home' | 'speedy_office' | 'econt_office' | 'mex_office';
+export type HomeCourier = 'speedy' | 'econt' | 'mex';
 
 export interface DeliveryValue {
   delivery_type: DeliveryType;
@@ -27,7 +32,7 @@ export interface DeliveryValue {
   postal_code: string;
   // Which courier delivers the home order (door delivery). Office orders carry
   // their courier in delivery_type instead.
-  home_courier: 'speedy' | 'econt';
+  home_courier: HomeCourier;
   // Courier-office fields
   courier_office_code: string;
   courier_office_name: string;
@@ -40,11 +45,17 @@ interface Props {
   disabled?: boolean;
 }
 
-const COURIER_FROM_TYPE: Record<DeliveryType, 'speedy' | 'econt' | null> = {
+const COURIER_FROM_TYPE: Record<DeliveryType, HomeCourier | null> = {
   home: null,
   speedy_office: 'speedy',
   econt_office: 'econt',
+  mex_office: 'mex',
 };
+
+// Speedy and Econt are Bulgarian and are never offered here. They appear only
+// when an existing order already carries one, so editing history shows the truth.
+const LEGACY_COURIERS: readonly HomeCourier[] = ['speedy', 'econt'];
+const isLegacy = (c: HomeCourier | null) => !!c && LEGACY_COURIERS.includes(c);
 
 export function DeliveryMethodPicker({ value, onChange, disabled }: Props) {
   const { t } = useTranslation();
@@ -56,26 +67,32 @@ export function DeliveryMethodPicker({ value, onChange, disabled }: Props) {
     onChange({ ...value, delivery_type: 'home' });
   };
 
-  // Switch to office delivery. Default to Econt and clear any office selection
-  // so a stale office from another courier can't linger (the picker holds only
-  // one office field set). Editing an existing office order opens with Office
-  // already active, so this never runs then — prefilled offices stay intact.
+  // Does MEX have any pickup points at all? Their API has no office endpoint
+  // and we could find exactly one physical location (the Vizbegovo depot), so
+  // courier_offices is seeded EMPTY for 'mex' rather than filled with invented
+  // rows. Until a real list is loaded, the Office tab has nothing to offer and
+  // hides itself — no dead end for the agent, and no fabricated addresses.
+  const { data: mexCities = [], isLoading: loadingMexCities } = useQuery({
+    queryKey: ['courier-cities', 'mex', ''],
+    queryFn: () => apiGetCourierCities('mex', '', 1),
+    staleTime: 10 * 60_000,
+  });
+  // Keep the tab visible while editing a historical office order, whatever the
+  // MEX list says — otherwise the order's own delivery method would vanish.
+  const officeAvailable = mexCities.length > 0 || isCourier;
+
+  // Switch to office delivery. Clears any office selection so a stale one from
+  // another courier can't linger (the picker holds a single office field set).
+  // Editing an existing office order opens with Office already active, so this
+  // never runs then and prefilled offices stay intact.
   const setOffice = () => {
     if (isCourier) return;
-    onChange({ ...value, delivery_type: 'econt_office', courier_office_code: '', courier_office_name: '', courier_office_city: '' });
-  };
-
-  // Choose the office courier. Changing courier clears the office, because
-  // Speedy and Econt have completely different offices and codes.
-  const setOfficeCourier = (c: 'speedy' | 'econt') => {
-    const t: DeliveryType = c === 'speedy' ? 'speedy_office' : 'econt_office';
-    if (t === value.delivery_type) return;
-    onChange({ ...value, delivery_type: t, courier_office_code: '', courier_office_name: '', courier_office_city: '' });
+    onChange({ ...value, delivery_type: 'mex_office', courier_office_code: '', courier_office_name: '', courier_office_city: '' });
   };
 
   return (
     <div className="space-y-3">
-      <div className="grid grid-cols-2 gap-2">
+      <div className={cn('grid gap-2', officeAvailable ? 'grid-cols-2' : 'grid-cols-1')}>
         <Pill
           active={value.delivery_type === 'home'}
           onClick={setHome}
@@ -83,13 +100,15 @@ export function DeliveryMethodPicker({ value, onChange, disabled }: Props) {
           label={t('delivery.homeAddress')}
           disabled={disabled}
         />
-        <Pill
-          active={isCourier}
-          onClick={setOffice}
-          icon={<Truck className="h-3.5 w-3.5" />}
-          label={t('delivery.office')}
-          disabled={disabled}
-        />
+        {officeAvailable && (
+          <Pill
+            active={isCourier}
+            onClick={setOffice}
+            icon={<Truck className="h-3.5 w-3.5" />}
+            label={t('delivery.office')}
+            disabled={disabled || loadingMexCities}
+          />
+        )}
       </div>
 
       {value.delivery_type === 'home' && (
@@ -98,24 +117,13 @@ export function DeliveryMethodPicker({ value, onChange, disabled }: Props) {
 
       {isCourier && (
         <div className="space-y-3">
-          <div className="grid grid-cols-2 gap-2">
-            <Pill
-              active={courier === 'speedy'}
-              onClick={() => setOfficeCourier('speedy')}
-              icon={<Truck className="h-3.5 w-3.5" />}
-              label="Speedy"
-              color="emerald"
-              disabled={disabled}
-            />
-            <Pill
-              active={courier === 'econt'}
-              onClick={() => setOfficeCourier('econt')}
-              icon={<Truck className="h-3.5 w-3.5" />}
-              label="Econt"
-              color="blue"
-              disabled={disabled}
-            />
-          </div>
+          {/* Speedy and Econt are Bulgarian. They are shown, read-only, only
+              when the order already carries one — never as a choice. */}
+          {isLegacy(courier) && (
+            <div className="rounded-md border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-[11px] text-amber-900">
+              {t('delivery.legacyCourierNote', { courier: courier === 'speedy' ? 'Speedy' : 'Econt' })}
+            </div>
+          )}
           <CourierFields
             courier={courier!}
             value={value}
@@ -190,34 +198,42 @@ function HomeFields({ value, onChange, disabled }: { value: DeliveryValue; onCha
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value.city]);
 
-  const pickSettlement = (s: BgSettlement) => {
+  const pickSettlement = (s: MkSettlement) => {
     setSettlementId(s.id);
-    // Include the община for villages (where it differs from the settlement
-    // name), e.g. "Чоба, общ. Брезово". For a town that is its own община
-    // (Пловдив, общ. Пловдив) we keep just the name.
+    // Include the nearest town for villages (where it differs from the
+    // settlement name), e.g. "Кадино, општ. Скопје" — Macedonia has many
+    // repeated village names and the agent needs to see which one they picked.
+    // A town that is its own centre (Битола, општ. Битола) keeps just the name.
     const cityVal = s.municipality && s.municipality.toLowerCase() !== s.name.toLowerCase()
-      ? `${s.name}, общ. ${s.municipality}`
+      ? `${s.name}, општ. ${s.municipality}`
       : s.name;
+    // Auto-fill the postal code so the agent never types one. Every Macedonian
+    // settlement carries one (see scripts/enrich-mk-postal-codes.mjs), and it
+    // is a hard requirement in validateOrderForFulfilment.
     onChange({ ...value, city: cityVal, postal_code: s.post_code || value.postal_code });
   };
 
-  const homeCourier = value.home_courier || 'econt';
+  // Default to MEX. A stored speedy/econt is preserved verbatim so a
+  // historical order still shows the courier that really carried it.
+  const homeCourier: HomeCourier = value.home_courier || 'mex';
 
   return (
     <div className="grid grid-cols-2 gap-3">
       {/* Courier (compact) + City on one row */}
       <div className="col-span-2 flex gap-2 items-end">
+        {/* MEX is the only Macedonian carrier, so there is nothing to choose.
+            Legacy Bulgarian orders show their courier, disabled, as a fact. */}
         <div className="shrink-0">
           <label className="text-xs text-muted-foreground mb-1 block">{t('delivery.courier')}</label>
-          <select
-            value={homeCourier}
-            onChange={e => onChange({ ...value, home_courier: e.target.value as 'speedy' | 'econt' })}
-            disabled={disabled}
-            className="h-8 w-28 rounded-md border bg-background text-sm px-2"
-          >
-            <option value="speedy">Speedy</option>
-            <option value="econt">Econt</option>
-          </select>
+          <div className={cn(
+            'h-8 w-28 rounded-md border px-2 inline-flex items-center gap-1.5 text-sm',
+            isLegacy(homeCourier) ? 'bg-amber-50 border-amber-300 text-amber-900' : 'bg-muted text-foreground',
+          )}>
+            <Truck className="h-3.5 w-3.5 shrink-0" />
+            <span className="truncate">
+              {homeCourier === 'speedy' ? 'Speedy' : homeCourier === 'econt' ? 'Econt' : 'MEX'}
+            </span>
+          </div>
         </div>
         <div className="flex-1 min-w-0">
           <label className="text-xs text-muted-foreground mb-1 block">{t('delivery.cityVillage')}</label>
@@ -291,7 +307,7 @@ function useDebounced<T>(v: T, ms: number): T {
 // City/village type-ahead over bg_settlements. Picking a row fills the city
 // name + postal code and (via parent) wires the street autocomplete.
 function SettlementAutocomplete({ value, onText, onPick, disabled }: {
-  value: string; onText: (t: string) => void; onPick: (s: BgSettlement) => void; disabled?: boolean;
+  value: string; onText: (t: string) => void; onPick: (s: MkSettlement) => void; disabled?: boolean;
 }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
@@ -326,7 +342,7 @@ function SettlementAutocomplete({ value, onText, onPick, disabled }: {
                 <span className="truncate">
                   {s.name}
                   {s.municipality && s.municipality.toLowerCase() !== s.name.toLowerCase() && (
-                    <span className="text-muted-foreground"> · общ. {s.municipality}</span>
+                    <span className="text-muted-foreground"> · општ. {s.municipality}</span>
                   )}
                 </span>
                 <span className="text-[10px] text-muted-foreground shrink-0">{[s.post_code, s.region].filter(Boolean).join(' · ')}</span>
@@ -386,7 +402,11 @@ function StreetAutocomplete({ value, settlementId, onChange, onBlur, disabled }:
 // Quarter / complex field: a type selector (кв. / ж.к. / к.к.) plus a name
 // autocomplete drawn from the settlement's Econt quarters. The stored value is
 // "{type} {name}" — the type is parsed back out of the stored value on edit.
-const QUARTER_TYPES = ['кв.', 'ж.к.', 'к.к.'] as const;
+// Macedonian address vocabulary. These are literal Cyrillic constants and are
+// deliberately NOT translated: they are address content printed on the parcel
+// and read by a driver, so they must not change when an agent switches the UI
+// to Albanian or English.
+const QUARTER_TYPES = ['нас.', 'кв.', 'н.м.'] as const;
 function splitQuarter(v: string): { type: string; name: string } {
   const s = (v || '').trim();
   for (const t of ['ж.к.', 'жк', 'к.к.', 'кк', 'кв.', 'кв']) {
@@ -457,7 +477,7 @@ function QuarterField({ value, settlementId, onChange, disabled }: {
 }
 
 function CourierFields({ courier, value, onChange, disabled }: {
-  courier: 'speedy' | 'econt'; value: DeliveryValue; onChange: (v: DeliveryValue) => void; disabled?: boolean;
+  courier: HomeCourier; value: DeliveryValue; onChange: (v: DeliveryValue) => void; disabled?: boolean;
 }) {
   const { t } = useTranslation();
   const [cityQuery, setCityQuery] = useState(value.courier_office_city || '');

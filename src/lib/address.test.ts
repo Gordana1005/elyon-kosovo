@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseHomeAddress, splitTrailingHouseNumber, effectiveHomeParts } from "@/lib/address";
+import { parseHomeAddress, splitTrailingHouseNumber, effectiveHomeParts, composeHomeAddress, detectCourierType, resolveDeliveryPrefill } from "@/lib/address";
 
 describe("parseHomeAddress", () => {
   it("splits the operator's blob into street / village / postal", () => {
@@ -127,5 +127,64 @@ describe("effectiveHomeParts", () => {
     expect(r.street).toBe("ул. Раковски");
     expect(r.street_number).toBe("12");
     expect(r.city).toBe("Пловдив");
+  });
+});
+
+// composeHomeAddress had no coverage before the Macedonian switch. It produces
+// the line that is printed on the parcel and read by the MEX driver, so the
+// markers are not cosmetic.
+describe("composeHomeAddress — Macedonian markers", () => {
+  it("uses Macedonian abbreviations, not Bulgarian ones", () => {
+    const line = composeHomeAddress({
+      street: "ул. Партизански одреди", street_number: "15",
+      block: "2", entry: "Б", floor: "3", apartment: "12",
+    });
+    expect(line).toBe("ул. Партизански одреди бр. 15, згр. 2, влез Б, кат 3, стан 12");
+    // The Bulgarian forms must not survive anywhere in the output.
+    expect(line).not.toMatch(/№|бл.|вх.|ет.|ап./);
+  });
+
+  it("omits empty parts and keeps a partial address clean", () => {
+    expect(composeHomeAddress({ street: "ул. Илинден", street_number: "5" }))
+      .toBe("ул. Илинден бр. 5");
+    expect(composeHomeAddress({ quarter: "нас. Аеродром", street: "ул. Јане Сандански" }))
+      .toBe("нас. Аеродром, ул. Јане Сандански");
+    expect(composeHomeAddress({})).toBe("");
+  });
+
+  it("splits a Macedonian house number out of the street field", () => {
+    // Agents type "Илинден бр. 5" into Street; without this the number is lost
+    // from its own column and the courier drops it.
+    expect(splitTrailingHouseNumber({ street: "ул. Илинден бр. 5" }))
+      .toEqual({ street: "ул. Илинден", street_number: "5" });
+    expect(splitTrailingHouseNumber({ street: "ул. Илинден 5" }))
+      .toEqual({ street: "ул. Илинден", street_number: "5" });
+  });
+});
+
+// 80.388 orders were inherited from the Bulgarian fork. The parser is their only
+// route back into structured fields, so every Bulgarian marker must keep working
+// even though we no longer WRITE any of them.
+describe("legacy Bulgarian rows still parse", () => {
+  it("still reads the Bulgarian markers", () => {
+    const r = parseHomeAddress("гр. София, ж.к. Младост бл. 5 вх. Б ет. 3 ап. 12, 1715");
+    expect(r.block).toBe("5");
+    expect(r.entry).toBe("Б");
+    expect(r.floor).toBe("3");
+    expect(r.apartment).toBe("12");
+  });
+
+  it("still recognises the Bulgarian couriers, and now MEX too", () => {
+    expect(detectCourierType("Еконт офис Младост")).toBe("econt_office");
+    expect(detectCourierType("Speedy office 123")).toBe("speedy_office");
+    expect(detectCourierType("МЕКС подигање")).toBe("mex_office");
+    expect(detectCourierType("ул. Илинден 5")).toBeNull();
+  });
+
+  it("keeps a stored Bulgarian courier instead of rewriting history", () => {
+    expect(resolveDeliveryPrefill({ home_courier: "econt" }).home_courier).toBe("econt");
+    expect(resolveDeliveryPrefill({ home_courier: "speedy" }).home_courier).toBe("speedy");
+    // Nothing stored → MEX, the only Macedonian carrier.
+    expect(resolveDeliveryPrefill({}).home_courier).toBe("mex");
   });
 });

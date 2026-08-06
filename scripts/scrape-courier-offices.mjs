@@ -25,6 +25,10 @@ const CYR_TO_LAT = {
   'й':'y','к':'k','л':'l','м':'m','н':'n','о':'o','п':'p','р':'r','с':'s',
   'т':'t','у':'u','ф':'f','х':'h','ц':'ts','ч':'ch','ш':'sh','щ':'sht',
   'ъ':'a','ь':'y','ю':'yu','я':'ya',
+  // Macedonian-only letters — absent from the Bulgarian original, so they used
+  // to pass through unchanged and leave a mixed-script key. Keep in sync with
+  // src/lib/transliterate.ts.
+  'ѓ':'gj','ѕ':'dz','ј':'j','љ':'lj','њ':'nj','ќ':'kj','џ':'dzh','ѐ':'e','ѝ':'i',
 };
 function normalizeCity(s) {
   if (!s) return '';

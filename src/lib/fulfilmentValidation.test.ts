@@ -12,9 +12,12 @@ const validHome = {
   product_name: "Колаген",
   quantity: 1,
   delivery_type: "home",
-  street: "Гоце Делчев",
+  street: "ул. Партизански одреди",
   street_number: "18",
-  customer_city: "София",
+  customer_city: "Скопје",
+  // Resolved server-side from the settlement. Without it the order cannot be
+  // handed to MEX at all, so it is part of a complete order.
+  mex_city_id: 185,
 };
 
 const validOffice = {
@@ -25,10 +28,21 @@ const validOffice = {
   postal_code: "4000",
   price: 40,
   order_items: [{ product_name: "Крем", quantity: 2 }],
-  delivery_type: "econt_office",
+  delivery_type: "mex_office",
   courier_office_code: "1234",
+  courier_office_name: "МЕКС Визбегово",
+  courier_office_city: "Скопје",
+  mex_city_id: 185,
+};
+
+// A Bulgarian office order inherited from the fork. It must still validate —
+// 80.388 orders hold the legacy delivery types.
+const legacyEcontOffice = {
+  ...validOffice,
+  id: "3",
+  display_id: "1003",
+  delivery_type: "econt_office",
   courier_office_name: "Еконт Младост",
-  courier_office_city: "София",
 };
 
 describe("validateOrderForFulfilment", () => {
@@ -95,5 +109,26 @@ describe("validateOrderForFulfilment", () => {
   it("surfaces a single data_hidden issue when the address is masked", () => {
     const r = validateOrderForFulfilment({ ...validHome, street: "•••", customer_address: "•••" });
     expect(r.missing).toEqual(["data_hidden"]);
+  });
+});
+
+describe("MEX delivery zone", () => {
+  it("holds back an order with no MEX zone", () => {
+    // add_shipment.php routes on receiver_city_id alone — no postcode field and
+    // a free-text address — so a missing zone means the parcel cannot be sent.
+    // It must never be guessed: MEX has no cancellation endpoint.
+    const { mex_city_id, ...noZone } = validHome;
+    const r = validateOrderForFulfilment(noZone);
+    expect(r.ok).toBe(false);
+    expect(r.missing).toContain("mex_city");
+  });
+
+  it("holds back a zone of 0 or null", () => {
+    expect(validateOrderForFulfilment({ ...validHome, mex_city_id: null }).missing).toContain("mex_city");
+    expect(validateOrderForFulfilment({ ...validHome, mex_city_id: 0 }).missing).toContain("mex_city");
+  });
+
+  it("still validates a legacy Bulgarian office order", () => {
+    expect(validateOrderForFulfilment(legacyEcontOffice).ok).toBe(true);
   });
 });

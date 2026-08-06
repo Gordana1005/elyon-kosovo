@@ -1397,7 +1397,8 @@
     "addressSection": "Address",
     "pageOf": "Page {{page}} of {{totalPages}} ({{total}} total)",
     "exportView": "Export view",
-    "mexOffice": "MEX pickup"
+    "mexOffice": "MEX pickup",
+    "fieldMexCity": "MEX delivery zone"
   },
   "intel": {
     "title": "Customer Intelligence",
@@ -3190,8 +3191,5 @@
     "scope_all": "Every status",
     "scopeHint_pending_only": "Only leads still open on their side (processing / hold) become orders here. Ones they already approved, cancelled or trashed stay in the mirror.",
     "scopeHint_all": "Every lead becomes an order, including ones AlterCPA has already finished. Use only for an account nobody works on their side."
-  },
-  "fulfilment": {
-    "mex_city": "No MEX delivery zone for this address"
   }
 }

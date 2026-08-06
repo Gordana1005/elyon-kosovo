@@ -107,10 +107,15 @@ const CYR_TO_LAT = {
   'й':'y','к':'k','л':'l','м':'m','н':'n','о':'o','п':'p','р':'r','с':'s',
   'т':'t','у':'u','ф':'f','х':'h','ц':'ts','ч':'ch','ш':'sh','щ':'sht',
   'ъ':'a','ь':'y','ю':'yu','я':'ya',
+  // Macedonian-only letters — absent from the Bulgarian original, so they used
+  // to pass through unchanged and leave a mixed-script key. Keep in sync with
+  // src/lib/transliterate.ts.
+  'ѓ':'gj','ѕ':'dz','ј':'j','љ':'lj','њ':'nj','ќ':'kj','џ':'dzh','ѐ':'e','ѝ':'i',
   'А':'A','Б':'B','В':'V','Г':'G','Д':'D','Е':'E','Ж':'Zh','З':'Z','И':'I',
   'Й':'Y','К':'K','Л':'L','М':'M','Н':'N','О':'O','П':'P','Р':'R','С':'S',
   'Т':'T','У':'U','Ф':'F','Х':'H','Ц':'Ts','Ч':'Ch','Ш':'Sh','Щ':'Sht',
   'Ъ':'A','Ь':'Y','Ю':'Yu','Я':'Ya',
+  'Ѓ':'Gj','Ѕ':'Dz','Ј':'J','Љ':'Lj','Њ':'Nj','Ќ':'Kj','Џ':'Dzh','Ѐ':'E','Ѝ':'I',
 };
 
 function transliterate(s) {

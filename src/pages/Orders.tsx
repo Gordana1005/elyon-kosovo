@@ -466,41 +466,42 @@ export default function Orders() {
   ) => {
     const { isSelected, readyByStr, heldBackPostponed, heldBackInvalid } = ctx;
 
-    // Warehouse import format (matches the fulfilment company's spec):
-    // comma-separated, no BOM, one row per order. Products are encoded as
-    // sku:quantity pairs joined by ';' in a single column.
-    // SKU resolution: linked product_id first, then a catalogue name match
-    // (covers legacy/imported items with product_id = null). Only falls back
-    // to the raw name when the product isn't in the catalogue at all.
-    const skuFor = (productId: string | null | undefined, name: string) =>
-      (productId && skuById[productId]) || resolveSku(name) || name || 'NA';
-    const skuQty = (o: any) => {
-      const items = (o.order_items && o.order_items.length > 0) ? o.order_items : null;
-      if (items) return items.map((i: any) => `${skuFor(i.product_id, i.product_name)}:${i.quantity || 1}`).join(';');
-      return `${skuFor(o.product_id, o.product_name)}:${o.quantity || 1}`;
-    };
-
+    // MEX Poshta shipment file. One row per parcel, comma-separated, no BOM.
+    //
+    // The columns ARE the add_shipment.php parameter list, verbatim and in the
+    // documented order. MEX publishes no CSV spec of its own — their API is
+    // JSON-only — so the parameter contract is the only definition of "what MEX
+    // expects" that is actually theirs rather than invented. It also means this
+    // file can be fed straight into add_shipment.php when the direct push is
+    // switched on, with no remapping.
+    //
+    // Replaced BigArena's Bulgarian 3PL format, which carried a lev-era column
+    // layout, Bulgarian office markers and a courier/service pair that means
+    // nothing to MEX.
+    //
+    // NOTE: the product list is deliberately NOT here — MEX has no field for it
+    // and a strict importer would reject unknown columns. Picking/packing is
+    // served by the Warehouse page's own export.
     // Street-level address only — city goes in its own column. For office
     // delivery this carries the office code + name instead.
     const addressLine = (o: any) => {
-      if (o.delivery_type === 'speedy_office' || o.delivery_type === 'econt_office') {
-        return [o.courier_office_code && `офис #${o.courier_office_code}`, o.courier_office_name].filter(Boolean).join(' ');
+      if (o.delivery_type === 'speedy_office' || o.delivery_type === 'econt_office' || o.delivery_type === 'mex_office') {
+        // MEX has no office concept at all — receiver_address is free text — so
+        // a pickup order states the pickup point inside the address itself.
+        return [
+          'Подигање:',
+          o.courier_office_code && `#${o.courier_office_code}`,
+          o.courier_office_name,
+          o.courier_office_city,
+        ].filter(Boolean).join(' ');
       }
-      // Resolve the real parts first — splits a house number stuck in the
-      // street field so the CSV emits "№ <n>" (BigArena drops it otherwise),
-      // and parses legacy blob-only rows. Falls back to the raw blob if the
-      // address can't be resolved at all.
+      // Resolve the real parts first — splits a house number stuck in the street
+      // field so the line carries "бр. <n>", and parses legacy blob-only rows.
+      // Falls back to the raw blob if the address can't be resolved at all.
       return composeHomeAddress(effectiveHomeParts(o)) || (o.customer_address || '');
     };
 
-    // Office orders carry their courier in delivery_type; home orders use the
-    // agent-chosen home_courier (falls back to econt when unset).
-    const courierName = (o: any) =>
-      o.delivery_type === 'speedy_office' ? 'speedy'
-        : o.delivery_type === 'econt_office' ? 'econt'
-          : (o.home_courier === 'speedy' ? 'speedy' : 'econt');
-    const courierService = (o: any) => (o.delivery_type === 'speedy_office' || o.delivery_type === 'econt_office') ? 'office' : 'door';
-    const cityName = (o: any) => (o.delivery_type === 'speedy_office' || o.delivery_type === 'econt_office') ? (o.courier_office_city || '') : (o.customer_city || '');
+    const cityName = (o: any) => (o.delivery_type === 'speedy_office' || o.delivery_type === 'econt_office' || o.delivery_type === 'mex_office') ? (o.courier_office_city || '') : (o.customer_city || '');
 
     // MK national format (0XXXXXXXX) from the stored +389 E.164 number.
     // NOTE: this used to strip only +359. A +389 number fell straight through
@@ -521,38 +522,52 @@ export default function Orders() {
 
     const dash = (v: string) => (v && v.trim()) ? v.trim() : '-';
 
+    // MEX takes first_name and last_name separately and requires both. Split on
+    // the FIRST space and keep the whole remainder as the surname, so
+    // "Ана Марија Петровска" stays intact rather than losing a middle name.
+    const splitName = (full: string | null | undefined) => {
+      const parts = String(full || '').trim().split(/\s+/).filter(Boolean);
+      if (parts.length === 0) return { first: '', last: '' };
+      if (parts.length === 1) return { first: parts[0], last: '' };
+      return { first: parts[0], last: parts.slice(1).join(' ') };
+    };
+
     const csv = toCsv(orders, [
-      { key: 'order_id', header: 'order_id', format: (o: any) => (o.display_id || '').replace(/\D/g, '') || (o.display_id || '') },
-      { key: 'customer_name', header: 'customer_name', format: (o: any) => o.customer_name || '' },
-      { key: 'customer_telephone', header: 'customer_telephone', format: phoneNational },
-      { key: 'products', header: 'products (sku:quantity)', format: skuQty },
-      { key: 'postal_code', header: 'postal_code', format: (o: any) => (o.postal_code || '').toString() },
-      { key: 'country_code', header: 'country_code', format: () => 'MK' },
-      { key: 'city', header: 'city', format: cityName },
-      { key: 'address', header: 'address', format: addressLine },
-      { key: 'order_date', header: 'order_date', format: (o: any) => o.created_at ? format(new Date(o.created_at), 'yyyy-MM-dd H:mm:ss') : '' },
-      { key: 'courier', header: 'courier', format: courierName },
-      { key: 'courier_service', header: 'courier_service', format: courierService },
-      { key: 'payment_method', header: 'payment_method', format: () => 'cod' },
-      { key: 'currency_code', header: 'currency_code', format: (o: any) => cod(o).currency },
-      { key: 'payment_amount', header: 'payment_amount', format: (o: any) => String(cod(o).amount) },
-      { key: 'note', header: 'note', format: (o: any) => dash(o.delivery_instructions || '') },
-      { key: 'other', header: 'other', format: (o: any) => dash(o.gift_note || '') },
-      { key: 'call_center', header: 'call_center', format: () => '1' },
-      // Reference column: the stored EUR value the denar COD was derived from.
-      // The old `amount_bgn` twin is gone — a lev column in a Macedonian courier
-      // file is a live foot-gun for whoever maps the importer.
-      { key: 'amount_eur', header: 'amount_eur', format: (o: any) => Number(o.price || 0).toFixed(2) },
+      // Our reference, echoed back by MEX on every status lookup.
+      { key: 'tracking_id', header: 'tracking_id', format: (o: any) => o.display_id || '' },
+      // The idempotency key. get_shipment_status_by_ref.php takes this, which is
+      // how a retry after a timeout can tell "already sent" from "never sent" —
+      // MEX has no cancellation endpoint, so a duplicate parcel is permanent.
+      { key: 'sender_reference', header: 'sender_reference', format: (o: any) => o.display_id || '' },
+      // MEX requires BOTH names. validateOrderForFulfilment already rejects a
+      // single-token name, so last_name is never blank in an exported row.
+      { key: 'first_name', header: 'first_name', format: (o: any) => splitName(o.customer_name).first },
+      { key: 'last_name', header: 'last_name', format: (o: any) => splitName(o.customer_name).last },
+      { key: 'receiver_phone', header: 'receiver_phone', format: phoneNational },
+      { key: 'receiver_address', header: 'receiver_address', format: addressLine },
+      // THE routing key. add_shipment.php has no postcode field and treats the
+      // address as free text, so this integer alone decides where the parcel
+      // goes. Never blank: an order without a zone is held back by validation.
+      { key: 'receiver_city_id', header: 'receiver_city_id', format: (o: any) => o.mex_city_id != null ? String(o.mex_city_id) : '' },
+      // Human-readable twin of the id, for the operator eyeballing the file.
+      // MEX ignores it whenever receiver_city_id is present.
+      { key: 'receiver_city', header: 'receiver_city', format: (o: any) => o.mex_city_name || cityName(o) },
+      // A STRING with a dot decimal — "1500.00", not 1500 and not "1500,00".
+      // codFor() is the single source for the amount, exactly as before.
+      { key: 'cod', header: 'cod', format: (o: any) => `${cod(o).amount}.00` },
+      // MEX's own default. Every parcel we ship is well under it.
+      { key: 'weight', header: 'weight', format: () => '2' },
+      { key: 'instructions', header: 'instructions', format: (o: any) => dash(o.delivery_instructions || '') },
     ], ',', false);
 
     const today = format(new Date(), 'yyyy-MM-dd');
     const fromStr = fulfilFrom ? format(fulfilFrom, 'yyyy-MM-dd') : today;
     const toStr = fulfilTo ? format(fulfilTo, 'yyyy-MM-dd') : today;
     const fname = isSelected
-      ? `fulfilment_selected_${today}_${orders.length}orders.csv`
+      ? `mex_shipments_selected_${today}_${orders.length}orders.csv`
       : (fromStr === toStr
-        ? `fulfilment_${fulfilStatus}_${fromStr}.csv`
-        : `fulfilment_${fulfilStatus}_${fromStr}_to_${toStr}.csv`);
+        ? `mex_shipments_${fulfilStatus}_${fromStr}.csv`
+        : `mex_shipments_${fulfilStatus}_${fromStr}_to_${toStr}.csv`);
     downloadCsv(fname, csv);
 
     // Flip confirmed → shipped after a successful download so the warehouse
@@ -1272,6 +1287,7 @@ export default function Orders() {
                                       const dt = order.delivery_type;
                                       if (dt === 'speedy_office') return t('ordersPage.speedyOffice');
                                       if (dt === 'econt_office') return t('ordersPage.econtOffice');
+                                      if (dt === 'mex_office') return t('ordersPage.mexOffice');
                                       const hc = order.home_courier === 'speedy' ? 'Speedy'
                                         : order.home_courier === 'econt' ? 'Econt' : null;
                                       return hc ? t('ordersPage.homeDoor', { courier: hc }) : (dt ? dt.replace(/_/g, ' ') : t('ordersPage.notSpecified'));

@@ -528,7 +528,7 @@ export function OrderModal({ open, onClose, data, contextType, readOnly = false 
         // something readable.
         const composedAddress = delivery.delivery_type === 'home'
           ? composeHomeAddress(delivery)
-          : `[${delivery.delivery_type === 'speedy_office' ? 'Speedy' : 'Econt'}] ${delivery.courier_office_city} — #${delivery.courier_office_code} ${delivery.courier_office_name}`.trim();
+          : `[${delivery.delivery_type === 'speedy_office' ? 'Speedy' : delivery.delivery_type === 'mex_office' ? 'MEX' : 'Econt'}] ${delivery.courier_office_city} — #${delivery.courier_office_code} ${delivery.courier_office_name}`.trim();
         await apiUpdateCustomer(data.id, {
           customer_name: customerName.trim(),
           customer_phone: customerPhone.trim(),

@@ -84,3 +84,6 @@ LeadIn*.xls
 LeadOut*.xls
 
 .vercel
+
+# OSM/GeoNames download cache for the MK address importers (3.7 MB, re-fetchable)
+scripts/data/osm-cache/

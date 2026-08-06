@@ -19,6 +19,7 @@ export type FulfilmentField =
   | 'address'       // home order with no usable street/quarter at all
   | 'house_number'  // home order has a street but the house number is missing
   | 'office'        // office order missing its office code / name / city
+  | 'mex_city'      // no MEX delivery zone resolved for this address
   | 'data_hidden';  // customer data masked for this role — can't be validated here
 
 export interface FulfilmentValidation {
@@ -39,6 +40,8 @@ export interface FulfilmentOrder {
   quantity?: number | null;
   order_items?: Array<{ product_name?: string | null; quantity?: number | null }> | null;
   delivery_type?: string | null;
+  // Resolved server-side from the settlement. The MEX file's receiver_city_id.
+  mex_city_id?: number | null;
   courier_office_code?: string | null;
   courier_office_name?: string | null;
   courier_office_city?: string | null;
@@ -58,7 +61,9 @@ const MASK = '•••';
 
 /** Office (courier-desk) deliveries need a selected office, not a street. */
 function isOfficeDelivery(o: FulfilmentOrder): boolean {
-  return o.delivery_type === 'speedy_office' || o.delivery_type === 'econt_office';
+  return o.delivery_type === 'speedy_office'
+    || o.delivery_type === 'econt_office'
+    || o.delivery_type === 'mex_office';
 }
 
 /** At least one product line with a name and a positive quantity. */
@@ -98,8 +103,16 @@ export function validateOrderForFulfilment(o: FulfilmentOrder): FulfilmentValida
   // Phone — valid BG/international format (8–15 digits).
   if (!isValidPhone(String(o.customer_phone || ''))) missing.push('phone');
 
-  // Postal code — BG 4-digit.
+  // Postal code — Macedonian codes are 4-digit too, so the rule is unchanged.
+  // Auto-filled from the settlement picker; MEX itself has no postcode field.
   if (!/^\d{4}$/.test(String(o.postal_code || '').trim())) missing.push('postal_code');
+
+  // MEX delivery zone. add_shipment.php routes on receiver_city_id and nothing
+  // else — no postcode field, and the address is free text — so an order
+  // without a zone cannot be shipped at all. Hold it back rather than let the
+  // courier guess: MEX has no cancellation endpoint, and a parcel sent to the
+  // wrong town cannot be recalled.
+  if (!(Number(o.mex_city_id) > 0)) missing.push('mex_city');
 
   // Product + quantity.
   if (!hasProduct(o)) missing.push('product');

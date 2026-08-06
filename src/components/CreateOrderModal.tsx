@@ -443,7 +443,7 @@ export function CreateOrderModal({
   // For courier-office orders this becomes the office summary instead.
   const composedAddress = delivery.delivery_type === 'home'
     ? composeHomeAddress(delivery)
-    : `[${delivery.delivery_type === 'speedy_office' ? 'Speedy' : 'Econt'}] ${delivery.courier_office_city} — #${delivery.courier_office_code} ${delivery.courier_office_name}`.trim();
+    : `[${delivery.delivery_type === 'speedy_office' ? 'Speedy' : delivery.delivery_type === 'mex_office' ? 'MEX' : 'Econt'}] ${delivery.courier_office_city} — #${delivery.courier_office_code} ${delivery.courier_office_name}`.trim();
 
   const handleSave = async () => {
     if (saving) return;

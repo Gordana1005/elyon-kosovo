@@ -1,4 +1,10 @@
-// Shared Bulgarian-address helpers for the delivery prefill.
+// Shared Macedonian-address helpers for the delivery prefill.
+//
+// The composer emits Macedonian markers (бр. / згр. / влез / кат / стан) — that
+// line is printed on the parcel and read by the MEX driver. The PARSER still
+// understands the Bulgarian ones (№ / бл. / вх. / ет. / ап. / ж.к. / обл.)
+// because it is the fallback for the 80.388 orders inherited from the Bulgarian
+// fork. Add markers here; never remove one.
 //
 // Historical orders stored addresses inconsistently — streets in the city
 // field, Econt/Speedy office strings in "home" orders, etc. These helpers let
@@ -6,7 +12,7 @@
 // into the Home Address fields. Display-time only (no DB mutation) — the agent
 // confirms and a clean structured record is written on save.
 
-import type { DeliveryType, DeliveryValue } from '@/components/DeliveryMethodPicker';
+import type { DeliveryType, DeliveryValue, HomeCourier } from '@/components/DeliveryMethodPicker';
 
 /** The granular home-address parts, in any source shape (order row, profile,
  *  or live DeliveryValue). All optional so callers can pass a raw record. */
@@ -29,14 +35,14 @@ export interface HomeAddressParts {
  * fields/columns and are never folded in here.
  */
 export function composeHomeAddress(a: HomeAddressParts): string {
-  const streetNo = [a.street, a.street_number && `№ ${a.street_number}`].filter(Boolean).join(' ');
+  const streetNo = [a.street, a.street_number && `бр. ${a.street_number}`].filter(Boolean).join(' ');
   return [
     a.quarter,
     streetNo,
-    a.block && `бл. ${a.block}`,
-    a.entry && `вх. ${a.entry}`,
-    a.floor && `ет. ${a.floor}`,
-    a.apartment && `ап. ${a.apartment}`,
+    a.block && `згр. ${a.block}`,
+    a.entry && `влез ${a.entry}`,
+    a.floor && `кат ${a.floor}`,
+    a.apartment && `стан ${a.apartment}`,
   ].filter(Boolean).join(', ');
 }
 
@@ -57,7 +63,7 @@ const cleanAddr = (s?: string | null): string =>
   (s || '').replace(/[«»"„""]/g, '').replace(/\s+/g, ' ').replace(/^[\s,;.-]+|[\s,;.-]+$/g, '').trim();
 
 // A trailing house number (optionally marked No/№/номер), e.g. "Гоце Делчев 18".
-const TRAILING_NUMBER = /(?:№|No|номер)?\.?\s*(\d+[А-Яа-яA-Za-z]?)\s*$/i;
+const TRAILING_NUMBER = /(?:№|No|бр|број|номер)?\.?\s*(\d+[А-Яа-яЀ-ӿA-Za-z]?)\s*$/i;
 
 /**
  * Move a trailing house number out of the `street` field into `street_number`,
@@ -84,7 +90,7 @@ export function splitTrailingHouseNumber<T extends HomeAddressParts>(parts: T): 
 // Markers that end a street / quarter / city run. Mirrors the conservative
 // patterns proven in scripts/fix-home-addresses.mjs.
 const PART_BOUNDARY =
-  String.raw`(?=[,;]|\s+(?:с\.|село|гр\.|град|кв\.|ж\.?\s?к|квартал|бл\.|блок|ет\.|ап\.|вх\.|общ\.|обл\.|\d{4})|$)`;
+  String.raw`(?=[,;]|\s+(?:с\.|село|гр\.|град|кв\.|ж\.?\s?к|квартал|нас\.|населба|н\.м\.|бл\.|блок|згр\.|зграда|ет\.|ап\.|вх\.|кат|стан|влез|вл\.|бр\.|број|общ\.|општ\.|општина|обл\.|\d{4})|$)`;
 
 /**
  * Reverse of `composeHomeAddress` — splits a legacy single-line address blob
@@ -189,12 +195,13 @@ export function detectCourierType(...texts: (string | null | undefined)[]): Deli
   if (!blob) return null;
   if (/еконт|econt/i.test(blob)) return 'econt_office';
   if (/спиди|speedy/i.test(blob)) return 'speedy_office';
+  if (/мекс|mex/i.test(blob)) return 'mex_office';
   return null;
 }
 
 /** True if the text looks like a courier-office reference rather than a city. */
 export function looksLikeCourier(text?: string | null): boolean {
-  return !!text && /(еконт|econt|спиди|speedy|офис|автомат)/i.test(text);
+  return !!text && /(еконт|econt|спиди|speedy|мекс|mex|офис|автомат)/i.test(text);
 }
 
 /** True if the text carries granular address detail (street/quarter/building),
@@ -202,7 +209,7 @@ export function looksLikeCourier(text?: string | null): boolean {
  *  decide whether a value sitting in the City field is actually a whole address
  *  that should be parsed apart (e.g. "жк Тракия, бл 183, вх Г, ет. 4, ап 12"). */
 export function looksLikeStructuredDetail(text?: string | null): boolean {
-  return !!text && /(?:ул\.|бул\.|пл\.|кв\.|ж\.?\s?к|бл[\s.]|вх[\s.]|ет[\s.]|ап[\s.])/i.test(text);
+  return !!text && /(?:ул\.|бул\.|пл\.|кв\.|нас\.|н\.м\.|ж\.?\s?к|бл[\s.]|згр[\s.]|вх[\s.]|ет[\s.]|ап[\s.]|кат\s|стан\s|влез\s|бр[\s.])/i.test(text);
 }
 
 interface PrefillSource {
@@ -235,11 +242,17 @@ export function resolveDeliveryPrefill(src: PrefillSource): DeliveryValue {
   const structured = src.delivery_type;
   const blob = `${src.customer_address || ''} ${src.customer_city || ''} ${src.street || ''}`;
   const type: DeliveryType =
-    (structured === 'speedy_office' || structured === 'econt_office')
+    (structured === 'speedy_office' || structured === 'econt_office' || structured === 'mex_office')
       ? structured
       : (detectCourierType(blob) || 'home');
 
-  const homeCourier = (src.home_courier === 'speedy' ? 'speedy' : 'econt') as 'speedy' | 'econt';
+  // MEX is the only Macedonian carrier, so an order with nothing stored is a
+  // MEX order. A stored speedy/econt is preserved verbatim — those 80.388
+  // historical rows must keep showing the courier that actually carried them.
+  const homeCourier: HomeCourier =
+    (src.home_courier === 'speedy' || src.home_courier === 'econt' || src.home_courier === 'mex')
+      ? src.home_courier
+      : 'mex';
 
   if (type !== 'home') {
     return {

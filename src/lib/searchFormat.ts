@@ -19,8 +19,8 @@ export const STATUS_TONE: Record<string, string> = {
 
 export function deliveryLabel(o: any): { icon: string; line1: string; line2: string } {
   const dt = o.delivery_type || 'home';
-  if (dt === 'speedy_office' || dt === 'econt_office') {
-    const courier = dt === 'speedy_office' ? 'Speedy' : 'Econt';
+  if (dt === 'speedy_office' || dt === 'econt_office' || dt === 'mex_office') {
+    const courier = dt === 'speedy_office' ? 'Speedy' : dt === 'mex_office' ? 'MEX' : 'Econt';
     const code = o.courier_office_code ? `${o.courier_office_code} ` : '';
     const officeName = o.courier_office_name || '';
     const city = o.courier_office_city || '';
@@ -41,8 +41,8 @@ export function deliveryLabel(o: any): { icon: string; line1: string; line2: str
 
 export function fullAddress(o: any): string {
   if (!o) return '';
-  if (o.delivery_type === 'speedy_office' || o.delivery_type === 'econt_office') {
-    const courier = o.delivery_type === 'speedy_office' ? 'Speedy' : 'Econt';
+  if (o.delivery_type === 'speedy_office' || o.delivery_type === 'econt_office' || o.delivery_type === 'mex_office') {
+    const courier = o.delivery_type === 'speedy_office' ? 'Speedy' : o.delivery_type === 'mex_office' ? 'MEX' : 'Econt';
     return `${courier} — ${o.courier_office_city || ''} · ${o.courier_office_code ? o.courier_office_code + ' ' : ''}${o.courier_office_name || ''}`.trim();
   }
   const parts = [
